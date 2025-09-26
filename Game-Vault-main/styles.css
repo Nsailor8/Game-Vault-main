@@ -248,6 +248,48 @@ body {
     font-size: 2rem;
     color: #333;
 }
+.search-bar {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 15px auto;
+    padding: 8px 12px;
+    max-width: 600px;
+    border-radius: 8px;
+    background-color: #1e1e1e;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+
+.search-bar input {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 6px;
+    outline: none;
+    background-color: #2c2c2c;
+    color: #fff;
+    font-size: 14px;
+}
+
+.search-bar input::placeholder {
+    color: #aaa;
+}
+
+.search-bar button {
+    margin-left: 8px;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 6px;
+    background-color: #4cafef;
+    color: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s ease;
+}
+
+.search-bar button:hover {
+    background-color: #3a9ddc;
+}
 
 /* Friends Section */
 .friends-content {
