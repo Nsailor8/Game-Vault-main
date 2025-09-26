@@ -248,48 +248,51 @@ body {
     font-size: 2rem;
     color: #333;
 }
+/* Search Bar in Header */
 .search-bar {
     display: flex;
-    justify-content: center;
     align-items: center;
-    margin: 15px auto;
-    padding: 8px 12px;
-    max-width: 600px;
-    border-radius: 8px;
-    background-color: #1e1e1e;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    margin-left: 20px;
+    background: #f8f9ff;
+    border-radius: 25px;
+    padding: 6px 12px;
+    border: 1px solid rgba(102, 126, 234, 0.3);
+    box-shadow: 0 2px 6px rgba(102, 126, 234, 0.1);
 }
 
 .search-bar input {
-    flex: 1;
-    padding: 8px 12px;
     border: none;
-    border-radius: 6px;
     outline: none;
-    background-color: #2c2c2c;
-    color: #fff;
-    font-size: 14px;
+    padding: 8px 12px;
+    border-radius: 20px;
+    background: transparent;
+    font-size: 0.95rem;
+    color: #333;
+    width: 200px;
 }
 
 .search-bar input::placeholder {
-    color: #aaa;
+    color: #999;
 }
 
 .search-bar button {
-    margin-left: 8px;
-    padding: 8px 12px;
     border: none;
-    border-radius: 6px;
-    background-color: #4cafef;
+    background: linear-gradient(135deg, #667eea, #764ba2);
     color: #fff;
+    padding: 8px 12px;
+    border-radius: 50%;
     cursor: pointer;
-    font-size: 14px;
-    transition: background 0.2s ease;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .search-bar button:hover {
-    background-color: #3a9ddc;
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
+
 
 /* Friends Section */
 .friends-content {
