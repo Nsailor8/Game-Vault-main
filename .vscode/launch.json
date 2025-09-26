@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch Game Vault Server",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}/Game-Vault-main/server.js",
+            "cwd": "${workspaceFolder}/Game-Vault-main",
+            "console": "integratedTerminal",
+            "restart": true,
+            "runtimeExecutable": "node",
+            "env": {
+                "NODE_ENV": "development"
+            },
+            "outputCapture": "std"
+        }
+    ]
+}
