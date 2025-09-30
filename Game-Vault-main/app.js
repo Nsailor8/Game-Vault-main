@@ -4,7 +4,7 @@ class GameVaultApp {
         this.profileManager = new ProfileManager();
         this.adminManager = new AdminManager();
         this.currentUser = null;
-        this.init(); //pee
+        this.init();
     }
 
     init() {
@@ -75,8 +75,8 @@ class GameVaultApp {
         document.getElementById('addReviewConfirmBtn').addEventListener('click', () => {
             this.addReview();
         });
-        document.getElementById("globalSearchBtn").addEventListener("click", () => {
-            const query = document.getElementById("globalSearchInput").value.trim().toLowerCase();
+        document.getElementById("gameSearchBtn").addEventListener("click", () => {
+            const query = document.getElementById("gameSearchInput").value.trim().toLowerCase();
             if (!query) return;
 
             console.log("Searching for:", query);
@@ -84,7 +84,7 @@ class GameVaultApp {
             // You can add real search logic here.
         });
 
-
+        
         // Admin
         document.getElementById('adminLoginBtn').addEventListener('click', () => {
             this.showAdminLoginModal();
