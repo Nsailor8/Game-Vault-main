@@ -4,7 +4,7 @@ class GameVaultApp {
         this.profileManager = new ProfileManager();
         this.adminManager = new AdminManager();
         this.currentUser = null;
-        this.init();
+        this.init(); //pee
     }
 
     init() {
