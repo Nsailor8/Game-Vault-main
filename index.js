@@ -1,0 +1,160 @@
+// Game Class
+class Game {
+  constructor(id, title, platform, status, rating, playtime, tags) {
+    this.id = id;
+    this.title = title;
+    this.platform = platform;
+    this.status = status;
+    this.rating = rating;
+    this.playtime = playtime;
+    this.tags = tags;
+  }
+
+  toString() {
+    return `ID: ${this.id} | Title: ${this.title} | Platform: ${this.platform} | Status: ${this.status} | Rating: ${this.rating}/5 | Playtime: ${this.playtime} | Tags: ${this.tags.join(', ')}`;
+  }
+}
+
+// Game Library Manager Class
+class GameLibraryManager {
+  constructor() {
+    this.games = [];
+    this.nextId = 1;
+    this.loadSampleGames();
+  }
+
+  loadSampleGames() {
+    this.addGame('The Witcher 3', 'Steam', 'completed', 5, '120 hours', ['RPG', 'Open World']);
+    this.addGame('Hades', 'Steam', 'playing', 4, '45 hours', ['Roguelike', 'Action']);
+    this.addGame('Celeste', 'Nintendo', 'backlog', 0, '2 hours', ['Platformer', 'Indie']);
+    this.addGame('Elden Ring', 'PlayStation', 'favorites', 5, '200 hours', ['Souls-like', 'RPG']);
+  }
+
+  addGame(title, platform, status, rating, playtime, tags) {
+    const game = new Game(this.nextId++, title, platform, status, rating, playtime, tags);
+    this.games.push(game);
+    console.log(`Game added successfully: ${title}`);
+    return game;
+  }
+
+  removeGame(id) {
+    const index = this.games.findIndex(game => game.id === id);
+    if (index !== -1) {
+      this.games.splice(index, 1);
+      console.log('Game removed successfully.');
+      return true;
+    } else {
+      console.log(`Game not found with ID: ${id}`);
+      return false;
+    }
+  }
+
+  updateGameStatus(id, newStatus) {
+    const game = this.findGameById(id);
+    if (game) {
+      game.status = newStatus;
+      console.log(`Game status updated to: ${newStatus}`);
+      return true;
+    } else {
+      console.log(`Game not found with ID: ${id}`);
+      return false;
+    }
+  }
+
+  rateGame(id, rating) {
+    if (rating < 0 || rating > 5) {
+      console.log('Rating must be between 0 and 5.');
+      return false;
+    }
+    const game = this.findGameById(id);
+    if (game) {
+      game.rating = rating;
+      console.log(`Game rated successfully: ${rating}/5`);
+      return true;
+    } else {
+      console.log(`Game not found with ID: ${id}`);
+      return false;
+    }
+  }
+
+  searchGames(keyword) {
+    return this.games.filter(game =>
+      game.title.toLowerCase().includes(keyword.toLowerCase())
+    );
+  }
+
+  filterByStatus(status) {
+    return this.games.filter(game =>
+      game.status.toLowerCase() === status.toLowerCase()
+    );
+  }
+
+  filterByPlatform(platform) {
+    return this.games.filter(game =>
+      game.platform.toLowerCase() === platform.toLowerCase()
+    );
+  }
+
+  filterByTag(tag) {
+    return this.games.filter(game =>
+      game.tags.some(t => t.toLowerCase() === tag.toLowerCase())
+    );
+  }
+
+  getAllGames() {
+    return [...this.games];
+  }
+
+  displayAllGames() {
+    if (this.games.length === 0) {
+      console.log('No games in library.');
+      return;
+    }
+    console.log('\n=== GAME LIBRARY ===');
+    this.games.forEach(game => console.log(game.toString()));
+    console.log(`Total games: ${this.games.length}`);
+  }
+
+  displayGamesByStatus() {
+    const grouped = this.games.reduce((acc, game) => {
+      if (!acc[game.status]) {
+        acc[game.status] = [];
+      }
+      acc[game.status].push(game);
+      return acc;
+    }, {});
+
+    console.log('\n=== GAMES BY STATUS ===');
+    Object.entries(grouped).forEach(([status, games]) => {
+      console.log(`\n${status.toUpperCase()}:`);
+      games.forEach(game => console.log(game.toString()));
+    });
+  }
+
+  getStatistics() {
+    const stats = {
+      total: this.games.length,
+      byStatus: {},
+      byPlatform: {},
+      totalPlaytime: 0,
+      avgRating: 0
+    };
+
+    this.games.forEach(game => {
+      stats.byStatus[game.status] = (stats.byStatus[game.status] || 0) + 1;
+      stats.byPlatform[game.platform] = (stats.byPlatform[game.platform] || 0) + 1;
+    });
+
+    const ratedGames = this.games.filter(g => g.rating > 0);
+    if (ratedGames.length > 0) {
+      const totalRating = ratedGames.reduce((sum, g) => sum + g.rating, 0);
+      stats.avgRating = (totalRating / ratedGames.length).toFixed(2);
+    }
+
+    return stats;
+  }
+
+  findGameById(id) {
+    return this.games.find(game => game.id === id);
+  }
+}
