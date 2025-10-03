@@ -1,0 +1,92 @@
+{
+  "users": [
+    {
+      "username": "GameMaster2024",
+      "email": "gamemaster@example.com",
+      "password": "password123",
+      "joinDate": "2025-10-03T14:13:06.981Z",
+      "isActive": true,
+      "lastLogin": null,
+      "gamingPreferences": {
+        "favoriteGenres": [
+          "RPG",
+          "Action",
+          "Indie"
+        ],
+        "preferredPlatforms": [
+          "Steam",
+          "Nintendo"
+        ],
+        "playStyle": "hardcore",
+        "gamingGoals": [
+          "Complete all achievements",
+          "Try new genres"
+        ]
+      },
+      "statistics": {
+        "totalGamesPlayed": 0,
+        "totalPlaytime": 0,
+        "averageRating": 0,
+        "favoriteGame": null,
+        "mostPlayedPlatform": null,
+        "completionRate": 0,
+        "totalReviews": 0,
+        "friendsCount": 0
+      },
+      "achievements": [],
+      "bio": "",
+      "avatar": null,
+      "privacySettings": {
+        "profileVisibility": "public",
+        "showEmail": false,
+        "showStatistics": true,
+        "showFriendsList": true
+      }
+    },
+    {
+      "username": "CasualGamer",
+      "email": "casual@example.com",
+      "password": "password456",
+      "joinDate": "2025-10-03T14:13:06.983Z",
+      "isActive": true,
+      "lastLogin": null,
+      "gamingPreferences": {
+        "favoriteGenres": [
+          "Puzzle",
+          "Platformer"
+        ],
+        "preferredPlatforms": [
+          "Nintendo"
+        ],
+        "playStyle": "casual",
+        "gamingGoals": [
+          "Have fun",
+          "Relax after work"
+        ]
+      },
+      "statistics": {
+        "totalGamesPlayed": 0,
+        "totalPlaytime": 0,
+        "averageRating": 0,
+        "favoriteGame": null,
+        "mostPlayedPlatform": null,
+        "completionRate": 0,
+        "totalReviews": 0,
+        "friendsCount": 0
+      },
+      "achievements": [],
+      "bio": "",
+      "avatar": null,
+      "privacySettings": {
+        "profileVisibility": "public",
+        "showEmail": false,
+        "showStatistics": true,
+        "showFriendsList": true
+      }
+    }
+  ],
+  "games": [],
+  "reviews": [],
+  "friendships": [],
+  "wishlists": []
+}

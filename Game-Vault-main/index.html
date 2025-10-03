@@ -26,36 +26,62 @@
 
         <!-- Login/Signup Modal -->
         <div id="authModal" class="modal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2 id="authTitle">Welcome to Game Vault</h2>
-                    <span class="close">&times;</span>
-                </div>
-                <div class="modal-body">
-                    <div id="loginForm" class="auth-form">
-                        <h3>Login</h3>
-                        <input type="text" id="loginUsername" placeholder="Username" required>
-                        <input type="password" id="loginPassword" placeholder="Password" required>
-                        <button id="loginBtn" class="btn btn-primary">Login</button>
-                        <p>Don't have an account? <a href="#" id="showSignup">Sign up</a></p>
+            <div class="modal-content auth-modal-content">
+                <div class="auth-container">
+                    <div class="auth-header">
+                        <h2 id="authTitle">Welcome to Game Vault</h2>
                     </div>
+                    
+                    <div id="loginForm" class="auth-form">
+                        <div class="form-group">
+                            <input type="text" id="loginUsername" placeholder="Username" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="password" id="loginPassword" placeholder="Password" required>
+                        </div>
+                        <div class="form-group">
+                            <button id="loginBtn" class="btn btn-primary btn-full">Login</button>
+                        </div>
+                        <div class="form-group">
+                            <button id="guestBtn" class="btn btn-secondary btn-full">Continue as Guest</button>
+                        </div>
+                        <div class="form-group">
+                            <p class="auth-switch">Don't have an account? <a href="#" id="showSignup">Sign up</a></p>
+                        </div>
+                    </div>
+                    
                     <div id="signupForm" class="auth-form" style="display: none;">
-                        <h3>Sign Up</h3>
-                        <input type="text" id="signupUsername" placeholder="Username" required>
-                        <input type="email" id="signupEmail" placeholder="Email" required>
-                        <input type="password" id="signupPassword" placeholder="Password" required>
-                        <div class="preferences">
-                            <h4>Gaming Preferences</h4>
-                            <select id="playStyle">
-                                <option value="casual">Casual</option>
-                                <option value="hardcore">Hardcore</option>
-                                <option value="competitive">Competitive</option>
+                        <div class="form-group">
+                            <input type="text" id="signupUsername" placeholder="Username" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="email" id="signupEmail" placeholder="Email" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="password" id="signupPassword" placeholder="Password" required>
+                        </div>
+                        <div class="form-group">
+                            <select id="playStyle" class="form-select">
+                                <option value="casual">Casual Gamer</option>
+                                <option value="hardcore">Hardcore Gamer</option>
+                                <option value="competitive">Competitive Gamer</option>
                             </select>
+                        </div>
+                        <div class="form-group">
                             <input type="text" id="favoriteGenres" placeholder="Favorite Genres (comma separated)">
+                        </div>
+                        <div class="form-group">
                             <input type="text" id="preferredPlatforms" placeholder="Preferred Platforms (comma separated)">
                         </div>
-                        <button id="signupBtn" class="btn btn-primary">Sign Up</button>
-                        <p>Already have an account? <a href="#" id="showLogin">Login</a></p>
+                        <div class="form-group">
+                            <button id="signupBtn" class="btn btn-primary btn-full">Sign Up</button>
+                        </div>
+                        <div class="form-group">
+                            <button id="guestBtn" class="btn btn-secondary btn-full">Continue as Guest</button>
+                        </div>
+                        <div class="form-group">
+                            <p class="auth-switch">Already have an account? <a href="#" id="showLogin">Login</a></p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -74,7 +100,10 @@
                         <p id="profileEmail">email@example.com</p>
                         <p id="profileJoinDate">Joined: Loading...</p>
                     </div>
-                    <button id="editProfileBtn" class="btn btn-secondary">Edit Profile</button>
+                    <div class="profile-actions">
+                        <button id="editProfileBtn" class="btn btn-secondary">Edit Profile</button>
+                        <button id="logoutBtn" class="btn btn-danger" style="display: none;">Sign Out</button>
+                    </div>
                 </div>
 
                 <div class="profile-stats">
