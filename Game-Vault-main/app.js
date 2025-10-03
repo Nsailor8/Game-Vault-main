@@ -128,7 +128,16 @@ class GameVaultApp {
         document.getElementById('addReviewConfirmBtn').addEventListener('click', () => {
             this.addReview();
         });
+        document.getElementById("gameSearchBtn").addEventListener("click", () => {
+            const query = document.getElementById("gameSearchInput").value.trim().toLowerCase();
+            if (!query) return;
 
+            console.log("Searching for:", query);
+            // 🔹 Example: filter across friends, wishlists, reviews, etc.
+            // You can add real search logic here.
+        });
+
+        
         // Admin
         document.getElementById('adminLoginBtn').addEventListener('click', () => {
             this.showAdminLoginModal();
