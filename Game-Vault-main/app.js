@@ -1,15 +1,64 @@
+// Login Screen Component
+class LoginScreen {
+    constructor() {
+        this.modal = document.getElementById('authModal');
+        this.title = document.getElementById('authTitle');
+        this.loginForm = document.getElementById('loginForm');
+        this.signupForm = document.getElementById('signupForm');
+    }
+
+    show() {
+        this.modal.style.display = 'block';
+    }
+
+    hide() {
+        this.modal.style.display = 'none';
+    }
+
+    resetToInitialState() {
+        // Reset to exact initial state
+        this.title.textContent = 'Welcome to Game Vault';
+        this.loginForm.style.display = 'block';
+        this.signupForm.style.display = 'none';
+        
+        // Clear all form fields
+        document.getElementById('loginUsername').value = '';
+        document.getElementById('loginPassword').value = '';
+        document.getElementById('signupUsername').value = '';
+        document.getElementById('signupEmail').value = '';
+        document.getElementById('signupPassword').value = '';
+        document.getElementById('playStyle').value = 'casual';
+        document.getElementById('favoriteGenres').value = '';
+        document.getElementById('preferredPlatforms').value = '';
+    }
+
+    showLoginForm() {
+        this.loginForm.style.display = 'block';
+        this.signupForm.style.display = 'none';
+        this.title.textContent = 'Login to Game Vault';
+    }
+
+    showSignupForm() {
+        this.loginForm.style.display = 'none';
+        this.signupForm.style.display = 'block';
+        this.title.textContent = 'Join Game Vault';
+    }
+}
+
 // Web Application JavaScript
 class GameVaultApp {
     constructor() {
         this.profileManager = new ProfileManager();
         this.adminManager = new AdminManager();
+        this.loginScreen = new LoginScreen();
         this.currentUser = null;
         this.init();
     }
 
     init() {
         this.setupEventListeners();
-        this.showAuthModal();
+        this.loginScreen.show();
+        this.loginScreen.resetToInitialState();
         this.loadSampleData();
     }
 
@@ -24,12 +73,12 @@ class GameVaultApp {
         // Auth Modal
         document.getElementById('showSignup').addEventListener('click', (e) => {
             e.preventDefault();
-            this.showSignupForm();
+            this.loginScreen.showSignupForm();
         });
 
         document.getElementById('showLogin').addEventListener('click', (e) => {
             e.preventDefault();
-            this.showLoginForm();
+            this.loginScreen.showLoginForm();
         });
 
         document.getElementById('loginBtn').addEventListener('click', () => {
@@ -38,6 +87,10 @@ class GameVaultApp {
 
         document.getElementById('signupBtn').addEventListener('click', () => {
             this.handleSignup();
+        });
+
+        document.getElementById('guestBtn').addEventListener('click', () => {
+            this.handleGuestLogin();
         });
 
         // Profile
@@ -94,17 +147,25 @@ class GameVaultApp {
             this.handleAdminLogin();
         });
 
+        // Logout button
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            this.handleLogout();
+        });
+
         // Modal close buttons
         document.querySelectorAll('.close').forEach(closeBtn => {
             closeBtn.addEventListener('click', (e) => {
-                this.closeModal(e.target.closest('.modal'));
+                const modal = e.target.closest('.modal');
+                if (modal && modal.id !== 'authModal') {
+                    this.closeModal(modal);
+                }
             });
         });
 
-        // Close modal when clicking outside
+        // Close modal when clicking outside (except auth modal)
         document.querySelectorAll('.modal').forEach(modal => {
             modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
+                if (e.target === modal && modal.id !== 'authModal') {
                     this.closeModal(modal);
                 }
             });
@@ -131,24 +192,8 @@ class GameVaultApp {
         });
     }
 
-    showAuthModal() {
-        document.getElementById('authModal').style.display = 'block';
-    }
-
     closeModal(modal) {
         modal.style.display = 'none';
-    }
-
-    showLoginForm() {
-        document.getElementById('loginForm').style.display = 'block';
-        document.getElementById('signupForm').style.display = 'none';
-        document.getElementById('authTitle').textContent = 'Login to Game Vault';
-    }
-
-    showSignupForm() {
-        document.getElementById('loginForm').style.display = 'none';
-        document.getElementById('signupForm').style.display = 'block';
-        document.getElementById('authTitle').textContent = 'Join Game Vault';
     }
 
     handleLogin() {
@@ -160,14 +205,32 @@ class GameVaultApp {
             return;
         }
 
-        const user = this.profileManager.login(username, password);
-        if (user) {
-            this.currentUser = user;
-            this.closeModal(document.getElementById('authModal'));
-            this.updateUI();
-        } else {
-            alert('Invalid credentials');
-        }
+        // Call the server API to login
+        fetch('/api/auth/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                username,
+                password
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.currentUser = data.user;
+                this.loginScreen.hide();
+                this.updateUI();
+                console.log('User logged in successfully:', data.user.username);
+            } else {
+                alert(data.error || 'Invalid credentials');
+            }
+        })
+        .catch(error => {
+            console.error('Error logging in:', error);
+            alert('Error logging in. Please try again.');
+        });
     }
 
     handleSignup() {
@@ -190,24 +253,109 @@ class GameVaultApp {
             gamingGoals: ['Explore new games', 'Build collection']
         };
 
-        const user = this.profileManager.signUp(username, email, password, gamingPreferences);
-        if (user) {
-            this.currentUser = user;
-            this.closeModal(document.getElementById('authModal'));
-            this.updateUI();
-        } else {
-            alert('Username already exists');
-        }
+        // Call the server API to create the user
+        fetch('/api/auth/signup', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                username,
+                email,
+                password,
+                gamingPreferences
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.currentUser = data.user;
+                this.loginScreen.hide();
+                this.updateUI();
+                console.log('User created successfully on server:', data.user.username);
+            } else {
+                alert(data.error || 'Failed to create account');
+            }
+        })
+        .catch(error => {
+            console.error('Error creating account:', error);
+            alert('Error creating account. Please try again.');
+        });
+    }
+
+    handleLogout() {
+        // Clear current user
+        this.currentUser = null;
+        this.profileManager.currentProfile = null;
+        
+        // Hide logout button
+        document.getElementById('logoutBtn').style.display = 'none';
+        
+        // Show login screen in initial state
+        this.loginScreen.show();
+        this.loginScreen.resetToInitialState();
+        
+        console.log('User logged out successfully');
+    }
+
+    handleGuestLogin() {
+        // Create a temporary guest user with no persistence
+        this.currentUser = {
+            username: 'Guest',
+            email: null,
+            joinDate: new Date().toISOString(),
+            bio: '',
+            gamingPreferences: {
+                favoriteGenres: [],
+                preferredPlatforms: [],
+                playStyle: 'casual',
+                gamingGoals: []
+            },
+            statistics: {
+                totalGamesPlayed: 0,
+                totalPlaytime: 0,
+                averageRating: 0,
+                favoriteGame: null,
+                mostPlayedPlatform: null,
+                completionRate: 0,
+                totalReviews: 0,
+                friendsCount: 0
+            },
+            achievements: [],
+            avatar: null,
+            privacySettings: {
+                profileVisibility: 'public',
+                showEmail: false,
+                showStatistics: true,
+                showFriendsList: true
+            },
+            isGuest: true // Flag to identify guest users
+        };
+
+        // Hide the login modal
+        this.loginScreen.hide();
+        
+        // Update UI but don't show logout button for guests
+        this.updateUI();
+        
+        console.log('Guest user logged in successfully');
     }
 
     updateUI() {
         if (!this.currentUser) return;
 
+        // Show logout button only for registered users, not guests
+        if (!this.currentUser.isGuest) {
+            document.getElementById('logoutBtn').style.display = 'inline-block';
+        } else {
+            document.getElementById('logoutBtn').style.display = 'none';
+        }
+
         // Update profile section
         document.getElementById('profileUsername').textContent = this.currentUser.username;
-        document.getElementById('profileEmail').textContent = this.currentUser.email;
-        document.getElementById('profileJoinDate').textContent = `Joined: ${new Date(this.currentUser.joinDate).toLocaleDateString()}`;
-        document.getElementById('profileBio').textContent = this.currentUser.bio || 'No bio set';
+        document.getElementById('profileEmail').textContent = this.currentUser.email || 'Guest Account';
+        document.getElementById('profileJoinDate').textContent = this.currentUser.isGuest ? 'Guest Session' : `Joined: ${new Date(this.currentUser.joinDate).toLocaleDateString()}`;
+        document.getElementById('profileBio').textContent = this.currentUser.isGuest ? 'Guest users cannot save data permanently' : (this.currentUser.bio || 'No bio set');
         
         // Update statistics
         document.getElementById('totalGames').textContent = this.currentUser.statistics.totalGamesPlayed;

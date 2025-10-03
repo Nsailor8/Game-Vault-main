@@ -447,6 +447,7 @@ class AdminManager {
 // Database Manager Class (Simplified)
 class DatabaseManager {
   constructor() {
+    this.dataFile = 'data/users.json';
     this.data = {
       users: [],
       games: [],
@@ -454,6 +455,7 @@ class DatabaseManager {
       friendships: [],
       wishlists: []
     };
+    this.loadData();
   }
 
   saveUser(user) {
@@ -463,6 +465,7 @@ class DatabaseManager {
     } else {
       this.data.users.push(user);
     }
+    this.saveData();
     console.log(`User ${user.username} saved to database.`);
   }
 
@@ -478,6 +481,7 @@ class DatabaseManager {
     const index = this.data.users.findIndex(u => u.username === username);
     if (index !== -1) {
       this.data.users.splice(index, 1);
+      this.saveData();
       console.log(`User ${username} deleted from database.`);
       return true;
     }
@@ -498,6 +502,70 @@ class DatabaseManager {
       return false;
     }
   }
+
+  // File-based persistence methods (Node.js only)
+  loadData() {
+    // Only run file operations in Node.js environment
+    if (typeof window === 'undefined' && typeof require !== 'undefined') {
+      const fs = require('fs');
+      const path = require('path');
+      
+      try {
+        // Create data directory if it doesn't exist
+        const dataDir = path.dirname(this.dataFile);
+        if (!fs.existsSync(dataDir)) {
+          fs.mkdirSync(dataDir, { recursive: true });
+        }
+
+        // Load data from file if it exists
+        if (fs.existsSync(this.dataFile)) {
+          const fileData = fs.readFileSync(this.dataFile, 'utf8');
+          this.data = JSON.parse(fileData);
+          console.log(`Loaded ${this.data.users.length} users from database file.`);
+        } else {
+          console.log('No existing database file found, starting with empty database.');
+        }
+      } catch (error) {
+        console.log('Error loading data from file:', error.message);
+        console.log('Starting with empty database.');
+      }
+    } else {
+      // Browser environment - use localStorage
+      const savedData = localStorage.getItem('gameVaultData');
+      if (savedData) {
+        this.data = JSON.parse(savedData);
+        console.log(`Loaded ${this.data.users.length} users from localStorage.`);
+      } else {
+        console.log('No existing data found, starting with empty database.');
+      }
+    }
+  }
+
+  saveData() {
+    // Only run file operations in Node.js environment
+    if (typeof window === 'undefined' && typeof require !== 'undefined') {
+      const fs = require('fs');
+      const path = require('path');
+      
+      try {
+        // Create data directory if it doesn't exist
+        const dataDir = path.dirname(this.dataFile);
+        if (!fs.existsSync(dataDir)) {
+          fs.mkdirSync(dataDir, { recursive: true });
+        }
+
+        // Save data to file
+        fs.writeFileSync(this.dataFile, JSON.stringify(this.data, null, 2));
+        console.log(`Database saved with ${this.data.users.length} users.`);
+      } catch (error) {
+        console.log('Error saving data to file:', error.message);
+      }
+    } else {
+      // Browser environment - use localStorage
+      localStorage.setItem('gameVaultData', JSON.stringify(this.data));
+      console.log(`Data saved with ${this.data.users.length} users.`);
+    }
+  }
 }
 
 // Profile Manager Class
@@ -509,6 +577,42 @@ class ProfileManager {
     this.wishlistManagers = new Map();
     this.reviewManagers = new Map();
     this.databaseManager = new DatabaseManager();
+    
+    // Load existing users from database
+    this.loadExistingUsers();
+  }
+
+  loadExistingUsers() {
+    const existingUsers = this.databaseManager.getAllUsers();
+    existingUsers.forEach(userData => {
+      // Recreate UserProfile objects from saved data
+      const profile = new UserProfile(
+        userData.username,
+        userData.email,
+        userData.password,
+        userData.joinDate,
+        userData.gamingPreferences
+      );
+      
+      // Restore additional properties
+      profile.bio = userData.bio || '';
+      profile.statistics = userData.statistics || profile.statistics;
+      profile.achievements = userData.achievements || [];
+      profile.isActive = userData.isActive !== undefined ? userData.isActive : true;
+      profile.lastLogin = userData.lastLogin || null;
+      profile.privacySettings = userData.privacySettings || profile.privacySettings;
+      
+      this.profiles.push(profile);
+      
+      // Initialize related managers
+      this.friendsLists.set(userData.username, new FriendsList(userData.username));
+      this.wishlistManagers.set(userData.username, new WishlistManager(userData.username));
+      this.reviewManagers.set(userData.username, new ReviewManager(userData.username));
+    });
+    
+    if (existingUsers.length > 0) {
+      console.log(`Loaded ${existingUsers.length} existing users from database.`);
+    }
   }
 
   createProfile(username, email, password, gamingPreferences = {}) {
