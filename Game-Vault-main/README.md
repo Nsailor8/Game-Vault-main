@@ -2,7 +2,7 @@
 
 A comprehensive profile management system for Game Vault with social features, wishlists, reviews, and admin panel.
 
-## 🎮 Features
+## Features
 
 - **User Profiles**: Complete profile management with gaming preferences and statistics
 - **Authentication**: Secure login/signup system with password protection
@@ -13,55 +13,43 @@ A comprehensive profile management system for Game Vault with social features, w
 - **Modern UI**: Beautiful, responsive web interface with gradient design
 - **Real-time Updates**: Dynamic UI updates without page refresh
 
-## 🚀 Quick Start
 
-### Prerequisites
-- Node.js (version 14.0.0 or higher)
-- npm (comes with Node.js)
+## Launch Instructions for Anyone
 
-### Installation
-
-1. **Clone or download the project**
-   ```bash
-   cd Game-Vault-main
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Start the server**
-   ```bash
-   npm start
-   ```
-
-4. **Open your browser**
-   Navigate to: `http://localhost:3000`
-
-### Development Mode
-For development with auto-restart:
+### Method 1: Command Line (Recommended)
 ```bash
-npm run dev
+# Navigate to the project folder
+cd Game-Vault-main
+
+# Install dependencies (only needed once)
+npm install
+
+# Start the server
+npm start
 ```
 
-## 🔑 Sample Accounts
+### Method 2: VS Code / Cursor IDE
+1. Open the project in VS Code or Cursor
+2. Go to **Run and Debug** (Ctrl+Shift+D)
+3. Select **"Launch Game Vault Server"** from the dropdown
+4. Click the **Play button** or press F5
 
-### Admin Account
-- **Username**: `admin`
-- **Password**: `admin123`
-- **Access**: Full admin panel with system logs and user statistics
+### Method 3: Windows Batch File
+If you have the `start-server.bat` file:
+1. Double-click `start-server.bat`
+2. Wait for "Server running on port 3000"
+3. Open browser to `http://localhost:3000`
 
-### User Accounts
-- **Username**: `GameMaster2024`
-- **Password**: `password123`
-- **Type**: Hardcore gamer with RPG preferences
+### Method 4: Manual Node.js
+```bash
+# Navigate to project folder
+cd Game-Vault-main
 
-- **Username**: `CasualGamer`
-- **Password**: `password456`
-- **Type**: Casual gamer with puzzle preferences
+# Run server directly
+node server.js
+```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 Game-Vault-main/
@@ -84,7 +72,7 @@ Game-Vault-main/
 - **AdminManager**: Administrative functions and system logging
 - **DatabaseManager**: Data persistence and export/import
 
-## 🌐 API Endpoints
+## API Endpoints
 
 ### Authentication
 - `POST /api/auth/login` - User login
@@ -110,7 +98,7 @@ Game-Vault-main/
 - `POST /api/admin/login` - Admin login
 - `GET /api/admin/stats` - Get system statistics
 
-## 🎨 UI Features
+## UI Features
 
 - **Responsive Design**: Works on desktop, tablet, and mobile
 - **Modern Gradient Theme**: Beautiful purple-blue gradient design
@@ -119,7 +107,7 @@ Game-Vault-main/
 - **Font Awesome Icons**: Professional iconography throughout
 - **Loading States**: Visual feedback for user actions
 
-## 🔧 Customization
+## Customization
 
 ### Adding New Features
 1. Extend the appropriate class in `profile.js`
@@ -134,7 +122,7 @@ The CSS uses CSS Grid and Flexbox for modern layouts. Key color variables:
 - Secondary: `#764ba2` (Darker purple)
 - Background: Gradient from primary to secondary
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -156,19 +144,3 @@ The CSS uses CSS Grid and Flexbox for modern layouts. Key color variables:
    - Check if server is running: `http://localhost:3000`
    - Clear browser cache
    - Try incognito/private mode
-
-## 📝 License
-
-MIT License - Feel free to use this project for educational purposes.
-
-## 🤝 Contributing
-
-This is a CSCI-362 Semester Project. Contributions and improvements are welcome!
-
-## 📞 Support
-
-For issues or questions, please check the console logs or create an issue in the project repository.
-
----
-
-**Happy Gaming! 🎮**
