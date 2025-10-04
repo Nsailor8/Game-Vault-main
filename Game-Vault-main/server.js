@@ -21,82 +21,34 @@ const {
     FriendsList, 
     WishlistManager, 
     ReviewManager, 
-    AdminManager, 
-    DatabaseManager 
+    AdminManager
 } = require('./profile.js');
 
 // Initialize managers
 const profileManager = new ProfileManager();
 const adminManager = new AdminManager();
 
-// Load sample data
-function loadSampleData() {
-    // Create sample admin
-    adminManager.createAdmin('admin', 'admin@gamevault.com', 'admin123');
-    
-    // Create sample users
-    profileManager.signUp('GameMaster2024', 'gamemaster@example.com', 'password123', {
-        favoriteGenres: ['RPG', 'Action', 'Indie'],
-        preferredPlatforms: ['Steam', 'Nintendo'],
-        playStyle: 'hardcore',
-        gamingGoals: ['Complete all achievements', 'Try new genres']
-    });
+// Wait for database initialization
+let isDatabaseReady = false;
 
-    profileManager.signUp('CasualGamer', 'casual@example.com', 'password456', {
-        favoriteGenres: ['Puzzle', 'Platformer'],
-        preferredPlatforms: ['Nintendo'],
-        playStyle: 'casual',
-        gamingGoals: ['Have fun', 'Relax after work']
-    });
-
-    // Add some sample achievements
-    profileManager.login('GameMaster2024', 'password123');
-    profileManager.addAchievementToCurrentProfile({
-        name: 'First Steps',
-        description: 'Created your first profile',
-        rarity: 'common'
-    });
-
-    profileManager.addAchievementToCurrentProfile({
-        name: 'Collection Starter',
-        description: 'Added your first game to the library',
-        rarity: 'common'
-    });
-
-    // Add sample friends
-    const friendsList = profileManager.getFriendsList();
-    if (friendsList) {
-        friendsList.addFriend('user2', 'GamerFriend');
-        friendsList.sendFriendRequest('user3', 'BestGamer');
-    }
-
-    // Add sample wishlist
-    const wishlistManager = profileManager.getWishlistManager();
-    if (wishlistManager) {
-        wishlistManager.createWishlist('Must Play Games', 'Games I really want to play');
-        wishlistManager.addGameToWishlist(1, { id: 1, title: 'Cyberpunk 2077', platform: 'Steam' });
-        wishlistManager.addGameToWishlist(1, { id: 2, title: 'Baldur\'s Gate 3', platform: 'Steam' });
-    }
-
-    // Add sample reviews
-    const reviewManager = profileManager.getReviewManager();
-    if (reviewManager) {
-        reviewManager.addReview(1, 'The Witcher 3', 5, 'Amazing RPG with incredible storytelling and world-building!', ['RPG', 'Fantasy', 'Open World']);
-        reviewManager.addReview(2, 'Hades', 4, 'Great roguelike with fantastic art and music.', ['Roguelike', 'Action', 'Indie']);
-    }
-}
+// Sample data loading has been completely removed - create your own users!
 
 // API Routes
 
 // Authentication routes
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body;
     
     if (!username || !password) {
         return res.status(400).json({ error: 'Username and password are required' });
     }
 
-    const user = profileManager.login(username, password);
+    // Check if database is ready
+    if (!profileManager.isInitialized) {
+        return res.status(503).json({ error: 'Database not ready yet, please try again' });
+    }
+
+    const user = await profileManager.login(username, password);
     if (user) {
         res.json({ 
             success: true, 
@@ -115,29 +67,56 @@ app.post('/api/auth/login', (req, res) => {
     }
 });
 
-app.post('/api/auth/signup', (req, res) => {
+app.post('/api/auth/signup', async (req, res) => {
     const { username, email, password, gamingPreferences } = req.body;
     
     if (!username || !email || !password) {
         return res.status(400).json({ error: 'Username, email, and password are required' });
     }
 
-    const user = profileManager.signUp(username, email, password, gamingPreferences || {});
-    if (user) {
-        res.json({ 
-            success: true, 
-            user: {
-                username: user.username,
-                email: user.email,
-                joinDate: user.joinDate,
-                bio: user.bio,
-                gamingPreferences: user.gamingPreferences,
-                statistics: user.statistics,
-                achievements: user.achievements
-            }
-        });
-    } else {
-        res.status(400).json({ error: 'Username already exists' });
+    // Check if database is ready
+    if (!profileManager.isInitialized) {
+        return res.status(503).json({ error: 'Database not ready yet, please try again' });
+    }
+
+    try {
+        const user = await profileManager.signUp(username, email, password, gamingPreferences || {});
+        if (user) {
+            res.json({ 
+                success: true, 
+                user: {
+                    username: user.username,
+                    email: user.email,
+                    joinDate: user.joinDate,
+                    bio: user.bio,
+                    gamingPreferences: user.gamingPreferences,
+                    statistics: user.statistics,
+                    achievements: user.achievements
+                }
+            });
+        } else {
+            res.status(400).json({ error: 'Username already exists' });
+        }
+    } catch (error) {
+        console.error('Error during signup:', error);
+        
+        // Handle validation errors specifically
+        if (error.name === 'SequelizeValidationError') {
+            const validationErrors = error.errors.map(err => err.message).join(', ');
+            return res.status(400).json({ 
+                error: 'Validation failed', 
+                details: validationErrors 
+            });
+        }
+        
+        // Handle unique constraint errors (username/email already exists)
+        if (error.name === 'SequelizeUniqueConstraintError') {
+            return res.status(400).json({ 
+                error: 'Username or email already exists' 
+            });
+        }
+        
+        res.status(500).json({ error: 'Internal server error during signup' });
     }
 });
 
@@ -161,12 +140,17 @@ app.get('/api/profile/:username', (req, res) => {
     }
 });
 
-app.put('/api/profile/:username', (req, res) => {
+app.put('/api/profile/:username', async (req, res) => {
     const { username } = req.params;
     const updates = req.body;
     
+    // Check if database is ready
+    if (!profileManager.isInitialized) {
+        return res.status(503).json({ error: 'Database not ready yet, please try again' });
+    }
+    
     profileManager.loadProfile(username);
-    const success = profileManager.updateCurrentProfile(updates);
+    const success = await profileManager.updateCurrentProfile(updates);
     
     if (success) {
         res.json({ success: true, message: 'Profile updated successfully' });
@@ -306,15 +290,33 @@ app.use((req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`🎮 Game Vault Profile System running on http://localhost:${PORT}`);
     console.log(`📊 Admin panel available at http://localhost:${PORT}`);
-    console.log(`🔑 Sample admin credentials: admin / admin123`);
-    console.log(`👤 Sample user credentials: GameMaster2024 / password123`);
+    console.log(`✅ Server ready - create your own users!`);
     
-    // Load sample data
-    loadSampleData();
-    console.log(`✅ Sample data loaded successfully!`);
+    // Wait for database initialization
+    console.log('🔄 Waiting for database initialization...');
+    
+    // Check database status every 100ms until ready
+    const checkDatabase = setInterval(() => {
+        if (profileManager.isInitialized) {
+            clearInterval(checkDatabase);
+            isDatabaseReady = true;
+            console.log('✅ Database connection established!');
+            
+            // Sample data loading disabled - create your own users!
+            console.log(`✅ Database ready for new users!`);
+        }
+    }, 100);
+    
+    // Timeout after 10 seconds
+    setTimeout(() => {
+        if (!isDatabaseReady) {
+            clearInterval(checkDatabase);
+            console.error('❌ Database initialization timeout. Server running with limited functionality.');
+        }
+    }, 10000);
 });
 
 module.exports = app;

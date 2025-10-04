@@ -48,8 +48,6 @@ class LoginScreen {
 // Web Application JavaScript
 class GameVaultApp {
     constructor() {
-        this.profileManager = new ProfileManager();
-        this.adminManager = new AdminManager();
         this.loginScreen = new LoginScreen();
         this.currentUser = null;
         this.init();
@@ -57,9 +55,9 @@ class GameVaultApp {
 
     init() {
         this.setupEventListeners();
+        this.resetUI(); // Initialize UI state
         this.loginScreen.show();
         this.loginScreen.resetToInitialState();
-        this.loadSampleData();
     }
 
     setupEventListeners() {
@@ -152,6 +150,11 @@ class GameVaultApp {
             this.handleLogout();
         });
 
+        // Login button for guests (in profile)
+        document.getElementById('loginBtnProfile').addEventListener('click', () => {
+            this.showLoginModal();
+        });
+
         // Modal close buttons
         document.querySelectorAll('.close').forEach(closeBtn => {
             closeBtn.addEventListener('click', (e) => {
@@ -172,25 +175,6 @@ class GameVaultApp {
         });
     }
 
-    loadSampleData() {
-        // Create sample admin
-        this.adminManager.createAdmin('admin', 'admin@gamevault.com', 'admin123');
-        
-        // Create sample users
-        this.profileManager.signUp('GameMaster2024', 'gamemaster@example.com', 'password123', {
-            favoriteGenres: ['RPG', 'Action', 'Indie'],
-            preferredPlatforms: ['Steam', 'Nintendo'],
-            playStyle: 'hardcore',
-            gamingGoals: ['Complete all achievements', 'Try new genres']
-        });
-
-        this.profileManager.signUp('CasualGamer', 'casual@example.com', 'password456', {
-            favoriteGenres: ['Puzzle', 'Platformer'],
-            preferredPlatforms: ['Nintendo'],
-            playStyle: 'casual',
-            gamingGoals: ['Have fun', 'Relax after work']
-        });
-    }
 
     closeModal(modal) {
         modal.style.display = 'none';
@@ -286,16 +270,21 @@ class GameVaultApp {
     handleLogout() {
         // Clear current user
         this.currentUser = null;
-        this.profileManager.currentProfile = null;
         
-        // Hide logout button
-        document.getElementById('logoutBtn').style.display = 'none';
+        // Reset UI elements
+        this.resetUI();
         
         // Show login screen in initial state
         this.loginScreen.show();
         this.loginScreen.resetToInitialState();
         
         console.log('User logged out successfully');
+    }
+
+    showLoginModal() {
+        // Show the login modal
+        this.loginScreen.show();
+        this.loginScreen.resetToInitialState();
     }
 
     handleGuestLogin() {
@@ -341,14 +330,32 @@ class GameVaultApp {
         console.log('Guest user logged in successfully');
     }
 
-    updateUI() {
-        if (!this.currentUser) return;
+    resetUI() {
+        // Hide all action buttons
+        document.getElementById('logoutBtn').style.display = 'none';
+        document.getElementById('loginBtnProfile').style.display = 'none';
+        
+        // Reset profile info
+        document.getElementById('profileUsername').textContent = 'Username';
+        document.getElementById('profileEmail').textContent = 'email@example.com';
+        document.getElementById('profileJoinDate').textContent = 'Joined: Loading...';
+    }
 
-        // Show logout button only for registered users, not guests
-        if (!this.currentUser.isGuest) {
-            document.getElementById('logoutBtn').style.display = 'inline-block';
-        } else {
+    updateUI() {
+        if (!this.currentUser) {
+            this.resetUI();
+            return;
+        }
+
+        // Show appropriate buttons based on user type
+        if (this.currentUser.isGuest) {
+            // Guest user - show login button, hide logout
             document.getElementById('logoutBtn').style.display = 'none';
+            document.getElementById('loginBtnProfile').style.display = 'inline-block';
+        } else {
+            // Registered user - show logout button, hide login
+            document.getElementById('logoutBtn').style.display = 'inline-block';
+            document.getElementById('loginBtnProfile').style.display = 'none';
         }
 
         // Update profile section
@@ -410,129 +417,144 @@ class GameVaultApp {
     }
 
     updateFriends() {
-        const friendsList = this.profileManager.getFriendsList();
-        const container = document.getElementById('friendsList');
-        
-        if (!friendsList) {
-            container.innerHTML = '<div class="empty-state"><i class="fas fa-users"></i><h3>No Friends</h3><p>Add some friends to get started!</p></div>';
+        if (!this.currentUser) {
             return;
         }
 
-        const friends = friendsList.getFriendsList();
-        container.innerHTML = '';
+        // Call the server API to get friends list
+        fetch(`/api/friends/${this.currentUser.username}`)
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('friendsList');
+            const friends = data.friends || [];
+            const pendingRequests = data.pendingRequests || [];
 
-        if (friends.length === 0) {
-            container.innerHTML = '<div class="empty-state"><i class="fas fa-users"></i><h3>No Friends</h3><p>Add some friends to get started!</p></div>';
-            return;
-        }
+            container.innerHTML = '';
 
-        friends.forEach(friend => {
-            const friendItem = document.createElement('div');
-            friendItem.className = 'friend-item';
-            friendItem.innerHTML = `
-                <div>
-                    <strong>${friend.username}</strong>
-                    <br>
-                    <small>Added: ${new Date(friend.addedDate).toLocaleDateString()}</small>
-                </div>
-                <button class="btn btn-danger" onclick="app.removeFriend('${friend.username}')">Remove</button>
-            `;
-            container.appendChild(friendItem);
-        });
+            if (friends.length === 0) {
+                container.innerHTML = '<div class="empty-state"><i class="fas fa-users"></i><h3>No Friends</h3><p>Add some friends to get started!</p></div>';
+            } else {
+                friends.forEach(friend => {
+                    const friendItem = document.createElement('div');
+                    friendItem.className = 'friend-item';
+                    friendItem.innerHTML = `
+                        <div>
+                            <strong>${friend.username}</strong>
+                            <br>
+                            <small>Added: ${new Date(friend.addedDate).toLocaleDateString()}</small>
+                        </div>
+                        <button class="btn btn-danger" onclick="app.removeFriend('${friend.username}')">Remove</button>
+                    `;
+                    container.appendChild(friendItem);
+                });
+            }
 
-        // Update pending requests
-        const pendingContainer = document.getElementById('pendingRequests');
-        const pendingRequests = friendsList.getPendingRequests();
-        
-        if (pendingRequests.length === 0) {
-            pendingContainer.innerHTML = '<div class="empty-state"><i class="fas fa-clock"></i><h3>No Pending Requests</h3></div>';
-            return;
-        }
-
-        pendingContainer.innerHTML = '';
-        pendingRequests.forEach(request => {
-            const requestItem = document.createElement('div');
-            requestItem.className = 'friend-item';
-            requestItem.innerHTML = `
-                <div>
-                    <strong>${request.targetUsername}</strong>
-                    <br>
-                    <small>Sent: ${new Date(request.sentDate).toLocaleDateString()}</small>
-                </div>
-                <button class="btn btn-primary" onclick="app.acceptFriendRequest('${request.targetId}')">Accept</button>
-            `;
-            pendingContainer.appendChild(requestItem);
+            // Update pending requests
+            const pendingContainer = document.getElementById('pendingRequests');
+            
+            if (pendingRequests.length === 0) {
+                pendingContainer.innerHTML = '<div class="empty-state"><i class="fas fa-clock"></i><h3>No Pending Requests</h3></div>';
+            } else {
+                pendingContainer.innerHTML = '';
+                pendingRequests.forEach(request => {
+                    const requestItem = document.createElement('div');
+                    requestItem.className = 'friend-item';
+                    requestItem.innerHTML = `
+                        <div>
+                            <strong>${request.targetUsername}</strong>
+                            <br>
+                            <small>Sent: ${new Date(request.sentDate).toLocaleDateString()}</small>
+                        </div>
+                        <button class="btn btn-primary" onclick="app.acceptFriendRequest('${request.targetId}')">Accept</button>
+                    `;
+                    pendingContainer.appendChild(requestItem);
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching friends:', error);
         });
     }
 
     updateWishlists() {
-        const wishlistManager = this.profileManager.getWishlistManager();
-        const container = document.getElementById('wishlistsList');
-        
-        if (!wishlistManager) {
-            container.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>No Wishlists</h3><p>Create your first wishlist!</p></div>';
+        if (!this.currentUser) {
             return;
         }
 
-        const wishlists = wishlistManager.getWishlists();
-        container.innerHTML = '';
+        // Call the server API to get wishlists
+        fetch(`/api/wishlists/${this.currentUser.username}`)
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('wishlistsList');
+            const wishlists = data.wishlists || [];
+            
+            container.innerHTML = '';
 
-        if (wishlists.length === 0) {
-            container.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>No Wishlists</h3><p>Create your first wishlist!</p></div>';
-            return;
-        }
-
-        wishlists.forEach(wishlist => {
-            const wishlistItem = document.createElement('div');
-            wishlistItem.className = 'wishlist-item';
-            wishlistItem.innerHTML = `
-                <div>
-                    <strong>${wishlist.name}</strong>
-                    <br>
-                    <small>${wishlist.gameCount} games • Created: ${new Date(wishlist.createdDate).toLocaleDateString()}</small>
-                </div>
-                <button class="btn btn-primary" onclick="app.selectWishlist(${wishlist.id})">View</button>
-            `;
-            container.appendChild(wishlistItem);
+            if (wishlists.length === 0) {
+                container.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>No Wishlists</h3><p>Create your first wishlist!</p></div>';
+            } else {
+                wishlists.forEach(wishlist => {
+                    const wishlistItem = document.createElement('div');
+                    wishlistItem.className = 'wishlist-item';
+                    wishlistItem.innerHTML = `
+                        <div>
+                            <strong>${wishlist.name}</strong>
+                            <br>
+                            <small>${wishlist.gameCount || 0} games • Created: ${new Date(wishlist.createdDate).toLocaleDateString()}</small>
+                        </div>
+                        <button class="btn btn-primary" onclick="app.selectWishlist(${wishlist.id})">View</button>
+                    `;
+                    container.appendChild(wishlistItem);
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching wishlists:', error);
         });
     }
 
     updateReviews() {
-        const reviewManager = this.profileManager.getReviewManager();
-        const container = document.getElementById('reviewsList');
-        
-        if (!reviewManager) {
-            container.innerHTML = '<div class="empty-state"><i class="fas fa-star"></i><h3>No Reviews</h3><p>Write your first review!</p></div>';
+        if (!this.currentUser) {
             return;
         }
 
-        const reviews = reviewManager.getReviews();
-        document.getElementById('totalReviews').textContent = reviews.length;
-        document.getElementById('avgReviewRating').textContent = reviewManager.getAverageRating();
+        // Call the server API to get reviews
+        fetch(`/api/reviews/${this.currentUser.username}`)
+        .then(response => response.json())
+        .then(data => {
+            const container = document.getElementById('reviewsList');
+            const reviews = data.reviews || [];
+            const averageRating = data.averageRating || 0;
 
-        container.innerHTML = '';
+            document.getElementById('totalReviews').textContent = reviews.length;
+            document.getElementById('avgReviewRating').textContent = averageRating;
 
-        if (reviews.length === 0) {
-            container.innerHTML = '<div class="empty-state"><i class="fas fa-star"></i><h3>No Reviews</h3><p>Write your first review!</p></div>';
-            return;
-        }
+            container.innerHTML = '';
 
-        reviews.forEach(review => {
-            const reviewItem = document.createElement('div');
-            reviewItem.className = 'review-item';
-            reviewItem.innerHTML = `
-                <div>
-                    <strong>${review.gameTitle}</strong>
-                    <br>
-                    <div class="rating">
-                        ${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}
-                    </div>
-                    <p>${review.reviewText}</p>
-                    <small>${new Date(review.createdDate).toLocaleDateString()}</small>
-                </div>
-                <button class="btn btn-danger" onclick="app.deleteReview(${review.id})">Delete</button>
-            `;
-            container.appendChild(reviewItem);
+            if (reviews.length === 0) {
+                container.innerHTML = '<div class="empty-state"><i class="fas fa-star"></i><h3>No Reviews</h3><p>Write your first review!</p></div>';
+            } else {
+                reviews.forEach(review => {
+                    const reviewItem = document.createElement('div');
+                    reviewItem.className = 'review-item';
+                    reviewItem.innerHTML = `
+                        <div>
+                            <strong>${review.gameTitle}</strong>
+                            <br>
+                            <div class="rating">
+                                ${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}
+                            </div>
+                            <p>${review.reviewText}</p>
+                            <small>${new Date(review.createdDate).toLocaleDateString()}</small>
+                        </div>
+                        <button class="btn btn-danger" onclick="app.deleteReview(${review.id})">Delete</button>
+                    `;
+                    container.appendChild(reviewItem);
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching reviews:', error);
         });
     }
 
@@ -569,17 +591,40 @@ class GameVaultApp {
         const preferredPlatforms = document.getElementById('editPreferredPlatforms').value.split(',').map(p => p.trim()).filter(p => p);
         const playStyle = document.getElementById('editPlayStyle').value;
 
-        this.profileManager.updateCurrentProfile({
+        const updates = {
             bio,
             gamingPreferences: {
                 favoriteGenres,
                 preferredPlatforms,
                 playStyle
             }
-        });
+        };
 
-        this.closeModal(document.getElementById('editProfileModal'));
-        this.updateUI();
+        // Call the server API to update profile
+        fetch(`/api/profile/${this.currentUser.username}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(updates)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Update local user data
+                this.currentUser.bio = bio;
+                this.currentUser.gamingPreferences = updates.gamingPreferences;
+                
+                this.closeModal(document.getElementById('editProfileModal'));
+                this.updateUI();
+            } else {
+                alert(data.error || 'Failed to update profile');
+            }
+        })
+        .catch(error => {
+            console.error('Error updating profile:', error);
+            alert('Error updating profile. Please try again.');
+        });
     }
 
     showAddFriendModal() {
@@ -723,50 +768,75 @@ class GameVaultApp {
             return;
         }
 
-        const admin = this.adminManager.adminLogin(username, password);
-        if (admin) {
-            this.closeModal(document.getElementById('adminLoginModal'));
-            this.updateAdminPanel();
-        } else {
-            alert('Invalid admin credentials');
-        }
+        // Call the server API to login as admin
+        fetch('/api/admin/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                username,
+                password
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.closeModal(document.getElementById('adminLoginModal'));
+                this.updateAdminPanel();
+            } else {
+                alert(data.error || 'Invalid admin credentials');
+            }
+        })
+        .catch(error => {
+            console.error('Error logging in as admin:', error);
+            alert('Error logging in as admin. Please try again.');
+        });
     }
 
     updateAdminPanel() {
-        const stats = this.adminManager.getUserStatistics(this.profileManager);
-        const container = document.getElementById('adminStats');
-        
-        container.innerHTML = `
-            <div class="stat-card">
-                <i class="fas fa-users"></i>
-                <h3>${stats.totalUsers}</h3>
-                <p>Total Users</p>
-            </div>
-            <div class="stat-card">
-                <i class="fas fa-user-check"></i>
-                <h3>${stats.activeUsers}</h3>
-                <p>Active Users</p>
-            </div>
-            <div class="stat-card">
-                <i class="fas fa-user-plus"></i>
-                <h3>${stats.newUsersThisMonth}</h3>
-                <p>New This Month</p>
-            </div>
-        `;
-
-        const logs = this.adminManager.getSystemLogs();
-        const logsContainer = document.getElementById('systemLogs');
-        
-        logsContainer.innerHTML = '';
-        logs.slice(-10).reverse().forEach(log => {
-            const logItem = document.createElement('div');
-            logItem.className = 'log-item';
-            logItem.innerHTML = `
-                <strong>${log.action}</strong>: ${log.details}
-                <br>
-                <small>${new Date(log.timestamp).toLocaleString()}</small>
+        // Call the server API to get admin statistics
+        fetch('/api/admin/stats')
+        .then(response => response.json())
+        .then(data => {
+            const stats = data.userStats;
+            const container = document.getElementById('adminStats');
+            
+            container.innerHTML = `
+                <div class="stat-card">
+                    <i class="fas fa-users"></i>
+                    <h3>${stats.totalUsers || 0}</h3>
+                    <p>Total Users</p>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-user-check"></i>
+                    <h3>${stats.activeUsers || 0}</h3>
+                    <p>Active Users</p>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-user-plus"></i>
+                    <h3>${stats.newUsersThisMonth || 0}</h3>
+                    <p>New This Month</p>
+                </div>
             `;
-            logsContainer.appendChild(logItem);
+
+            const logs = data.systemLogs || [];
+            const logsContainer = document.getElementById('systemLogs');
+            
+            logsContainer.innerHTML = '';
+            logs.slice(-10).reverse().forEach(log => {
+                const logItem = document.createElement('div');
+                logItem.className = 'log-item';
+                logItem.innerHTML = `
+                    <strong>${log.action}</strong>: ${log.details}
+                    <br>
+                    <small>${new Date(log.timestamp).toLocaleString()}</small>
+                `;
+                logsContainer.appendChild(logItem);
+            });
+        })
+        .catch(error => {
+            console.error('Error fetching admin stats:', error);
         });
     }
 }

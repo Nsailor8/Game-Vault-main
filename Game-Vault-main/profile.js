@@ -3,7 +3,7 @@ class UserProfile {
   constructor(username, email, password, joinDate, gamingPreferences = {}) {
     this.username = username;
     this.email = email;
-    this.password = password; // In real app, this would be hashed
+    this.password = password; // This will be hashed when saved to database
     this.joinDate = joinDate;
     this.isActive = true;
     this.lastLogin = null;
@@ -35,8 +35,16 @@ class UserProfile {
     };
   }
 
-  authenticate(password) {
-    return this.password === password && this.isActive;
+  async authenticate(password) {
+    if (!this.isActive) return false;
+    
+    // If password is already hashed (from database), compare with bcrypt
+    if (this.password.startsWith('$2b$')) {
+      return await bcrypt.compare(password, this.password);
+    }
+    
+    // If password is plain text (for backward compatibility), compare directly
+    return this.password === password;
   }
 
   updatePassword(oldPassword, newPassword) {
@@ -63,8 +71,8 @@ class UserProfile {
     console.log('Profile updated successfully!');
   }
 
-  login(password) {
-    if (this.authenticate(password)) {
+  async login(password) {
+    if (await this.authenticate(password)) {
       this.lastLogin = new Date().toISOString();
       console.log(`Welcome back, ${this.username}!`);
       return true;
@@ -444,129 +452,9 @@ class AdminManager {
   }
 }
 
-// Database Manager Class (Simplified)
-class DatabaseManager {
-  constructor() {
-    this.dataFile = 'data/users.json';
-    this.data = {
-      users: [],
-      games: [],
-      reviews: [],
-      friendships: [],
-      wishlists: []
-    };
-    this.loadData();
-  }
-
-  saveUser(user) {
-    const existingIndex = this.data.users.findIndex(u => u.username === user.username);
-    if (existingIndex !== -1) {
-      this.data.users[existingIndex] = user;
-    } else {
-      this.data.users.push(user);
-    }
-    this.saveData();
-    console.log(`User ${user.username} saved to database.`);
-  }
-
-  loadUser(username) {
-    return this.data.users.find(u => u.username === username);
-  }
-
-  getAllUsers() {
-    return [...this.data.users];
-  }
-
-  deleteUser(username) {
-    const index = this.data.users.findIndex(u => u.username === username);
-    if (index !== -1) {
-      this.data.users.splice(index, 1);
-      this.saveData();
-      console.log(`User ${username} deleted from database.`);
-      return true;
-    }
-    return false;
-  }
-
-  exportData() {
-    return JSON.stringify(this.data, null, 2);
-  }
-
-  importData(jsonData) {
-    try {
-      this.data = JSON.parse(jsonData);
-      console.log('Data imported successfully!');
-      return true;
-    } catch (error) {
-      console.log('Error importing data:', error.message);
-      return false;
-    }
-  }
-
-  // File-based persistence methods (Node.js only)
-  loadData() {
-    // Only run file operations in Node.js environment
-    if (typeof window === 'undefined' && typeof require !== 'undefined') {
-      const fs = require('fs');
-      const path = require('path');
-      
-      try {
-        // Create data directory if it doesn't exist
-        const dataDir = path.dirname(this.dataFile);
-        if (!fs.existsSync(dataDir)) {
-          fs.mkdirSync(dataDir, { recursive: true });
-        }
-
-        // Load data from file if it exists
-        if (fs.existsSync(this.dataFile)) {
-          const fileData = fs.readFileSync(this.dataFile, 'utf8');
-          this.data = JSON.parse(fileData);
-          console.log(`Loaded ${this.data.users.length} users from database file.`);
-        } else {
-          console.log('No existing database file found, starting with empty database.');
-        }
-      } catch (error) {
-        console.log('Error loading data from file:', error.message);
-        console.log('Starting with empty database.');
-      }
-    } else {
-      // Browser environment - use localStorage
-      const savedData = localStorage.getItem('gameVaultData');
-      if (savedData) {
-        this.data = JSON.parse(savedData);
-        console.log(`Loaded ${this.data.users.length} users from localStorage.`);
-      } else {
-        console.log('No existing data found, starting with empty database.');
-      }
-    }
-  }
-
-  saveData() {
-    // Only run file operations in Node.js environment
-    if (typeof window === 'undefined' && typeof require !== 'undefined') {
-      const fs = require('fs');
-      const path = require('path');
-      
-      try {
-        // Create data directory if it doesn't exist
-        const dataDir = path.dirname(this.dataFile);
-        if (!fs.existsSync(dataDir)) {
-          fs.mkdirSync(dataDir, { recursive: true });
-        }
-
-        // Save data to file
-        fs.writeFileSync(this.dataFile, JSON.stringify(this.data, null, 2));
-        console.log(`Database saved with ${this.data.users.length} users.`);
-      } catch (error) {
-        console.log('Error saving data to file:', error.message);
-      }
-    } else {
-      // Browser environment - use localStorage
-      localStorage.setItem('gameVaultData', JSON.stringify(this.data));
-      console.log(`Data saved with ${this.data.users.length} users.`);
-    }
-  }
-}
+// Import the real DatabaseManager
+const RealDatabaseManager = require('./database/DatabaseManager');
+const bcrypt = require('bcrypt');
 
 // Profile Manager Class
 class ProfileManager {
@@ -576,53 +464,93 @@ class ProfileManager {
     this.friendsLists = new Map();
     this.wishlistManagers = new Map();
     this.reviewManagers = new Map();
-    this.databaseManager = new DatabaseManager();
+    this.databaseManager = new RealDatabaseManager();
+    this.isInitialized = false;
     
-    // Load existing users from database
-    this.loadExistingUsers();
+    // Initialize database connection
+    this.initializeDatabase();
   }
 
-  loadExistingUsers() {
-    const existingUsers = this.databaseManager.getAllUsers();
-    existingUsers.forEach(userData => {
-      // Recreate UserProfile objects from saved data
-      const profile = new UserProfile(
-        userData.username,
-        userData.email,
-        userData.password,
-        userData.joinDate,
-        userData.gamingPreferences
-      );
-      
-      // Restore additional properties
-      profile.bio = userData.bio || '';
-      profile.statistics = userData.statistics || profile.statistics;
-      profile.achievements = userData.achievements || [];
-      profile.isActive = userData.isActive !== undefined ? userData.isActive : true;
-      profile.lastLogin = userData.lastLogin || null;
-      profile.privacySettings = userData.privacySettings || profile.privacySettings;
-      
-      this.profiles.push(profile);
-      
-      // Initialize related managers
-      this.friendsLists.set(userData.username, new FriendsList(userData.username));
-      this.wishlistManagers.set(userData.username, new WishlistManager(userData.username));
-      this.reviewManagers.set(userData.username, new ReviewManager(userData.username));
-    });
-    
-    if (existingUsers.length > 0) {
-      console.log(`Loaded ${existingUsers.length} existing users from database.`);
+  async initializeDatabase() {
+    try {
+      const connected = await this.databaseManager.initialize();
+      if (connected) {
+        this.isInitialized = true;
+        console.log('✅ Database initialized for ProfileManager');
+        // Load existing users from database
+        await this.loadExistingUsers();
+      } else {
+        console.error('❌ Failed to initialize database connection');
+        // Fallback to empty state
+        this.isInitialized = true;
+      }
+    } catch (error) {
+      console.error('❌ Database initialization error:', error);
+      this.isInitialized = true;
     }
   }
 
-  createProfile(username, email, password, gamingPreferences = {}) {
+  async loadExistingUsers() {
+    try {
+      const existingUsers = await this.databaseManager.getAllUsers();
+      
+      for (const userData of existingUsers) {
+        // Convert database format to UserProfile format
+        const profile = new UserProfile(
+          userData.username,
+          userData.email,
+          userData.password_hash,
+          userData.join_date,
+          userData.gaming_preferences || {}
+        );
+        
+        // Restore additional properties
+        profile.bio = userData.bio || '';
+        profile.statistics = userData.statistics || profile.statistics;
+        profile.achievements = []; // Will be loaded separately if needed
+        profile.isActive = userData.is_active !== undefined ? userData.is_active : true;
+        profile.lastLogin = userData.last_login || null;
+        profile.privacySettings = {
+          profileVisibility: 'public',
+          showEmail: false,
+          showStatistics: true,
+          showFriendsList: true
+        };
+        
+        this.profiles.push(profile);
+        
+        // Initialize related managers
+        this.friendsLists.set(userData.username, new FriendsList(userData.username));
+        this.wishlistManagers.set(userData.username, new WishlistManager(userData.username));
+        this.reviewManagers.set(userData.username, new ReviewManager(userData.username));
+      }
+      
+      if (existingUsers.length > 0) {
+        console.log(`Loaded ${existingUsers.length} existing users from database.`);
+      }
+    } catch (error) {
+      console.error('Error loading existing users:', error);
+    }
+  }
+
+  async createProfile(username, email, password, gamingPreferences = {}) {
+    // Check if database is initialized
+    if (!this.isInitialized) {
+      console.log('Database not initialized yet, please wait...');
+      return false;
+    }
+
     const existingProfile = this.profiles.find(p => p.username === username);
     if (existingProfile) {
       console.log(`Profile with username "${username}" already exists!`);
       return false;
     }
 
-    const profile = new UserProfile(username, email, password, new Date().toISOString(), gamingPreferences);
+    // Hash the password before creating profile
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+    
+    const profile = new UserProfile(username, email, hashedPassword, new Date().toISOString(), gamingPreferences);
     this.profiles.push(profile);
     this.currentProfile = profile;
     
@@ -632,25 +560,46 @@ class ProfileManager {
     this.reviewManagers.set(username, new ReviewManager(username));
     
     // Save to database
-    this.databaseManager.saveUser(profile);
-    
-    console.log(`Profile created successfully for ${username}!`);
-    return profile;
+    try {
+      await this.databaseManager.saveUser(profile);
+      console.log(`Profile created successfully for ${username}!`);
+      return profile;
+    } catch (error) {
+      console.error('Error saving profile to database:', error);
+      // Remove from local array if database save failed
+      const index = this.profiles.findIndex(p => p.username === username);
+      if (index !== -1) {
+        this.profiles.splice(index, 1);
+      }
+      return false;
+    }
   }
 
-  signUp(username, email, password, gamingPreferences = {}) {
-    return this.createProfile(username, email, password, gamingPreferences);
+  async signUp(username, email, password, gamingPreferences = {}) {
+    return await this.createProfile(username, email, password, gamingPreferences);
   }
 
-  login(username, password) {
+  async login(username, password) {
     const profile = this.profiles.find(p => p.username === username);
     if (profile) {
-      if (profile.login(password)) {
+      if (await profile.login(password)) {
         this.currentProfile = profile;
+        // Update last login in database
+        this.updateLastLogin(username);
         return profile;
       }
     }
     return null;
+  }
+
+  async updateLastLogin(username) {
+    try {
+      await this.databaseManager.updateUser(username, {
+        last_login: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Error updating last login:', error);
+    }
   }
 
   loadProfile(username) {
@@ -669,11 +618,16 @@ class ProfileManager {
     return this.currentProfile;
   }
 
-  updateCurrentProfile(updates) {
+  async updateCurrentProfile(updates) {
     if (this.currentProfile) {
       this.currentProfile.updateProfile(updates);
-      this.databaseManager.saveUser(this.currentProfile);
-      return true;
+      try {
+        await this.databaseManager.saveUser(this.currentProfile);
+        return true;
+      } catch (error) {
+        console.error('Error updating profile in database:', error);
+        return false;
+      }
     } else {
       console.log('No profile loaded. Please create or load a profile first.');
       return false;
@@ -779,98 +733,8 @@ if (typeof module !== 'undefined' && module.exports) {
     FriendsList, 
     WishlistManager, 
     ReviewManager, 
-    AdminManager, 
-    DatabaseManager 
+     AdminManager
   };
 }
 
-// Example Usage (only runs if this file is executed directly)
-if (typeof require !== 'undefined' && require.main === module) {
-  console.log('=== COMPREHENSIVE PROFILE SYSTEM DEMO ===');
-  
-  const profileManager = new ProfileManager();
-  const adminManager = new AdminManager();
-  
-  console.log('\n=== SIGN UP NEW USER ===');
-  const gamingPreferences = {
-    favoriteGenres: ['RPG', 'Action', 'Indie'],
-    preferredPlatforms: ['Steam', 'Nintendo'],
-    playStyle: 'hardcore',
-    gamingGoals: ['Complete all achievements', 'Try new genres', 'Build a diverse collection']
-  };
-
-  profileManager.signUp('GameMaster2024', 'gamemaster@example.com', 'password123', gamingPreferences);
-
-  console.log('\n=== LOGIN WITH EXISTING PROFILE ===');
-  profileManager.login('GameMaster2024', 'password123');
-
-  console.log('\n=== UPDATE PROFILE BIO ===');
-  profileManager.updateCurrentProfile({
-    bio: 'Passionate gamer who loves exploring different worlds and challenging gameplay mechanics. Always looking for the next great adventure!'
-  });
-
-  console.log('\n=== ADD ACHIEVEMENTS ===');
-  profileManager.addAchievementToCurrentProfile({
-    name: 'First Steps',
-    description: 'Created your first profile',
-    rarity: 'common'
-  });
-
-  profileManager.addAchievementToCurrentProfile({
-    name: 'Collection Starter',
-    description: 'Added your first game to the library',
-    rarity: 'common'
-  });
-
-  console.log('\n=== FRIENDS SYSTEM DEMO ===');
-  const friendsList = profileManager.getFriendsList();
-  friendsList.sendFriendRequest('user2', 'GamerFriend');
-  friendsList.addFriend('user3', 'BestGamer');
-  console.log('Friends:', friendsList.getFriendsList());
-
-  console.log('\n=== WISHLIST SYSTEM DEMO ===');
-  const wishlistManager = profileManager.getWishlistManager();
-  wishlistManager.createWishlist('Must Play Games', 'Games I really want to play');
-  wishlistManager.addGameToWishlist(1, { id: 1, title: 'Cyberpunk 2077', platform: 'Steam' });
-  wishlistManager.addGameToWishlist(1, { id: 2, title: 'Baldur\'s Gate 3', platform: 'Steam' });
-  console.log('Wishlists:', wishlistManager.getWishlists());
-
-  console.log('\n=== REVIEW SYSTEM DEMO ===');
-  const reviewManager = profileManager.getReviewManager();
-  reviewManager.addReview(1, 'The Witcher 3', 5, 'Amazing RPG with incredible storytelling and world-building!', ['RPG', 'Fantasy', 'Open World']);
-  reviewManager.addReview(2, 'Hades', 4, 'Great roguelike with fantastic art and music.', ['Roguelike', 'Action', 'Indie']);
-  console.log('Reviews:', reviewManager.getReviews());
-  console.log('Average Rating:', reviewManager.getAverageRating());
-
-  console.log('\n=== IMPORT GAME LIBRARY ===');
-  profileManager.importGameLibrary('Steam', { apiKey: 'demo_key' });
-
-  console.log('\n=== DISPLAY CURRENT PROFILE ===');
-  profileManager.displayCurrentProfile();
-
-  console.log('\n=== ADMIN SYSTEM DEMO ===');
-  adminManager.createAdmin('admin', 'admin@example.com', 'admin123');
-  adminManager.adminLogin('admin', 'admin123');
-  const userStats = adminManager.getUserStatistics(profileManager);
-  console.log('User Statistics:', userStats);
-
-  console.log('\n=== DEMONSTRATE MULTIPLE PROFILES ===');
-  profileManager.signUp('CasualGamer', 'casual@example.com', 'password456', {
-    favoriteGenres: ['Puzzle', 'Platformer'],
-    preferredPlatforms: ['Nintendo'],
-    playStyle: 'casual',
-    gamingGoals: ['Have fun', 'Relax after work']
-  });
-
-  console.log('\n=== SWITCH PROFILES ===');
-  profileManager.login('CasualGamer', 'password456');
-  profileManager.displayCurrentProfile();
-
-  console.log('\n=== SWITCH BACK TO MAIN PROFILE ===');
-  profileManager.login('GameMaster2024', 'password123');
-  profileManager.displayCurrentProfile();
-
-  console.log('\n=== DATABASE EXPORT ===');
-  const exportedData = profileManager.databaseManager.exportData();
-  console.log('Database exported successfully!');
-}
+// Demo functionality has been removed to prevent automatic user creation
