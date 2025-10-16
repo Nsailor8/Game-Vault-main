@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Vault - Profile System</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo"  onclick="window.location.href='index.html'">
+                <i class="fas fa-gamepad"></i>
+                <h1>Game Vault</h1>
+            </div>
+
+            <div class="search-bar">
+                <input type="text" id="gameSearchInput" placeholder="Search games...">
+                <button id="gameSearchBtn"><i class="fas fa-search"></i></button>
+            </div>
+            
+            <nav class="nav">
+                <button class="nav-btn active" data-section="profile">Profile</button>
+                <button class="nav-btn" data-section="friends">Friends</button>
+                <button class="nav-btn" data-section="wishlist">Wishlist</button>
+                <button class="nav-btn" data-section="reviews">Reviews</button>
+                <button class="nav-btn" data-section="admin">Admin</button>
+            </nav>
+        </header>
+
+        <!-- Login/Signup Modal -->
+        <div id="authModal" class="modal">
+            <div class="modal-content auth-modal-content">
+                <div class="auth-container">
+                    <div class="auth-header">
+                        <h2 id="authTitle">Welcome to Game Vault</h2>
+                    </div>
+                    
+                    <div id="loginForm" class="auth-form">
+                        <div class="form-group">
+                            <input type="text" id="loginUsername" placeholder="Username" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="password" id="loginPassword" placeholder="Password" required>
+                        </div>
+                        <div class="form-group">
+                            <button id="loginBtn" class="btn btn-primary btn-full">Login</button>
+                        </div>
+                        <div class="form-group">
+                            <button id="guestBtn" class="btn btn-secondary btn-full">Continue as Guest</button>
+                        </div>
+                        <div class="form-group">
+                            <p class="auth-switch">Don't have an account? <a href="#" id="showSignup">Sign up</a></p>
+                        </div>
+                    </div>
+                    
+                    <div id="signupForm" class="auth-form" style="display: none;">
+                        <div class="form-group">
+                            <input type="text" id="signupUsername" placeholder="Username" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="email" id="signupEmail" placeholder="Email" required>
+                        </div>
+                        <div class="form-group">
+                            <input type="password" id="signupPassword" placeholder="Password" required>
+                        </div>
+                        <div class="form-group">
+                            <select id="playStyle" class="form-select">
+                                <option value="casual">Casual Gamer</option>
+                                <option value="hardcore">Hardcore Gamer</option>
+                                <option value="competitive">Competitive Gamer</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <input type="text" id="favoriteGenres" placeholder="Favorite Genres (comma separated)">
+                        </div>
+                        <div class="form-group">
+                            <input type="text" id="preferredPlatforms" placeholder="Preferred Platforms (comma separated)">
+                        </div>
+                        <div class="form-group">
+                            <button id="signupBtn" class="btn btn-primary btn-full">Sign Up</button>
+                        </div>
+                        <div class="form-group">
+                            <button id="guestBtn" class="btn btn-secondary btn-full">Continue as Guest</button>
+                        </div>
+                        <div class="form-group">
+                            <p class="auth-switch">Already have an account? <a href="#" id="showLogin">Login</a></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Profile Section -->
+            <section id="profileSection" class="content-section active">
+                <div class="profile-header">
+                    <div class="profile-avatar">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                    <div class="profile-info">
+                        <h2 id="profileUsername">Username</h2>
+                        <p id="profileEmail">email@example.com</p>
+                        <p id="profileJoinDate">Joined: Loading...</p>
+                    </div>
+                    <div class="profile-actions">
+                        <button id="editProfileBtn" class="btn btn-secondary">Edit Profile</button>
+                        <button id="logoutBtn" class="btn btn-danger" style="display: none;">Sign Out</button>
+                        <button id="loginBtnProfile" class="btn btn-primary" style="display: none;">Login</button>
+                    </div>
+                </div>
+
+                <div class="profile-stats">
+                    <div class="stat-card">
+                        <i class="fas fa-gamepad"></i>
+                        <h3 id="totalGames">0</h3>
+                        <p>Games Played</p>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-clock"></i>
+                        <h3 id="totalPlaytime">0</h3>
+                        <p>Hours Played</p>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-star"></i>
+                        <h3 id="avgRating">0</h3>
+                        <p>Avg Rating</p>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-trophy"></i>
+                        <h3 id="achievementCount">0</h3>
+                        <p>Achievements</p>
+                    </div>
+                </div>
+
+                <div class="profile-details">
+                    <div class="detail-card">
+                        <h3>Bio</h3>
+                        <p id="profileBio">No bio set</p>
+                    </div>
+                    <div class="detail-card">
+                        <h3>Gaming Preferences</h3>
+                        <div id="gamingPreferences">
+                            <p><strong>Play Style:</strong> <span id="playStyleDisplay">-</span></p>
+                            <p><strong>Favorite Genres:</strong> <span id="favoriteGenresDisplay">-</span></p>
+                            <p><strong>Preferred Platforms:</strong> <span id="preferredPlatformsDisplay">-</span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="achievements-section">
+                    <h3>Achievements</h3>
+                    <div id="achievementsList" class="achievements-grid">
+                        <!-- Achievements will be populated here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Friends Section -->
+            <section id="friendsSection" class="content-section">
+                <div class="section-header">
+                    <h2>Friends</h2>
+                    <button id="addFriendBtn" class="btn btn-primary">Add Friend</button>
+                </div>
+                <div class="friends-content">
+                    <div class="friends-list">
+                        <h3>Friends List</h3>
+                        <div id="friendsList" class="list-container">
+                            <!-- Friends will be populated here -->
+                        </div>
+                    </div>
+                    <div class="pending-requests">
+                        <h3>Pending Requests</h3>
+                        <div id="pendingRequests" class="list-container">
+                            <!-- Pending requests will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Wishlist Section -->
+            <section id="wishlistSection" class="content-section">
+                <div class="section-header">
+                    <h2>Wishlists</h2>
+                    <button id="createWishlistBtn" class="btn btn-primary">Create Wishlist</button>
+                </div>
+                <div class="wishlists-content">
+                    <div class="wishlists-list">
+                        <h3>My Wishlists</h3>
+                        <div id="wishlistsList" class="list-container">
+                            <!-- Wishlists will be populated here -->
+                        </div>
+                    </div>
+                    <div class="wishlist-games">
+                        <h3 id="selectedWishlistTitle">Select a Wishlist</h3>
+                        <div id="wishlistGames" class="list-container">
+                            <!-- Games in selected wishlist will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Reviews Section -->
+            <section id="reviewsSection" class="content-section">
+                <div class="section-header">
+                    <h2>Game Reviews</h2>
+                    <button id="addReviewBtn" class="btn btn-primary">Add Review</button>
+                </div>
+                <div class="reviews-content">
+                    <div class="reviews-stats">
+                        <div class="stat-card">
+                            <h3 id="totalReviews">0</h3>
+                            <p>Total Reviews</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3 id="avgReviewRating">0</h3>
+                            <p>Average Rating Given</p>
+                        </div>
+                    </div>
+                    <div class="reviews-list">
+                        <h3>My Reviews</h3>
+                        <div id="reviewsList" class="list-container">
+                            <!-- Reviews will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Admin Section -->
+            <section id="adminSection" class="content-section">
+                <div class="section-header">
+                    <h2>Admin Panel</h2>
+                    <button id="adminLoginBtn" class="btn btn-primary">Admin Login</button>
+                </div>
+                <div class="admin-content">
+                    <div class="admin-stats">
+                        <h3>System Statistics</h3>
+                        <div id="adminStats" class="stats-grid">
+                            <!-- Admin stats will be populated here -->
+                        </div>
+                    </div>
+                    <div class="system-logs">
+                        <h3>System Logs</h3>
+                        <div id="systemLogs" class="logs-container">
+                            <!-- System logs will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Edit Profile Modal -->
+    <div id="editProfileModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Profile</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="editBio" placeholder="Bio">
+                <input type="text" id="editFavoriteGenres" placeholder="Favorite Genres (comma separated)">
+                <input type="text" id="editPreferredPlatforms" placeholder="Preferred Platforms (comma separated)">
+                <select id="editPlayStyle">
+                    <option value="casual">Casual</option>
+                    <option value="hardcore">Hardcore</option>
+                    <option value="competitive">Competitive</option>
+                </select>
+                <button id="saveProfileBtn" class="btn btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Friend Modal -->
+    <div id="addFriendModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add Friend</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="friendUsername" placeholder="Username">
+                <button id="sendFriendRequestBtn" class="btn btn-primary">Send Friend Request</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Wishlist Modal -->
+    <div id="createWishlistModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Create Wishlist</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="wishlistName" placeholder="Wishlist Name">
+                <textarea id="wishlistDescription" placeholder="Description"></textarea>
+                <button id="createWishlistConfirmBtn" class="btn btn-primary">Create Wishlist</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Review Modal -->
+    <div id="addReviewModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add Review</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="reviewGameTitle" placeholder="Game Title">
+                <select id="reviewRating">
+                    <option value="1">1 Star</option>
+                    <option value="2">2 Stars</option>
+                    <option value="3">3 Stars</option>
+                    <option value="4">4 Stars</option>
+                    <option value="5">5 Stars</option>
+                </select>
+                <textarea id="reviewText" placeholder="Your review..."></textarea>
+                <input type="text" id="reviewTags" placeholder="Tags (comma separated)">
+                <button id="addReviewConfirmBtn" class="btn btn-primary">Add Review</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Login Modal -->
+    <div id="adminLoginModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Admin Login</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="adminUsername" placeholder="Admin Username">
+                <input type="password" id="adminPassword" placeholder="Admin Password">
+                <button id="adminLoginConfirmBtn" class="btn btn-primary">Login</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="profile.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
