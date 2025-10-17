@@ -53,6 +53,7 @@ node server.js
 ```
 Game-Vault-main/
 ├── index.html          # Main web interface
+├── profil.html          # seconday web interface
 ├── styles.css          # Modern CSS styling
 ├── app.js             # Frontend JavaScript
 ├── profile.js         # Core profile system classes
