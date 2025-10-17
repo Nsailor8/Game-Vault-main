@@ -1,0 +1,110 @@
+<!-- Login/Signup Modal -->
+<div id="authModal" class="modal">
+  <div class="modal-content auth-modal-content">
+    <div class="auth-container">
+      <div class="auth-header">
+        <h2 id="authTitle">Welcome to Game Vault</h2>
+        <span class="close">&times;</span>
+      </div>
+      
+      <!-- Login Form -->
+      <div id="loginForm" class="auth-form">
+        <div class="form-group">
+          <input type="text" id="loginUsername" placeholder="Username" required>
+        </div>
+        <div class="form-group">
+          <input type="password" id="loginPassword" placeholder="Password" required>
+        </div>
+        <div class="form-group">
+          <button id="loginBtn" class="btn btn-primary btn-full">Login</button>
+        </div>
+        <div class="form-group">
+          <button id="guestBtnLogin" class="btn btn-secondary btn-full">Continue as Guest</button>
+        </div>
+        <div class="form-group">
+          <p class="auth-switch">Don't have an account? <a href="#" id="showSignup">Sign up</a></p>
+        </div>
+      </div>
+      
+      <!-- Signup Form -->
+      <div id="signupForm" class="auth-form" style="display: none;">
+        <div class="form-group">
+          <input type="text" id="signupUsername" placeholder="Username" required>
+        </div>
+        <div class="form-group">
+          <input type="email" id="signupEmail" placeholder="Email" required>
+        </div>
+        <div class="form-group">
+          <input type="password" id="signupPassword" placeholder="Password" required>
+        </div>
+        <div class="form-group">
+          <select id="playStyle" class="form-select">
+            <option value="casual">Casual Gamer</option>
+            <option value="hardcore">Hardcore Gamer</option>
+            <option value="competitive">Competitive Gamer</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <input type="text" id="favoriteGenres" placeholder="Favorite Genres (comma separated)">
+        </div>
+        <div class="form-group">
+          <input type="text" id="preferredPlatforms" placeholder="Preferred Platforms (comma separated)">
+        </div>
+        <div class="form-group">
+          <button id="signupBtn" class="btn btn-primary btn-full">Sign Up</button>
+        </div>
+        <div class="form-group">
+          <button id="guestBtnSignup" class="btn btn-secondary btn-full">Continue as Guest</button>
+        </div>
+        <div class="form-group">
+          <p class="auth-switch">Already have an account? <a href="#" id="showLogin">Login</a></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Modal functionality
+    const authModal = document.getElementById('authModal');
+    const loginForm = document.getElementById('loginForm');
+    const signupForm = document.getElementById('signupForm');
+    const showSignup = document.getElementById('showSignup');
+    const showLogin = document.getElementById('showLogin');
+    const closeModal = authModal.querySelector('.close');
+
+    // Switch between login/signup
+    showSignup?.addEventListener('click', (e) => {
+      e.preventDefault();
+      loginForm.style.display = 'none';
+      signupForm.style.display = 'block';
+    });
+
+    showLogin?.addEventListener('click', (e) => {
+      e.preventDefault();
+      signupForm.style.display = 'none';
+      loginForm.style.display = 'block';
+    });
+
+    // Close modal
+    closeModal?.addEventListener('click', () => {
+      authModal.style.display = 'none';
+    });
+
+    // Guest buttons
+    document.getElementById('guestBtnLogin')?.addEventListener('click', () => {
+      authModal.style.display = 'none';
+      // Optionally set a flag for guest session
+      console.log('Continuing as Guest (Login Form)');
+    });
+
+    document.getElementById('guestBtnSignup')?.addEventListener('click', () => {
+      authModal.style.display = 'none';
+      console.log('Continuing as Guest (Signup Form)');
+    });
+
+    // Optional: Close modal when clicking outside
+    window.addEventListener('click', (e) => {
+      if(e.target == authModal) authModal.style.display = 'none';
+    });
+  </script>
+</div>

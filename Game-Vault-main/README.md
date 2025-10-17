@@ -13,7 +13,6 @@ A comprehensive profile management system for Game Vault with social features, w
 - **Modern UI**: Beautiful, responsive web interface with gradient design
 - **Real-time Updates**: Dynamic UI updates without page refresh
 
-
 ## Launch Instructions for Anyone
 
 ### Method 1: Command Line (Recommended)
