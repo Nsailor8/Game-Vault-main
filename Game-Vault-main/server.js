@@ -6,52 +6,107 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
+// ===== Middleware =====
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Serve static files
-app.use(express.static(path.join(__dirname, 'client')));
+// Serve static assets (CSS, JS, images) from 'public' folder
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Import the profile system classes
-const { 
-    UserProfile, 
-    ProfileManager, 
-    FriendsList, 
-    WishlistManager, 
-    ReviewManager, 
+// ===== EJS Setup =====
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, './client/views'));
+
+
+// ===== Import Profile System Classes =====
+const {
+    UserProfile,
+    ProfileManager,
+    FriendsList,
+    WishlistManager,
+    ReviewManager,
     AdminManager
 } = require('./client/profile.js');
 
-// Initialize managers
+// ===== Initialize Managers =====
 const profileManager = new ProfileManager();
 const adminManager = new AdminManager();
 
-// Wait for database initialization
 let isDatabaseReady = false;
 
-// Sample data loading has been completely removed - create your own users!
+// ===== EJS Page Routes =====
+app.use((req, res, next) => {
+    res.locals.homeLink = '/';
+    res.locals.profileLink = '/profile';
+    res.locals.friendsLink = '/friends';
 
-// API Routes
+    const pathName = req.path;
+    if (pathName.startsWith('/profile')) res.locals.activePage = 'profile';
+    else if (pathName.startsWith('/friends')) res.locals.activePage = 'friends';
+    else if (pathName.startsWith('/wishlist')) res.locals.activePage = 'wishlist';
+    else if (pathName.startsWith('/reviews')) res.locals.activePage = 'reviews';
+    else if (pathName.startsWith('/admin')) res.locals.activePage = 'admin';
+    else res.locals.activePage = 'home';
+
+    next();
+});
+
+// ===== Render EJS Views =====
+app.get('/', (req, res) => {
+    res.render('index', { trendingGames: [], recentGames: [] });
+});
+
+app.get('/profile', (req, res) => {
+    const userId = req.query.userId || null;
+    let profile;
+
+    if (userId) {
+        const user = profileManager.getUserProfile(userId);
+        profile = user || {};
+    } else {
+        profile = {
+            username: '',
+            email: '',
+            joinDate: '',
+            totalGames: 0,
+            totalPlaytime: 0,
+            avgRating: 0,
+            achievementCount: 0,
+            bio: '',
+            playStyle: '',
+            favoriteGenres: [],
+            preferredPlatforms: [],
+            achievements: []
+        };
+    }
+
+    res.render('profile', { profile });
+});
+
+app.get('/friends', (req, res) => res.render('friends'));
+app.get('/wishlist', (req, res) => res.render('wishlist'));
+app.get('/reviews', (req, res) => res.render('reviews'));
+app.get('/admin', (req, res) => res.render('admin'));
+
+// ===== API Routes =====
 
 // Authentication routes
 app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body;
-    
+
     if (!username || !password) {
         return res.status(400).json({ error: 'Username and password are required' });
     }
 
-    // Check if database is ready
     if (!profileManager.isInitialized) {
         return res.status(503).json({ error: 'Database not ready yet, please try again' });
     }
 
     const user = await profileManager.login(username, password);
     if (user) {
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             user: {
                 username: user.username,
                 email: user.email,
@@ -69,12 +124,11 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/signup', async (req, res) => {
     const { username, email, password, gamingPreferences } = req.body;
-    
+
     if (!username || !email || !password) {
         return res.status(400).json({ error: 'Username, email, and password are required' });
     }
 
-    // Check if database is ready
     if (!profileManager.isInitialized) {
         return res.status(503).json({ error: 'Database not ready yet, please try again' });
     }
@@ -82,8 +136,8 @@ app.post('/api/auth/signup', async (req, res) => {
     try {
         const user = await profileManager.signUp(username, email, password, gamingPreferences || {});
         if (user) {
-            res.json({ 
-                success: true, 
+            res.json({
+                success: true,
                 user: {
                     username: user.username,
                     email: user.email,
@@ -99,23 +153,21 @@ app.post('/api/auth/signup', async (req, res) => {
         }
     } catch (error) {
         console.error('Error during signup:', error);
-        
-        // Handle validation errors specifically
+
         if (error.name === 'SequelizeValidationError') {
             const validationErrors = error.errors.map(err => err.message).join(', ');
-            return res.status(400).json({ 
-                error: 'Validation failed', 
-                details: validationErrors 
+            return res.status(400).json({
+                error: 'Validation failed',
+                details: validationErrors
             });
         }
-        
-        // Handle unique constraint errors (username/email already exists)
+
         if (error.name === 'SequelizeUniqueConstraintError') {
-            return res.status(400).json({ 
-                error: 'Username or email already exists' 
+            return res.status(400).json({
+                error: 'Username or email already exists'
             });
         }
-        
+
         res.status(500).json({ error: 'Internal server error during signup' });
     }
 });
@@ -124,7 +176,7 @@ app.post('/api/auth/signup', async (req, res) => {
 app.get('/api/profile/:username', (req, res) => {
     const { username } = req.params;
     const profile = profileManager.profiles.find(p => p.username === username);
-    
+
     if (profile) {
         res.json({
             username: profile.username,
@@ -143,15 +195,14 @@ app.get('/api/profile/:username', (req, res) => {
 app.put('/api/profile/:username', async (req, res) => {
     const { username } = req.params;
     const updates = req.body;
-    
-    // Check if database is ready
+
     if (!profileManager.isInitialized) {
         return res.status(503).json({ error: 'Database not ready yet, please try again' });
     }
-    
+
     profileManager.loadProfile(username);
     const success = await profileManager.updateCurrentProfile(updates);
-    
+
     if (success) {
         res.json({ success: true, message: 'Profile updated successfully' });
     } else {
@@ -164,7 +215,7 @@ app.get('/api/friends/:username', (req, res) => {
     const { username } = req.params;
     profileManager.loadProfile(username);
     const friendsList = profileManager.getFriendsList();
-    
+
     if (friendsList) {
         res.json({
             friends: friendsList.getFriendsList(),
@@ -178,10 +229,10 @@ app.get('/api/friends/:username', (req, res) => {
 app.post('/api/friends/:username/add', (req, res) => {
     const { username } = req.params;
     const { friendUsername } = req.body;
-    
+
     profileManager.loadProfile(username);
     const friendsList = profileManager.getFriendsList();
-    
+
     if (friendsList) {
         const success = friendsList.sendFriendRequest(`user_${Date.now()}`, friendUsername);
         res.json({ success, message: success ? 'Friend request sent' : 'Failed to send friend request' });
@@ -195,7 +246,7 @@ app.get('/api/wishlists/:username', (req, res) => {
     const { username } = req.params;
     profileManager.loadProfile(username);
     const wishlistManager = profileManager.getWishlistManager();
-    
+
     if (wishlistManager) {
         res.json({
             wishlists: wishlistManager.getWishlists()
@@ -208,10 +259,10 @@ app.get('/api/wishlists/:username', (req, res) => {
 app.post('/api/wishlists/:username/create', (req, res) => {
     const { username } = req.params;
     const { name, description } = req.body;
-    
+
     profileManager.loadProfile(username);
     const wishlistManager = profileManager.getWishlistManager();
-    
+
     if (wishlistManager) {
         const wishlist = wishlistManager.createWishlist(name, description);
         res.json({ success: true, wishlist });
@@ -225,7 +276,7 @@ app.get('/api/reviews/:username', (req, res) => {
     const { username } = req.params;
     profileManager.loadProfile(username);
     const reviewManager = profileManager.getReviewManager();
-    
+
     if (reviewManager) {
         res.json({
             reviews: reviewManager.getReviews(),
@@ -239,10 +290,10 @@ app.get('/api/reviews/:username', (req, res) => {
 app.post('/api/reviews/:username/add', (req, res) => {
     const { username } = req.params;
     const { gameTitle, rating, reviewText, tags } = req.body;
-    
+
     profileManager.loadProfile(username);
     const reviewManager = profileManager.getReviewManager();
-    
+
     if (reviewManager) {
         const review = reviewManager.addReview(`game_${Date.now()}`, gameTitle, rating, reviewText, tags);
         res.json({ success: true, review });
@@ -254,7 +305,7 @@ app.post('/api/reviews/:username/add', (req, res) => {
 // Admin routes
 app.post('/api/admin/login', (req, res) => {
     const { username, password } = req.body;
-    
+
     const admin = adminManager.adminLogin(username, password);
     if (admin) {
         res.json({ success: true, admin: { username: admin.username, permissions: admin.permissions } });
@@ -266,51 +317,39 @@ app.post('/api/admin/login', (req, res) => {
 app.get('/api/admin/stats', (req, res) => {
     const stats = adminManager.getUserStatistics(profileManager);
     const logs = adminManager.getSystemLogs();
-    
+
     res.json({
         userStats: stats,
         systemLogs: logs.slice(-20).reverse()
     });
 });
 
-// Serve the main HTML file
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'client', 'index.html'));
-});
-
-// Error handling middleware
+// ===== Error Handling =====
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({ error: 'Something went wrong!' });
 });
 
-// 404 handler
 app.use((req, res) => {
     res.status(404).json({ error: 'Route not found' });
 });
 
-// Start server
+// ===== Start Server =====
 app.listen(PORT, async () => {
     console.log(`🎮 Game Vault Profile System running on http://localhost:${PORT}`);
     console.log(`📊 Admin panel available at http://localhost:${PORT}`);
     console.log(`✅ Server ready - create your own users!`);
-    
-    // Wait for database initialization
+
     console.log('🔄 Waiting for database initialization...');
-    
-    // Check database status every 100ms until ready
     const checkDatabase = setInterval(() => {
         if (profileManager.isInitialized) {
             clearInterval(checkDatabase);
             isDatabaseReady = true;
             console.log('✅ Database connection established!');
-            
-            // Sample data loading disabled - create your own users!
             console.log(`✅ Database ready for new users!`);
         }
     }, 100);
-    
-    // Timeout after 10 seconds
+
     setTimeout(() => {
         if (!isDatabaseReady) {
             clearInterval(checkDatabase);

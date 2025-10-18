@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+  <%- include('partials/head', { pageTitle: 'Admin Panel' }) %>
+<body>
+  <%- include('partials/header') %>
+
+  <div class="container">
+    <main class="main-content">
+      <!-- Admin Section -->
+      <section id="adminSection" class="content-section active">
+        <div class="section-header">
+          <h2>Admin Panel</h2>
+        </div>
+        <div id="adminContent" class="list-container">
+          <!-- Admin controls will go here -->
+          <div class="empty-state">
+            <i class="fas fa-cogs"></i>
+            <h3>No admin data available</h3>
+            <p>Login to access administrative tools!</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <%- include('partials/loginModal') %>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const authModal = document.getElementById('authModal');
+      const mainContent = document.querySelector('.main-content');
+
+      // Show login modal on page load
+      authModal.style.display = 'block';
+      mainContent.style.display = 'none';
+
+      function showMainContent() {
+        authModal.style.display = 'none';
+        mainContent.style.display = 'block';
+      }
+
+      // Guest and login buttons
+      const loginBtn = document.getElementById('loginBtn');
+      const guestBtns = document.querySelectorAll('#guestBtnLogin, #guestBtnSignup');
+
+      loginBtn.addEventListener('click', showMainContent);
+      guestBtns.forEach(btn => btn.addEventListener('click', showMainContent));
+
+      // Switch forms
+      const showSignup = document.getElementById('showSignup');
+      const showLogin = document.getElementById('showLogin');
+      const loginForm = document.getElementById('loginForm');
+      const signupForm = document.getElementById('signupForm');
+
+      showSignup.addEventListener('click', (e) => {
+        e.preventDefault();
+        loginForm.style.display = 'none';
+        signupForm.style.display = 'block';
+      });
+
+      showLogin.addEventListener('click', (e) => {
+        e.preventDefault();
+        signupForm.style.display = 'none';
+        loginForm.style.display = 'block';
+      });
+    });
+  </script>
+</body>
+</html>

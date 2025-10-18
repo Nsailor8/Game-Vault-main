@@ -1,0 +1,22 @@
+<header class="header">
+  <!-- Logo -->
+  <div class="logo" onclick="window.location.href='<%= homeLink %>'">
+    <i class="fas fa-gamepad"></i>
+    <h1>Game Vault</h1>
+  </div>
+
+  <!-- Search Bar -->
+  <div class="search-bar">
+    <input type="text" id="gameSearchInput" placeholder="Search games...">
+    <button id="gameSearchBtn"><i class="fas fa-search"></i></button>
+  </div>
+
+  <!-- Navigation Buttons -->
+  <nav class="nav">
+    <a class="nav-btn <%= activePage === 'profile' ? 'active' : '' %>" href="/profile">Profile</a>
+    <a class="nav-btn <%= activePage === 'friends' ? 'active' : '' %>" href="/friends">Friends</a>
+    <a class="nav-btn <%= activePage === 'wishlist' ? 'active' : '' %>" href="/wishlist">Wishlist</a>
+    <a class="nav-btn <%= activePage === 'reviews' ? 'active' : '' %>" href="/reviews">Reviews</a>
+    <a class="nav-btn <%= activePage === 'admin' ? 'active' : '' %>" href="/admin">Admin</a>
+  </nav>
+</header>

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<%- include('partials/head', { pageTitle: 'Friends' }) %>
+<body>
+  <%- include('partials/header') %>
+
+  <div class="container">
+    <main class="main-content">
+      <!-- Friends Section -->
+      <section id="friendsSection" class="content-section active">
+        <div class="section-header">
+          <h2>Friends</h2>
+          <button id="addFriendBtn" class="btn btn-primary">Add Friend</button>
+        </div>
+        <div class="friends-content">
+          <div class="friends-list">
+            <h3>Friends List</h3>
+            <div id="friendsList" class="list-container">
+              <div class="empty-state">
+                <i class="fas fa-user-friends"></i>
+                <h3>No friends yet</h3>
+                <p>Login to add friends!</p>
+              </div>
+            </div>
+          </div>
+          <div class="pending-requests">
+            <h3>Pending Requests</h3>
+            <div id="pendingRequests" class="list-container">
+              <div class="empty-state">
+                <i class="fas fa-clock"></i>
+                <h3>No pending requests</h3>
+                <p>Login to view pending friend requests!</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <%- include('partials/loginModal') %>
+
+  <script>
+    // Show login modal automatically on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      const authModal = document.getElementById('authModal');
+      if(authModal) authModal.style.display = 'block';
+
+      // Close modal functionality
+      document.querySelectorAll('.close').forEach(closeBtn => {
+        closeBtn.addEventListener('click', () => {
+          closeBtn.closest('.modal').style.display = 'none';
+        });
+      });
+
+      // Continue as Guest button
+      const guestBtns = document.querySelectorAll('#guestBtn');
+      guestBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          authModal.style.display = 'none';
+        });
+      });
+    });
+  </script>
+</body>
+</html>
