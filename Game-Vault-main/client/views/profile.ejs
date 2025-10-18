@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+    <%- include('partials/head', { pageTitle: 'Profile' }) %>
+<body>
+    <%- include('partials/header') %>
+  <div class="container">
+    <!-- Main Content -->
+    <main id="mainContent" class="main-content" style="display: none;">
+      <!-- Profile Section -->
+      <section id="profileSection" class="content-section active">
+        <div class="profile-header">
+          <div class="profile-avatar">
+            <i class="fas fa-user-circle"></i>
+          </div>
+          <div class="profile-info">
+            <h2 id="profileUsername"><%= profile.username || 'Username' %></h2>
+            <p id="profileEmail"><%= profile.email || 'email@example.com' %></p>
+            <p id="profileJoinDate">Joined: <%= profile.joinDate || 'Loading...' %></p>
+          </div>
+          <div class="profile-actions">
+            <button id="editProfileBtn" class="btn btn-secondary">Edit Profile</button>
+          </div>
+        </div>
+
+        <div class="profile-stats">
+          <div class="stat-card">
+            <i class="fas fa-gamepad"></i>
+            <h3 id="totalGames"><%= profile.totalGames %></h3>
+            <p>Games Played</p>
+          </div>
+          <div class="stat-card">
+            <i class="fas fa-clock"></i>
+            <h3 id="totalPlaytime"><%= profile.totalPlaytime %></h3>
+            <p>Hours Played</p>
+          </div>
+          <div class="stat-card">
+            <i class="fas fa-star"></i>
+            <h3 id="avgRating"><%= profile.avgRating %></h3>
+            <p>Avg Rating</p>
+          </div>
+          <div class="stat-card">
+            <i class="fas fa-trophy"></i>
+            <h3 id="achievementCount"><%= profile.achievementCount %></h3>
+            <p>Achievements</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+    <%- include('partials/loginModal') %>
+  <script src="/profile.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const authModal = document.getElementById('authModal');
+      const mainContent = document.getElementById('mainContent');
+      const loginBtn = document.getElementById('loginBtn');
+      const guestBtns = document.querySelectorAll('#guestBtnLogin, #guestBtnSignup');
+
+
+      // Show modal on page load
+      authModal.style.display = 'block';
+      mainContent.style.display = 'none';
+
+      function showMainContent() {
+        authModal.style.display = 'none';
+        mainContent.style.display = 'block';
+      }
+
+      loginBtn.addEventListener('click', showMainContent);
+      guestBtns.forEach(btn => btn.addEventListener('click', showMainContent));
+
+      // Switch forms
+      const showSignup = document.getElementById('showSignup');
+      const showLogin = document.getElementById('showLogin');
+      const loginForm = document.getElementById('loginForm');
+      const signupForm = document.getElementById('signupForm');
+
+      showSignup.addEventListener('click', (e) => {
+        e.preventDefault();
+        loginForm.style.display = 'none';
+        signupForm.style.display = 'block';
+      });
+
+      showLogin.addEventListener('click', (e) => {
+        e.preventDefault();
+        signupForm.style.display = 'none';
+        loginForm.style.display = 'block';
+      });
+    });
+  </script>
+</body>
+</html>

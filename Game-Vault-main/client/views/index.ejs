@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game Vault - Home</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header Partial -->
+    <%- include('partials/header') %>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Trending Games Section -->
+      <section class="section">
+        <div class="section-header">
+          <h2>Trending Games</h2>
+        </div>
+        <div id="trendingList" class="list-container">
+          <% if (trendingGames && trendingGames.length) { %>
+            <% trendingGames.forEach(function(game) { %>
+              <div class="game-card">
+                <h3><%= game.title %></h3>
+                <p><%= game.description %></p>
+              </div>
+            <% }); %>
+          <% } else { %>
+            <p>No trending games available.</p>
+          <% } %>
+        </div>
+      </section>
+
+      <!-- Recently Added Section -->
+      <section class="section">
+        <div class="section-header">
+          <h2>Recently Added</h2>
+        </div>
+        <div id="recentList" class="list-container">
+          <% if (recentGames && recentGames.length) { %>
+            <% recentGames.forEach(function(game) { %>
+              <div class="game-card">
+                <h3><%= game.title %></h3>
+                <p><%= game.description %></p>
+              </div>
+            <% }); %>
+          <% } else { %>
+            <p>No recent games available.</p>
+          <% } %>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer Partial -->
+    <%- include('partials/footer') %>
+  </div>
+</body>
+</html>
