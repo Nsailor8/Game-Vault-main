@@ -12,7 +12,7 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Serve static files
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname, 'client')));
 
 // Import the profile system classes
 const { 
@@ -22,7 +22,7 @@ const {
     WishlistManager, 
     ReviewManager, 
     AdminManager
-} = require('./profile.js');
+} = require('./client/profile.js');
 
 // Initialize managers
 const profileManager = new ProfileManager();
@@ -275,7 +275,7 @@ app.get('/api/admin/stats', (req, res) => {
 
 // Serve the main HTML file
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(__dirname, 'client', 'index.html'));
 });
 
 // Error handling middleware
