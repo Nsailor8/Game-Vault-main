@@ -14,11 +14,11 @@
         </div>
         <div class="wishlists-content">
           <div id="wishlistContainer" class="list-container">
-            <!-- Wishlist items will be populated here -->
+            <!-- Wishlist items will be populated here by JavaScript -->
             <div class="empty-state">
               <i class="fas fa-heart"></i>
-              <h3>No games in your wishlist</h3>
-              <p>Login to add games to your wishlist!</p>
+              <h3>Loading...</h3>
+              <p>Please wait while we load your wishlist.</p>
             </div>
           </div>
         </div>
@@ -28,44 +28,12 @@
 
   <%- include('partials/loginModal') %>
 
+  <script src="/app.js"></script>
   <script>
+    // Initialize the app when the page loads
     document.addEventListener('DOMContentLoaded', () => {
-      const authModal = document.getElementById('authModal');
-      const mainContent = document.querySelector('.main-content');
-
-      // Show login modal on page load
-      authModal.style.display = 'block';
-      mainContent.style.display = 'none';
-
-      function showMainContent() {
-        authModal.style.display = 'none';
-        mainContent.style.display = 'block';
-      }
-
-      // Guest and login buttons
-      const loginBtn = document.getElementById('loginBtn');
-      const guestBtns = document.querySelectorAll('#guestBtnLogin, #guestBtnSignup');
-
-      loginBtn.addEventListener('click', showMainContent);
-      guestBtns.forEach(btn => btn.addEventListener('click', showMainContent));
-
-      // Switch forms
-      const showSignup = document.getElementById('showSignup');
-      const showLogin = document.getElementById('showLogin');
-      const loginForm = document.getElementById('loginForm');
-      const signupForm = document.getElementById('signupForm');
-
-      showSignup.addEventListener('click', (e) => {
-        e.preventDefault();
-        loginForm.style.display = 'none';
-        signupForm.style.display = 'block';
-      });
-
-      showLogin.addEventListener('click', (e) => {
-        e.preventDefault();
-        signupForm.style.display = 'none';
-        loginForm.style.display = 'block';
-      });
+      console.log('Wishlist page - DOM Content Loaded');
+      // The app.js will handle session checking and show/hide login modal as needed
     });
   </script>
 </body>
