@@ -1,3 +1,27 @@
+// Global search functions - defined immediately
+window.performSearch = function() {
+    console.log('Global performSearch called');
+    const query = document.getElementById("gameSearchInput").value.trim();
+    console.log('Search query from global function:', query);
+    
+    if (!query) {
+        alert('Please enter a search term');
+        return;
+    }
+    
+    console.log('Redirecting to search page with query:', query);
+    window.location.href = `/search?q=${encodeURIComponent(query)}`;
+};
+
+window.testSearch = function() {
+    console.log('Testing search function...');
+    if (window.app && window.app.performGameSearch) {
+        window.app.performGameSearch();
+    } else {
+        console.error('App or performGameSearch method not found');
+    }
+};
+
 // Login Screen Component
 class LoginScreen {
     constructor() {
@@ -8,7 +32,10 @@ class LoginScreen {
     }
 
     show() {
+        console.log('LoginScreen.show() called');
+        console.log('Modal element:', this.modal);
         this.modal.style.display = 'block';
+        console.log('Modal should now be visible');
     }
 
     hide() {
@@ -55,9 +82,9 @@ class GameVaultApp {
 
     init() {
         this.setupEventListeners();
+        this.setupSearchListeners(); // Set up search listeners separately
         this.resetUI(); // Initialize UI state
-        this.loginScreen.show();
-        this.loginScreen.resetToInitialState();
+        this.checkAuthStatus(); // Check if user is already logged in
     }
 
     setupEventListeners() {
@@ -69,91 +96,142 @@ class GameVaultApp {
         });
 
         // Auth Modal
-        document.getElementById('showSignup').addEventListener('click', (e) => {
-            e.preventDefault();
-            this.loginScreen.showSignupForm();
-        });
+        const showSignup = document.getElementById('showSignup');
+        if (showSignup) {
+            showSignup.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.loginScreen.showSignupForm();
+            });
+        }
 
-        document.getElementById('showLogin').addEventListener('click', (e) => {
-            e.preventDefault();
-            this.loginScreen.showLoginForm();
-        });
+        const showLogin = document.getElementById('showLogin');
+        if (showLogin) {
+            showLogin.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.loginScreen.showLoginForm();
+            });
+        }
 
-        document.getElementById('loginBtn').addEventListener('click', () => {
-            this.handleLogin();
-        });
+        const loginBtn = document.getElementById('loginBtn');
+        if (loginBtn) {
+            loginBtn.addEventListener('click', () => {
+                this.handleLogin();
+            });
+        }
 
-        document.getElementById('signupBtn').addEventListener('click', () => {
-            this.handleSignup();
-        });
+        const signupBtn = document.getElementById('signupBtn');
+        if (signupBtn) {
+            signupBtn.addEventListener('click', () => {
+                this.handleSignup();
+            });
+        }
 
-        document.getElementById('guestBtn').addEventListener('click', () => {
-            this.handleGuestLogin();
-        });
+        const guestBtnLogin = document.getElementById('guestBtnLogin');
+        if (guestBtnLogin) {
+            guestBtnLogin.addEventListener('click', () => {
+                this.handleGuestLogin();
+            });
+        }
+
+        // Sign In Button (in header)
+        const signInBtn = document.getElementById('signInBtn');
+        if (signInBtn) {
+            signInBtn.addEventListener('click', () => {
+                this.loginScreen.show();
+                this.loginScreen.resetToInitialState();
+            });
+        }
 
         // Profile
-        document.getElementById('editProfileBtn').addEventListener('click', () => {
-            this.showEditProfileModal();
-        });
+        const editProfileBtn = document.getElementById('editProfileBtn');
+        if (editProfileBtn) {
+            editProfileBtn.addEventListener('click', () => {
+                this.showEditProfileModal();
+            });
+        }
 
-        document.getElementById('saveProfileBtn').addEventListener('click', () => {
-            this.saveProfile();
-        });
+        const saveProfileBtn = document.getElementById('saveProfileBtn');
+        if (saveProfileBtn) {
+            saveProfileBtn.addEventListener('click', () => {
+                this.saveProfile();
+            });
+        }
 
         // Friends
-        document.getElementById('addFriendBtn').addEventListener('click', () => {
-            this.showAddFriendModal();
-        });
+        const addFriendBtn = document.getElementById('addFriendBtn');
+        if (addFriendBtn) {
+            addFriendBtn.addEventListener('click', () => {
+                this.showAddFriendModal();
+            });
+        }
 
-        document.getElementById('sendFriendRequestBtn').addEventListener('click', () => {
-            this.sendFriendRequest();
-        });
+        const sendFriendRequestBtn = document.getElementById('sendFriendRequestBtn');
+        if (sendFriendRequestBtn) {
+            sendFriendRequestBtn.addEventListener('click', () => {
+                this.sendFriendRequest();
+            });
+        }
 
         // Wishlist
-        document.getElementById('createWishlistBtn').addEventListener('click', () => {
-            this.showCreateWishlistModal();
-        });
+        const createWishlistBtn = document.getElementById('createWishlistBtn');
+        if (createWishlistBtn) {
+            createWishlistBtn.addEventListener('click', () => {
+                this.showCreateWishlistModal();
+            });
+        }
 
-        document.getElementById('createWishlistConfirmBtn').addEventListener('click', () => {
-            this.createWishlist();
-        });
+        const createWishlistConfirmBtn = document.getElementById('createWishlistConfirmBtn');
+        if (createWishlistConfirmBtn) {
+            createWishlistConfirmBtn.addEventListener('click', () => {
+                this.createWishlist();
+            });
+        }
 
         // Reviews
-        document.getElementById('addReviewBtn').addEventListener('click', () => {
-            this.showAddReviewModal();
-        });
+        const addReviewBtn = document.getElementById('addReviewBtn');
+        if (addReviewBtn) {
+            addReviewBtn.addEventListener('click', () => {
+                this.showAddReviewModal();
+            });
+        }
 
-        document.getElementById('addReviewConfirmBtn').addEventListener('click', () => {
-            this.addReview();
-        });
-        document.getElementById("gameSearchBtn").addEventListener("click", () => {
-            const query = document.getElementById("gameSearchInput").value.trim().toLowerCase();
-            if (!query) return;
+        const addReviewConfirmBtn = document.getElementById('addReviewConfirmBtn');
+        if (addReviewConfirmBtn) {
+            addReviewConfirmBtn.addEventListener('click', () => {
+                this.addReview();
+            });
+        }
 
-            console.log("Searching for:", query);
-            // 🔹 Example: filter across friends, wishlists, reviews, etc.
-            // You can add real search logic here.
-        });
-
-        
         // Admin
-        document.getElementById('adminLoginBtn').addEventListener('click', () => {
-            this.showAdminLoginModal();
-        });
+        const adminLoginBtn = document.getElementById('adminLoginBtn');
+        if (adminLoginBtn) {
+            adminLoginBtn.addEventListener('click', () => {
+                this.showAdminLoginModal();
+            });
+        }
 
-        document.getElementById('adminLoginConfirmBtn').addEventListener('click', () => {
-            this.handleAdminLogin();
-        });
+        const adminLoginConfirmBtn = document.getElementById('adminLoginConfirmBtn');
+        if (adminLoginConfirmBtn) {
+            adminLoginConfirmBtn.addEventListener('click', () => {
+                this.handleAdminLogin();
+            });
+        }
 
         // Logout button
-        document.getElementById('logoutBtn').addEventListener('click', () => {
-            this.handleLogout();
-        });
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
+                this.handleLogout();
+            });
+        }
 
         // Login button for guests (in profile)
-        document.getElementById('loginBtnProfile').addEventListener('click', () => {
-            this.showLoginModal();
-        });
+        const loginBtnProfile = document.getElementById('loginBtnProfile');
+        if (loginBtnProfile) {
+            loginBtnProfile.addEventListener('click', () => {
+                this.showLoginModal();
+            });
+        }
 
         // Modal close buttons
         document.querySelectorAll('.close').forEach(closeBtn => {
@@ -173,6 +251,45 @@ class GameVaultApp {
                 }
             });
         });
+    }
+
+    setupSearchListeners() {
+        // Wait a bit for DOM to be fully ready
+        setTimeout(() => {
+            // Search button event listener
+            const searchBtn = document.getElementById("gameSearchBtn");
+            const searchInput = document.getElementById("gameSearchInput");
+            
+            console.log('Setting up search listeners...');
+            console.log('Search button element:', searchBtn);
+            console.log('Search input element:', searchInput);
+            
+            if (searchBtn) {
+                searchBtn.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    console.log('Search button clicked!');
+                    this.performGameSearch();
+                });
+                console.log('Search button listener added');
+            } else {
+                console.error('Search button not found!');
+            }
+
+            // Also search on Enter key press
+            if (searchInput) {
+                searchInput.addEventListener("keypress", (e) => {
+                    console.log('Key pressed:', e.key);
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        console.log('Enter key pressed!');
+                        this.performGameSearch();
+                    }
+                });
+                console.log('Search input listener added');
+            } else {
+                console.error('Search input not found!');
+            }
+        }, 100);
     }
 
 
@@ -195,6 +312,7 @@ class GameVaultApp {
             headers: {
                 'Content-Type': 'application/json',
             },
+            credentials: 'include', // Important: include cookies
             body: JSON.stringify({
                 username,
                 password
@@ -243,6 +361,7 @@ class GameVaultApp {
             headers: {
                 'Content-Type': 'application/json',
             },
+            credentials: 'include', // Important: include cookies
             body: JSON.stringify({
                 username,
                 email,
@@ -267,18 +386,85 @@ class GameVaultApp {
         });
     }
 
-    handleLogout() {
-        // Clear current user
-        this.currentUser = null;
-        
-        // Reset UI elements
-        this.resetUI();
-        
-        // Show login screen in initial state
-        this.loginScreen.show();
-        this.loginScreen.resetToInitialState();
-        
-        console.log('User logged out successfully');
+    async checkAuthStatus() {
+        try {
+            console.log('Checking auth status...');
+            console.log('Current URL:', window.location.href);
+            console.log('Document cookies:', document.cookie);
+            
+            const response = await fetch('/api/auth/check', {
+                credentials: 'include', // Important: include cookies
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            console.log('Auth check response status:', response.status);
+            console.log('Auth check response headers:', response.headers);
+            
+            const data = await response.json();
+            console.log('Auth check response data:', data);
+            
+            if (data.success && data.user) {
+                this.currentUser = data.user;
+                this.updateUI();
+                console.log('User already logged in:', data.user.username);
+                // Hide login screen if user is logged in
+                this.loginScreen.hide();
+            } else {
+                console.log('No active session, showing login screen');
+                // Always show login modal on first visit
+                console.log('About to show login screen');
+                this.loginScreen.show();
+                this.loginScreen.resetToInitialState();
+                // Show sign-in button in header
+                console.log('About to call showSignInButton()');
+                this.showSignInButton();
+            }
+        } catch (error) {
+            console.error('Error checking auth status:', error);
+            this.loginScreen.show();
+            this.loginScreen.resetToInitialState();
+            // Show sign-in button in header
+            this.showSignInButton();
+        }
+    }
+
+    async handleLogout() {
+        try {
+            const response = await fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include' // Important: include cookies
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Clear current user
+                this.currentUser = null;
+                
+                // Reset UI elements
+                this.resetUI();
+                
+                // Show login screen in initial state
+                this.loginScreen.show();
+                this.loginScreen.resetToInitialState();
+                
+                console.log('User logged out successfully');
+            } else {
+                console.error('Logout failed:', data.error);
+            }
+        } catch (error) {
+            console.error('Error during logout:', error);
+            // Still clear local state even if server logout fails
+            this.currentUser = null;
+            this.resetUI();
+            this.loginScreen.show();
+            this.loginScreen.resetToInitialState();
+        }
     }
 
     showLoginModal() {
@@ -332,13 +518,31 @@ class GameVaultApp {
 
     resetUI() {
         // Hide all action buttons
-        document.getElementById('logoutBtn').style.display = 'none';
-        document.getElementById('loginBtnProfile').style.display = 'none';
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.style.display = 'none';
+        }
+        
+        const loginBtnProfile = document.getElementById('loginBtnProfile');
+        if (loginBtnProfile) {
+            loginBtnProfile.style.display = 'none';
+        }
         
         // Reset profile info
-        document.getElementById('profileUsername').textContent = 'Username';
-        document.getElementById('profileEmail').textContent = 'email@example.com';
-        document.getElementById('profileJoinDate').textContent = 'Joined: Loading...';
+        const profileUsername = document.getElementById('profileUsername');
+        if (profileUsername) {
+            profileUsername.textContent = 'Username';
+        }
+        
+        const profileEmail = document.getElementById('profileEmail');
+        if (profileEmail) {
+            profileEmail.textContent = 'email@example.com';
+        }
+        
+        const profileJoinDate = document.getElementById('profileJoinDate');
+        if (profileJoinDate) {
+            profileJoinDate.textContent = 'Joined: Loading...';
+        }
     }
 
     updateUI() {
@@ -348,32 +552,76 @@ class GameVaultApp {
         }
 
         // Show appropriate buttons based on user type
+        const logoutBtn = document.getElementById('logoutBtn');
+        const loginBtnProfile = document.getElementById('loginBtnProfile');
+        
         if (this.currentUser.isGuest) {
             // Guest user - show login button, hide logout
-            document.getElementById('logoutBtn').style.display = 'none';
-            document.getElementById('loginBtnProfile').style.display = 'inline-block';
+            if (logoutBtn) logoutBtn.style.display = 'none';
+            if (loginBtnProfile) loginBtnProfile.style.display = 'inline-block';
         } else {
             // Registered user - show logout button, hide login
-            document.getElementById('logoutBtn').style.display = 'inline-block';
-            document.getElementById('loginBtnProfile').style.display = 'none';
+            if (logoutBtn) logoutBtn.style.display = 'inline-block';
+            if (loginBtnProfile) loginBtnProfile.style.display = 'none';
         }
 
         // Update profile section
-        document.getElementById('profileUsername').textContent = this.currentUser.username;
-        document.getElementById('profileEmail').textContent = this.currentUser.email || 'Guest Account';
-        document.getElementById('profileJoinDate').textContent = this.currentUser.isGuest ? 'Guest Session' : `Joined: ${new Date(this.currentUser.joinDate).toLocaleDateString()}`;
-        document.getElementById('profileBio').textContent = this.currentUser.isGuest ? 'Guest users cannot save data permanently' : (this.currentUser.bio || 'No bio set');
+        const profileUsername = document.getElementById('profileUsername');
+        if (profileUsername) {
+            profileUsername.textContent = this.currentUser.username;
+        }
+        
+        const profileEmail = document.getElementById('profileEmail');
+        if (profileEmail) {
+            profileEmail.textContent = this.currentUser.email || 'Guest Account';
+        }
+        
+        const profileJoinDate = document.getElementById('profileJoinDate');
+        if (profileJoinDate) {
+            profileJoinDate.textContent = this.currentUser.isGuest ? 'Guest Session' : `Joined: ${new Date(this.currentUser.joinDate).toLocaleDateString()}`;
+        }
+        
+        const profileBio = document.getElementById('profileBio');
+        if (profileBio) {
+            profileBio.textContent = this.currentUser.isGuest ? 'Guest users cannot save data permanently' : (this.currentUser.bio || 'No bio set');
+        }
         
         // Update statistics
-        document.getElementById('totalGames').textContent = this.currentUser.statistics.totalGamesPlayed;
-        document.getElementById('totalPlaytime').textContent = this.currentUser.statistics.totalPlaytime;
-        document.getElementById('avgRating').textContent = this.currentUser.statistics.averageRating;
-        document.getElementById('achievementCount').textContent = this.currentUser.achievements.length;
+        const totalGames = document.getElementById('totalGames');
+        if (totalGames) {
+            totalGames.textContent = this.currentUser.statistics.totalGamesPlayed;
+        }
+        
+        const totalPlaytime = document.getElementById('totalPlaytime');
+        if (totalPlaytime) {
+            totalPlaytime.textContent = this.currentUser.statistics.totalPlaytime;
+        }
+        
+        const avgRating = document.getElementById('avgRating');
+        if (avgRating) {
+            avgRating.textContent = this.currentUser.statistics.averageRating;
+        }
+        
+        const achievementCount = document.getElementById('achievementCount');
+        if (achievementCount) {
+            achievementCount.textContent = this.currentUser.achievements.length;
+        }
 
         // Update gaming preferences
-        document.getElementById('playStyleDisplay').textContent = this.currentUser.gamingPreferences.playStyle;
-        document.getElementById('favoriteGenresDisplay').textContent = this.currentUser.gamingPreferences.favoriteGenres.join(', ') || 'None set';
-        document.getElementById('preferredPlatformsDisplay').textContent = this.currentUser.gamingPreferences.preferredPlatforms.join(', ') || 'None set';
+        const playStyleDisplay = document.getElementById('playStyleDisplay');
+        if (playStyleDisplay) {
+            playStyleDisplay.textContent = this.currentUser.gamingPreferences.playStyle;
+        }
+        
+        const favoriteGenresDisplay = document.getElementById('favoriteGenresDisplay');
+        if (favoriteGenresDisplay) {
+            favoriteGenresDisplay.textContent = this.currentUser.gamingPreferences.favoriteGenres.join(', ') || 'None set';
+        }
+        
+        const preferredPlatformsDisplay = document.getElementById('preferredPlatformsDisplay');
+        if (preferredPlatformsDisplay) {
+            preferredPlatformsDisplay.textContent = this.currentUser.gamingPreferences.preferredPlatforms.join(', ') || 'None set';
+        }
 
         // Update achievements
         this.updateAchievements();
@@ -386,10 +634,36 @@ class GameVaultApp {
 
         // Update reviews
         this.updateReviews();
+        
+        // Hide sign-in button when user is logged in
+        this.hideSignInButton();
+    }
+
+    showSignInButton() {
+        console.log('showSignInButton called');
+        const authSection = document.getElementById('authSection');
+        console.log('authSection element:', authSection);
+        if (authSection) {
+            authSection.style.display = 'block';
+            console.log('Sign-in button should now be visible');
+        } else {
+            console.error('authSection element not found!');
+        }
+    }
+
+    hideSignInButton() {
+        const authSection = document.getElementById('authSection');
+        if (authSection) {
+            authSection.style.display = 'none';
+        }
     }
 
     updateAchievements() {
         const container = document.getElementById('achievementsList');
+        if (!container) {
+            return; // Element not found, skip update
+        }
+        
         container.innerHTML = '';
 
         if (this.currentUser.achievements.length === 0) {
@@ -477,7 +751,13 @@ class GameVaultApp {
     }
 
     updateWishlists() {
+        const container = document.getElementById('wishlistContainer');
+        if (!container) {
+            return; // Element not found, skip update
+        }
+        
         if (!this.currentUser) {
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>Login Required</h3><p>Please log in to view your wishlist!</p></div>';
             return;
         }
 
@@ -485,7 +765,10 @@ class GameVaultApp {
         fetch(`/api/wishlists/${this.currentUser.username}`)
         .then(response => response.json())
         .then(data => {
-            const container = document.getElementById('wishlistsList');
+            const container = document.getElementById('wishlistContainer');
+            if (!container) {
+                return; // Element not found, skip update
+            }
             const wishlists = data.wishlists || [];
             
             container.innerHTML = '';
@@ -514,7 +797,13 @@ class GameVaultApp {
     }
 
     updateReviews() {
+        const container = document.getElementById('reviewsContainer');
+        if (!container) {
+            return; // Element not found, skip update
+        }
+        
         if (!this.currentUser) {
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-star"></i><h3>Login Required</h3><p>Please log in to view your reviews!</p></div>';
             return;
         }
 
@@ -522,7 +811,6 @@ class GameVaultApp {
         fetch(`/api/reviews/${this.currentUser.username}`)
         .then(response => response.json())
         .then(data => {
-            const container = document.getElementById('reviewsList');
             const reviews = data.reviews || [];
             const averageRating = data.averageRating || 0;
 
@@ -580,7 +868,10 @@ class GameVaultApp {
         document.getElementById('editPreferredPlatforms').value = this.currentUser.gamingPreferences.preferredPlatforms.join(', ');
         document.getElementById('editPlayStyle').value = this.currentUser.gamingPreferences.playStyle;
 
-        document.getElementById('editProfileModal').style.display = 'block';
+        const editProfileModal = document.getElementById('editProfileModal');
+        if (editProfileModal) {
+            editProfileModal.style.display = 'block';
+        }
     }
 
     saveProfile() {
@@ -628,7 +919,10 @@ class GameVaultApp {
     }
 
     showAddFriendModal() {
-        document.getElementById('addFriendModal').style.display = 'block';
+        const addFriendModal = document.getElementById('addFriendModal');
+        if (addFriendModal) {
+            addFriendModal.style.display = 'block';
+        }
     }
 
     sendFriendRequest() {
@@ -663,7 +957,10 @@ class GameVaultApp {
     }
 
     showCreateWishlistModal() {
-        document.getElementById('createWishlistModal').style.display = 'block';
+        const createWishlistModal = document.getElementById('createWishlistModal');
+        if (createWishlistModal) {
+            createWishlistModal.style.display = 'block';
+        }
     }
 
     createWishlist() {
@@ -725,7 +1022,10 @@ class GameVaultApp {
     }
 
     showAddReviewModal() {
-        document.getElementById('addReviewModal').style.display = 'block';
+        const addReviewModal = document.getElementById('addReviewModal');
+        if (addReviewModal) {
+            addReviewModal.style.display = 'block';
+        }
     }
 
     addReview() {
@@ -756,7 +1056,10 @@ class GameVaultApp {
     }
 
     showAdminLoginModal() {
-        document.getElementById('adminLoginModal').style.display = 'block';
+        const adminLoginModal = document.getElementById('adminLoginModal');
+        if (adminLoginModal) {
+            adminLoginModal.style.display = 'block';
+        }
     }
 
     handleAdminLogin() {
@@ -839,10 +1142,289 @@ class GameVaultApp {
             console.error('Error fetching admin stats:', error);
         });
     }
+
+    // Game Search Methods
+    performGameSearch() {
+        console.log('performGameSearch called');
+        const searchInput = document.getElementById("gameSearchInput");
+        console.log('Search input element:', searchInput);
+        
+        if (!searchInput) {
+            console.error('Search input not found in performGameSearch!');
+            alert('Search input not found');
+            return;
+        }
+        
+        const query = searchInput.value.trim();
+        console.log('Search query:', query);
+        
+        if (!query) {
+            alert('Please enter a search term');
+            return;
+        }
+
+        console.log('Redirecting to search page with query:', query);
+        // Redirect to search page with query parameter
+        window.location.href = `/search?q=${encodeURIComponent(query)}`;
+    }
+
+    async searchGames(query, page = 1) {
+        try {
+            // Show loading state
+            this.showSearchLoading();
+
+            console.log('Searching for:', query);
+            const response = await fetch(`/api/games/search?q=${encodeURIComponent(query)}&page=${page}&pageSize=20`);
+            console.log('Response status:', response.status);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            console.log('Search response:', data);
+
+            if (data.success) {
+                this.displaySearchResults(data.games, data.totalResults, data.currentPage, data.totalPages, query);
+            } else {
+                this.showSearchError(data.error || 'Failed to search games');
+            }
+        } catch (error) {
+            console.error('Error searching games:', error);
+            this.showSearchError(`Network error: ${error.message}. Please try again.`);
+        }
+    }
+
+    showSearchResults() {
+        console.log('showSearchResults called');
+        // Create search results modal if it doesn't exist
+        let searchModal = document.getElementById('searchResultsModal');
+        if (!searchModal) {
+            console.log('Creating new search modal');
+            searchModal = document.createElement('div');
+            searchModal.id = 'searchResultsModal';
+            searchModal.className = 'modal';
+            searchModal.innerHTML = `
+                <div class="modal-content search-modal-content">
+                    <div class="search-header">
+                        <h2 id="searchTitle">Search Results</h2>
+                        <span class="close" onclick="app.closeSearchModal()">&times;</span>
+                    </div>
+                    <div id="searchContent">
+                        <div id="searchLoading" class="search-loading" style="display: none;">
+                            <i class="fas fa-spinner fa-spin"></i>
+                            <p>Searching games...</p>
+                        </div>
+                        <div id="searchError" class="search-error" style="display: none;">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <p id="searchErrorMessage"></p>
+                        </div>
+                        <div id="searchResults" class="search-results"></div>
+                        <div id="searchPagination" class="search-pagination"></div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(searchModal);
+            console.log('Search modal created and added to DOM');
+        }
+
+        console.log('Showing search modal');
+        searchModal.style.display = 'block';
+    }
+
+    closeSearchModal() {
+        const searchModal = document.getElementById('searchResultsModal');
+        if (searchModal) {
+            searchModal.style.display = 'none';
+        }
+    }
+
+    showSearchLoading() {
+        const searchLoading = document.getElementById('searchLoading');
+        const searchError = document.getElementById('searchError');
+        const searchResults = document.getElementById('searchResults');
+        const searchPagination = document.getElementById('searchPagination');
+        
+        if (searchLoading) searchLoading.style.display = 'block';
+        if (searchError) searchError.style.display = 'none';
+        if (searchResults) searchResults.style.display = 'none';
+        if (searchPagination) searchPagination.style.display = 'none';
+    }
+
+    showSearchError(message) {
+        const searchLoading = document.getElementById('searchLoading');
+        const searchError = document.getElementById('searchError');
+        const searchErrorMessage = document.getElementById('searchErrorMessage');
+        const searchResults = document.getElementById('searchResults');
+        const searchPagination = document.getElementById('searchPagination');
+        
+        if (searchLoading) searchLoading.style.display = 'none';
+        if (searchError) searchError.style.display = 'block';
+        if (searchErrorMessage) searchErrorMessage.textContent = message;
+        if (searchResults) searchResults.style.display = 'none';
+        if (searchPagination) searchPagination.style.display = 'none';
+    }
+
+    displaySearchResults(games, totalResults, currentPage, totalPages, query) {
+        const searchLoading = document.getElementById('searchLoading');
+        const searchError = document.getElementById('searchError');
+        const searchResults = document.getElementById('searchResults');
+        const searchPagination = document.getElementById('searchPagination');
+        
+        if (searchLoading) searchLoading.style.display = 'none';
+        if (searchError) searchError.style.display = 'none';
+        if (searchResults) searchResults.style.display = 'block';
+        if (searchPagination) searchPagination.style.display = 'block';
+
+        // Update title
+        document.getElementById('searchTitle').textContent = `Search Results for "${query}" (${totalResults} games found)`;
+
+        // Display games
+        const resultsContainer = document.getElementById('searchResults');
+        resultsContainer.innerHTML = '';
+
+        if (games.length === 0) {
+            resultsContainer.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-search"></i>
+                    <h3>No Games Found</h3>
+                    <p>Try a different search term</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Add notice for mock data
+        const mockDataNotice = document.createElement('div');
+        mockDataNotice.className = 'mock-data-notice';
+        mockDataNotice.innerHTML = `
+            <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 15px; margin-bottom: 20px; color: #856404;">
+                <i class="fas fa-info-circle"></i>
+                <strong>Demo Mode:</strong> This is sample data. To search real games, configure your RAWG.io API key in the .env file.
+                <a href="https://rawg.io/apidocs" target="_blank" style="color: #007bff; text-decoration: underline;">Get API Key</a>
+            </div>
+        `;
+        resultsContainer.appendChild(mockDataNotice);
+
+        games.forEach(game => {
+            const gameCard = document.createElement('div');
+            gameCard.className = 'game-card';
+            gameCard.innerHTML = `
+                <div class="game-image">
+                    ${game.backgroundImage ? 
+                        `<img src="${game.backgroundImage}" alt="${game.name}" onerror="this.style.display='none'">` : 
+                        '<div class="no-image"><i class="fas fa-gamepad"></i></div>'
+                    }
+                </div>
+                <div class="game-info">
+                    <h3 class="game-title">${game.name}</h3>
+                    <div class="game-meta">
+                        ${game.released ? `<span class="release-date"><i class="fas fa-calendar"></i> ${new Date(game.released).getFullYear()}</span>` : ''}
+                        ${game.rating ? `<span class="rating"><i class="fas fa-star"></i> ${game.rating.toFixed(1)}</span>` : ''}
+                        ${game.metacritic ? `<span class="metacritic">Metacritic: ${game.metacritic}</span>` : ''}
+                    </div>
+                    <div class="game-platforms">
+                        ${game.platforms.slice(0, 3).map(platform => 
+                            `<span class="platform-tag">${platform.name}</span>`
+                        ).join('')}
+                        ${game.platforms.length > 3 ? `<span class="platform-tag">+${game.platforms.length - 3} more</span>` : ''}
+                    </div>
+                    <div class="game-genres">
+                        ${game.genres.slice(0, 3).map(genre => 
+                            `<span class="genre-tag">${genre.name}</span>`
+                        ).join('')}
+                    </div>
+                    <div class="game-actions">
+                        <button class="btn btn-primary" onclick="app.viewGameDetails(${game.id})">
+                            <i class="fas fa-info-circle"></i> View Details
+                        </button>
+                        <button class="btn btn-secondary" onclick="app.addToWishlist(${game.id}, '${game.name}')">
+                            <i class="fas fa-heart"></i> Add to Wishlist
+                        </button>
+                    </div>
+                </div>
+            `;
+            resultsContainer.appendChild(gameCard);
+        });
+
+        // Display pagination
+        this.displaySearchPagination(currentPage, totalPages, query);
+    }
+
+    displaySearchPagination(currentPage, totalPages, query) {
+        const paginationContainer = document.getElementById('searchPagination');
+        paginationContainer.innerHTML = '';
+
+        if (totalPages <= 1) return;
+
+        const pagination = document.createElement('div');
+        pagination.className = 'pagination';
+
+        // Previous button
+        if (currentPage > 1) {
+            const prevBtn = document.createElement('button');
+            prevBtn.className = 'btn btn-secondary';
+            prevBtn.innerHTML = '<i class="fas fa-chevron-left"></i> Previous';
+            prevBtn.onclick = () => this.searchGames(query, currentPage - 1);
+            pagination.appendChild(prevBtn);
+        }
+
+        // Page numbers
+        const startPage = Math.max(1, currentPage - 2);
+        const endPage = Math.min(totalPages, currentPage + 2);
+
+        for (let i = startPage; i <= endPage; i++) {
+            const pageBtn = document.createElement('button');
+            pageBtn.className = `btn ${i === currentPage ? 'btn-primary' : 'btn-secondary'}`;
+            pageBtn.textContent = i;
+            pageBtn.onclick = () => this.searchGames(query, i);
+            pagination.appendChild(pageBtn);
+        }
+
+        // Next button
+        if (currentPage < totalPages) {
+            const nextBtn = document.createElement('button');
+            nextBtn.className = 'btn btn-secondary';
+            nextBtn.innerHTML = 'Next <i class="fas fa-chevron-right"></i>';
+            nextBtn.onclick = () => this.searchGames(query, currentPage + 1);
+            pagination.appendChild(nextBtn);
+        }
+
+        paginationContainer.appendChild(pagination);
+    }
+
+    viewGameDetails(gameId) {
+        // This would open a detailed view of the game
+        // For now, we'll just show an alert with the game ID
+        alert(`Viewing details for game ID: ${gameId}`);
+        // You can implement a detailed game view modal here
+    }
+
+    addToWishlist(gameId, gameName) {
+        if (!this.currentUser) {
+            alert('Please log in to add games to your wishlist');
+            return;
+        }
+
+        // This would add the game to the user's wishlist
+        alert(`Added "${gameName}" to wishlist!`);
+        // You can implement the actual wishlist addition here
+    }
 }
+
 
 // Initialize the app when the page loads
 let app;
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM Content Loaded - Initializing GameVaultApp');
     app = new GameVaultApp();
+    window.app = app; // Make app available globally
+    
+    // Test if search elements exist after initialization
+    setTimeout(() => {
+        console.log('Testing search elements after initialization:');
+        console.log('Search button:', document.getElementById("gameSearchBtn"));
+        console.log('Search input:', document.getElementById("gameSearchInput"));
+        console.log('Global functions available:', typeof window.performSearch, typeof window.testSearch);
+    }, 500);
 });

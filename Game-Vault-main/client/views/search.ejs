@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Results - Game Vault</title>
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <%- include('partials/header', { activePage: 'search', homeLink: '/' }) %>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="search-results-page">
+                <div class="search-header">
+                    <div class="search-info">
+                        <h1 id="searchTitle">Search Results</h1>
+                        <p id="searchSubtitle">Loading search results...</p>
+                    </div>
+                    <div class="search-actions">
+                        <button class="btn btn-secondary" onclick="goBack()">
+                            <i class="fas fa-arrow-left"></i> Back to Home
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Loading State -->
+                <div id="searchLoading" class="search-loading">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Searching games...</p>
+                </div>
+
+                <!-- Error State -->
+                <div id="searchError" class="search-error" style="display: none;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <h3>Search Error</h3>
+                    <p id="searchErrorMessage"></p>
+                    <button class="btn btn-primary" onclick="retrySearch()">Try Again</button>
+                </div>
+
+                <!-- Mock Data Notice -->
+                <div id="mockDataNotice" class="mock-data-notice" style="display: none;">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Demo Mode:</strong> This is sample data. To search real games, configure your RAWG.io API key.
+                    <a href="https://rawg.io/apidocs" target="_blank">Get API Key</a>
+                </div>
+
+                <!-- Search Results -->
+                <div id="searchResults" class="search-results-grid" style="display: none;">
+                    <!-- Game cards will be populated here -->
+                </div>
+
+                <!-- Pagination -->
+                <div id="searchPagination" class="search-pagination" style="display: none;">
+                    <!-- Pagination will be populated here -->
+                </div>
+
+                <!-- No Results -->
+                <div id="noResults" class="no-results" style="display: none;">
+                    <i class="fas fa-search"></i>
+                    <h3>No Games Found</h3>
+                    <p>Try a different search term</p>
+                    <button class="btn btn-primary" onclick="goBack()">Back to Home</button>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <%- include('partials/footer') %>
+    </div>
+
+    <script>
+        // Get search parameters from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const query = urlParams.get('q');
+        const page = parseInt(urlParams.get('page')) || 1;
+
+        // Initialize search when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            if (query) {
+                performSearch(query, page);
+            } else {
+                showError('No search query provided');
+            }
+        });
+
+        async function performSearch(searchQuery, pageNum = 1) {
+            try {
+                showLoading();
+                console.log('Searching for:', searchQuery);
+
+                const response = await fetch(`/api/games/search?q=${encodeURIComponent(searchQuery)}&page=${pageNum}&pageSize=20`);
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('Search response:', data);
+
+                if (data.success) {
+                    displaySearchResults(data.games, data.totalResults, data.currentPage, data.totalPages, searchQuery);
+                    if (data.isMockData) {
+                        showMockDataNotice();
+                    }
+                } else {
+                    showError(data.error || 'Failed to search games');
+                }
+            } catch (error) {
+                console.error('Error searching games:', error);
+                showError(`Network error: ${error.message}. Please try again.`);
+            }
+        }
+
+        function showLoading() {
+            document.getElementById('searchLoading').style.display = 'block';
+            document.getElementById('searchError').style.display = 'none';
+            document.getElementById('searchResults').style.display = 'none';
+            document.getElementById('searchPagination').style.display = 'none';
+            document.getElementById('noResults').style.display = 'none';
+            document.getElementById('mockDataNotice').style.display = 'none';
+        }
+
+        function showError(message) {
+            document.getElementById('searchLoading').style.display = 'none';
+            document.getElementById('searchError').style.display = 'block';
+            document.getElementById('searchErrorMessage').textContent = message;
+            document.getElementById('searchResults').style.display = 'none';
+            document.getElementById('searchPagination').style.display = 'none';
+            document.getElementById('noResults').style.display = 'none';
+            document.getElementById('mockDataNotice').style.display = 'none';
+        }
+
+        function showMockDataNotice() {
+            document.getElementById('mockDataNotice').style.display = 'block';
+        }
+
+        function displaySearchResults(games, totalResults, currentPage, totalPages, query) {
+            document.getElementById('searchLoading').style.display = 'none';
+            document.getElementById('searchError').style.display = 'none';
+            document.getElementById('searchResults').style.display = 'block';
+            document.getElementById('searchPagination').style.display = 'block';
+            document.getElementById('noResults').style.display = 'none';
+
+            // Update title
+            document.getElementById('searchTitle').textContent = `Search Results for "${query}"`;
+            document.getElementById('searchSubtitle').textContent = `${totalResults} games found`;
+
+            // Display games
+            const resultsContainer = document.getElementById('searchResults');
+            resultsContainer.innerHTML = '';
+
+            if (games.length === 0) {
+                document.getElementById('noResults').style.display = 'block';
+                document.getElementById('searchResults').style.display = 'none';
+                document.getElementById('searchPagination').style.display = 'none';
+                return;
+            }
+
+            games.forEach(game => {
+                const gameCard = document.createElement('div');
+                gameCard.className = 'game-card-large';
+                gameCard.innerHTML = `
+                    <div class="game-image-large">
+                        ${game.backgroundImage ? 
+                            `<img src="${game.backgroundImage}" alt="${game.name}" onerror="this.style.display='none'">` : 
+                            '<div class="no-image-large"><i class="fas fa-gamepad"></i></div>'
+                        }
+                        <div class="game-overlay">
+                            <div class="game-rating">
+                                ${game.rating ? `<span class="rating-value">${game.rating.toFixed(1)}</span>` : ''}
+                                ${game.metacritic ? `<span class="metacritic-score">${game.metacritic}</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="game-info-large">
+                        <h3 class="game-title-large">${game.name}</h3>
+                        <div class="game-meta-large">
+                            ${game.released ? `<span class="release-date"><i class="fas fa-calendar"></i> ${new Date(game.released).getFullYear()}</span>` : ''}
+                            ${game.playtime ? `<span class="playtime"><i class="fas fa-clock"></i> ${game.playtime}h</span>` : ''}
+                        </div>
+                        <div class="game-platforms-large">
+                            ${game.platforms.slice(0, 4).map(platform => 
+                                `<span class="platform-tag-large">${platform.name}</span>`
+                            ).join('')}
+                            ${game.platforms.length > 4 ? `<span class="platform-tag-large">+${game.platforms.length - 4} more</span>` : ''}
+                        </div>
+                        <div class="game-genres-large">
+                            ${game.genres.slice(0, 3).map(genre => 
+                                `<span class="genre-tag-large">${genre.name}</span>`
+                            ).join('')}
+                        </div>
+                        <div class="game-description">
+                            ${game.description ? game.description.substring(0, 200) + '...' : 'No description available'}
+                        </div>
+                        <div class="game-actions-large">
+                            <button class="btn btn-primary" onclick="viewGameDetails(${game.id})">
+                                <i class="fas fa-info-circle"></i> View Details
+                            </button>
+                            <button class="btn btn-secondary" onclick="addToWishlist(${game.id}, '${game.name}')">
+                                <i class="fas fa-heart"></i> Add to Wishlist
+                            </button>
+                        </div>
+                    </div>
+                `;
+                resultsContainer.appendChild(gameCard);
+            });
+
+            // Display pagination
+            displayPagination(currentPage, totalPages, query);
+        }
+
+        function displayPagination(currentPage, totalPages, query) {
+            const paginationContainer = document.getElementById('searchPagination');
+            paginationContainer.innerHTML = '';
+
+            if (totalPages <= 1) return;
+
+            const pagination = document.createElement('div');
+            pagination.className = 'pagination-large';
+
+            // Previous button
+            if (currentPage > 1) {
+                const prevBtn = document.createElement('button');
+                prevBtn.className = 'btn btn-secondary';
+                prevBtn.innerHTML = '<i class="fas fa-chevron-left"></i> Previous';
+                prevBtn.onclick = () => window.location.href = `/search?q=${encodeURIComponent(query)}&page=${currentPage - 1}`;
+                pagination.appendChild(prevBtn);
+            }
+
+            // Page numbers
+            const startPage = Math.max(1, currentPage - 2);
+            const endPage = Math.min(totalPages, currentPage + 2);
+
+            for (let i = startPage; i <= endPage; i++) {
+                const pageBtn = document.createElement('button');
+                pageBtn.className = `btn ${i === currentPage ? 'btn-primary' : 'btn-secondary'}`;
+                pageBtn.textContent = i;
+                pageBtn.onclick = () => window.location.href = `/search?q=${encodeURIComponent(query)}&page=${i}`;
+                pagination.appendChild(pageBtn);
+            }
+
+            // Next button
+            if (currentPage < totalPages) {
+                const nextBtn = document.createElement('button');
+                nextBtn.className = 'btn btn-secondary';
+                nextBtn.innerHTML = 'Next <i class="fas fa-chevron-right"></i>';
+                nextBtn.onclick = () => window.location.href = `/search?q=${encodeURIComponent(query)}&page=${currentPage + 1}`;
+                pagination.appendChild(nextBtn);
+            }
+
+            paginationContainer.appendChild(pagination);
+        }
+
+        function viewGameDetails(gameId) {
+            alert(`Viewing details for game ID: ${gameId}`);
+            // You can implement a detailed game view modal here
+        }
+
+        function addToWishlist(gameId, gameName) {
+            alert(`Added "${gameName}" to wishlist!`);
+            // You can implement the actual wishlist addition here
+        }
+
+        function retrySearch() {
+            if (query) {
+                performSearch(query, page);
+            }
+        }
+
+        function goBack() {
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>
