@@ -412,19 +412,23 @@ class GameVaultApp {
                 // Hide login screen if user is logged in
                 this.loginScreen.hide();
             } else {
-                console.log('No active session, showing login screen');
-                // Always show login modal on first visit
-                console.log('About to show login screen');
-                this.loginScreen.show();
-                this.loginScreen.resetToInitialState();
+                console.log('No active session found');
+                // Only show login modal on the home page, not on every page
+                if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
+                    console.log('On home page, showing login screen');
+                    this.loginScreen.show();
+                    this.loginScreen.resetToInitialState();
+                }
                 // Show sign-in button in header
-                console.log('About to call showSignInButton()');
                 this.showSignInButton();
             }
         } catch (error) {
             console.error('Error checking auth status:', error);
-            this.loginScreen.show();
-            this.loginScreen.resetToInitialState();
+            // Only show login modal on home page even on error
+            if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
+                this.loginScreen.show();
+                this.loginScreen.resetToInitialState();
+            }
             // Show sign-in button in header
             this.showSignInButton();
         }
