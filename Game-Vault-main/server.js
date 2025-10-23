@@ -2,14 +2,41 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
+const session = require('express-session');
+require('dotenv').config();
+const GameSearchService = require('./server/services/GameSearchService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ===== Middleware =====
-app.use(cors());
+app.use(cors({
+    origin: true, // Allow requests from any origin (for development)
+    credentials: true // Allow cookies to be sent
+}));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// Session middleware
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'game-vault-secret-key',
+    resave: true, // Force session to be saved back to session store
+    saveUninitialized: true, // Allow saving uninitialized sessions
+    rolling: true, // Reset expiration on every request
+    cookie: {
+        secure: false, // Set to true if using HTTPS
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        httpOnly: true, // Prevent client-side access to cookies
+        sameSite: 'lax' // CSRF protection
+    }
+}));
+
+// Debug middleware to log session info
+app.use((req, res, next) => {
+    console.log('Session middleware - Session ID:', req.sessionID);
+    console.log('Session middleware - Session user:', req.session.user);
+    next();
+});
 
 // Serve static assets (CSS, JS, images) from 'public' folder
 app.use(express.static(path.join(__dirname, 'public')));
@@ -32,6 +59,7 @@ const {
 // ===== Initialize Managers =====
 const profileManager = new ProfileManager();
 const adminManager = new AdminManager();
+const gameSearchService = new GameSearchService();
 
 let isDatabaseReady = false;
 
@@ -84,6 +112,10 @@ app.get('/profile', (req, res) => {
     res.render('profile', { profile });
 });
 
+app.get('/search', (req, res) => {
+    console.log('Search route hit with query:', req.query.q);
+    res.render('search');
+});
 app.get('/friends', (req, res) => res.render('friends'));
 app.get('/wishlist', (req, res) => res.render('wishlist'));
 app.get('/reviews', (req, res) => res.render('reviews'));
@@ -104,10 +136,9 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const user = await profileManager.login(username, password);
-    if (user) {
-        res.json({
-            success: true,
-            user: {
+        if (user) {
+            // Store user data in session
+            req.session.user = {
                 username: user.username,
                 email: user.email,
                 joinDate: user.joinDate,
@@ -115,11 +146,28 @@ app.post('/api/auth/login', async (req, res) => {
                 gamingPreferences: user.gamingPreferences,
                 statistics: user.statistics,
                 achievements: user.achievements
-            }
-        });
-    } else {
-        res.status(401).json({ error: 'Invalid credentials' });
-    }
+            };
+            
+            console.log('Login successful, session user set:', req.session.user);
+            console.log('Session ID:', req.sessionID);
+            
+            // Force session save
+            req.session.save((err) => {
+                if (err) {
+                    console.error('Session save error:', err);
+                    return res.status(500).json({ error: 'Session save failed' });
+                }
+                
+                console.log('Session saved successfully');
+                res.json({
+                    success: true,
+                    user: req.session.user
+                });
+            });
+        } else {
+            console.log('Login failed for username:', username);
+            res.status(401).json({ error: 'Invalid credentials' });
+        }
 });
 
 app.post('/api/auth/signup', async (req, res) => {
@@ -136,17 +184,32 @@ app.post('/api/auth/signup', async (req, res) => {
     try {
         const user = await profileManager.signUp(username, email, password, gamingPreferences || {});
         if (user) {
-            res.json({
-                success: true,
-                user: {
-                    username: user.username,
-                    email: user.email,
-                    joinDate: user.joinDate,
-                    bio: user.bio,
-                    gamingPreferences: user.gamingPreferences,
-                    statistics: user.statistics,
-                    achievements: user.achievements
+            // Store user data in session
+            req.session.user = {
+                username: user.username,
+                email: user.email,
+                joinDate: user.joinDate,
+                bio: user.bio,
+                gamingPreferences: user.gamingPreferences,
+                statistics: user.statistics,
+                achievements: user.achievements
+            };
+            
+            console.log('Signup successful, session user set:', req.session.user);
+            console.log('Session ID:', req.sessionID);
+            
+            // Force session save
+            req.session.save((err) => {
+                if (err) {
+                    console.error('Session save error:', err);
+                    return res.status(500).json({ error: 'Session save failed' });
                 }
+                
+                console.log('Session saved successfully');
+                res.json({
+                    success: true,
+                    user: req.session.user
+                });
             });
         } else {
             res.status(400).json({ error: 'Username already exists' });
@@ -169,6 +232,50 @@ app.post('/api/auth/signup', async (req, res) => {
         }
 
         res.status(500).json({ error: 'Internal server error during signup' });
+    }
+});
+
+// Check if user is logged in
+app.get('/api/auth/check', (req, res) => {
+    console.log('Auth check - session user:', req.session.user);
+    console.log('Auth check - session ID:', req.sessionID);
+    console.log('Auth check - session data:', req.session);
+    if (req.session.user) {
+        res.json({
+            success: true,
+            user: req.session.user
+        });
+    } else {
+        res.json({
+            success: false,
+            user: null
+        });
+    }
+});
+
+// Logout route
+app.post('/api/auth/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            return res.status(500).json({ error: 'Could not log out' });
+        }
+        res.json({ success: true, message: 'Logged out successfully' });
+    });
+});
+
+// Test endpoint to see existing users
+app.get('/api/test/users', async (req, res) => {
+    try {
+        if (!profileManager.isInitialized) {
+            return res.status(503).json({ error: 'Database not ready' });
+        }
+        
+        // Get all users (this is a test endpoint)
+        const users = await profileManager.getAllUsers();
+        res.json({ users: users.map(u => ({ username: u.username, email: u.email })) });
+    } catch (error) {
+        console.error('Error getting users:', error);
+        res.status(500).json({ error: 'Failed to get users' });
     }
 });
 
@@ -322,6 +429,51 @@ app.get('/api/admin/stats', (req, res) => {
         userStats: stats,
         systemLogs: logs.slice(-20).reverse()
     });
+});
+
+// Game search routes
+app.get('/api/games/search', async (req, res) => {
+    const { q: query, page = 1, pageSize = 20 } = req.query;
+
+    if (!query || query.trim().length === 0) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Search query is required' 
+        });
+    }
+
+    try {
+        const result = await gameSearchService.searchGames(query.trim(), parseInt(page), parseInt(pageSize));
+        res.json(result);
+    } catch (error) {
+        console.error('Error in game search:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Internal server error during game search' 
+        });
+    }
+});
+
+app.get('/api/games/:gameId', async (req, res) => {
+    const { gameId } = req.params;
+
+    if (!gameId) {
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Game ID is required' 
+        });
+    }
+
+    try {
+        const result = await gameSearchService.getGameDetails(gameId);
+        res.json(result);
+    } catch (error) {
+        console.error('Error fetching game details:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Internal server error while fetching game details' 
+        });
+    }
 });
 
 // ===== Error Handling =====
