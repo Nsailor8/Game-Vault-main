@@ -81,8 +81,20 @@ app.use((req, res, next) => {
 });
 
 // ===== Render EJS Views =====
-app.get('/', (req, res) => {
-    res.render('index', { trendingGames: [], recentGames: [] });
+app.get('/', async (req, res) => {
+    try {
+        // Fetch trending games from IGDB API
+        const trendingGames = await gameSearchService.getTrendingGames();
+        const recentGames = await gameSearchService.getRecentGames();
+        
+        res.render('index', { 
+            trendingGames: trendingGames.games || [], 
+            recentGames: recentGames.games || [] 
+        });
+    } catch (error) {
+        console.error('Error fetching homepage games:', error);
+        res.render('index', { trendingGames: [], recentGames: [] });
+    }
 });
 
 app.get('/profile', (req, res) => {
@@ -317,34 +329,150 @@ app.put('/api/profile/:username', async (req, res) => {
     }
 });
 
-// Friends routes
-app.get('/api/friends/:username', (req, res) => {
-    const { username } = req.params;
-    profileManager.loadProfile(username);
-    const friendsList = profileManager.getFriendsList();
+// Friends routes - Enhanced with database integration
+app.get('/api/friends/:username', async (req, res) => {
+    try {
+        const { username } = req.params;
+        
+        // Get user from database
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
 
-    if (friendsList) {
+        // Get accepted friendships (friends)
+        const friends = await profileManager.getFriendships(user.id, 'accepted');
+        
+        // Get pending requests (both sent and received)
+        const sentRequests = await profileManager.getSentFriendRequests(user.id);
+        const receivedRequests = await profileManager.getReceivedFriendRequests(user.id);
+
         res.json({
-            friends: friendsList.getFriendsList(),
-            pendingRequests: friendsList.getPendingRequests()
+            success: true,
+            friends: friends,
+            sentRequests: sentRequests,
+            receivedRequests: receivedRequests
         });
-    } else {
-        res.status(404).json({ error: 'Friends list not found' });
+    } catch (error) {
+        console.error('Error getting friends:', error);
+        res.status(500).json({ error: 'Failed to get friends' });
     }
 });
 
-app.post('/api/friends/:username/add', (req, res) => {
-    const { username } = req.params;
-    const { friendUsername } = req.body;
+app.post('/api/friends/:username/request', async (req, res) => {
+    try {
+        const { username } = req.params;
+        const { friendUsername } = req.body;
 
-    profileManager.loadProfile(username);
-    const friendsList = profileManager.getFriendsList();
+        if (!friendUsername) {
+            return res.status(400).json({ error: 'Friend username is required' });
+        }
 
-    if (friendsList) {
-        const success = friendsList.sendFriendRequest(`user_${Date.now()}`, friendUsername);
-        res.json({ success, message: success ? 'Friend request sent' : 'Failed to send friend request' });
-    } else {
-        res.status(404).json({ error: 'Friends list not found' });
+        if (username === friendUsername) {
+            return res.status(400).json({ error: 'Cannot send friend request to yourself' });
+        }
+
+        // Get both users
+        const user = await profileManager.getUserByUsername(username);
+        const friend = await profileManager.getUserByUsername(friendUsername);
+
+        if (!user || !friend) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Check if friendship already exists
+        const existingFriendship = await profileManager.getFriendship(user.id, friend.id);
+        if (existingFriendship) {
+            return res.status(400).json({ error: 'Friendship already exists or request already sent' });
+        }
+
+        // Create friend request
+        const friendship = await profileManager.createFriendRequest(user.id, friend.id);
+        
+        res.json({
+            success: true,
+            message: 'Friend request sent successfully',
+            friendship: friendship
+        });
+    } catch (error) {
+        console.error('Error sending friend request:', error);
+        res.status(500).json({ error: 'Failed to send friend request' });
+    }
+});
+
+app.post('/api/friends/:username/accept/:requestId', async (req, res) => {
+    try {
+        const { username, requestId } = req.params;
+        
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const friendship = await profileManager.acceptFriendRequest(parseInt(requestId), user.id);
+        
+        if (friendship) {
+            res.json({
+                success: true,
+                message: 'Friend request accepted',
+                friendship: friendship
+            });
+        } else {
+            res.status(400).json({ error: 'Friend request not found or already processed' });
+        }
+    } catch (error) {
+        console.error('Error accepting friend request:', error);
+        res.status(500).json({ error: 'Failed to accept friend request' });
+    }
+});
+
+app.post('/api/friends/:username/decline/:requestId', async (req, res) => {
+    try {
+        const { username, requestId } = req.params;
+        
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const success = await profileManager.declineFriendRequest(parseInt(requestId), user.id);
+        
+        if (success) {
+            res.json({
+                success: true,
+                message: 'Friend request declined'
+            });
+        } else {
+            res.status(400).json({ error: 'Friend request not found or already processed' });
+        }
+    } catch (error) {
+        console.error('Error declining friend request:', error);
+        res.status(500).json({ error: 'Failed to decline friend request' });
+    }
+});
+
+app.delete('/api/friends/:username/remove/:friendId', async (req, res) => {
+    try {
+        const { username, friendId } = req.params;
+        
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const success = await profileManager.removeFriend(user.id, parseInt(friendId));
+        
+        if (success) {
+            res.json({
+                success: true,
+                message: 'Friend removed successfully'
+            });
+        } else {
+            res.status(400).json({ error: 'Friendship not found' });
+        }
+    } catch (error) {
+        console.error('Error removing friend:', error);
+        res.status(500).json({ error: 'Failed to remove friend' });
     }
 });
 
@@ -379,33 +507,181 @@ app.post('/api/wishlists/:username/create', (req, res) => {
 });
 
 // Reviews routes
-app.get('/api/reviews/:username', (req, res) => {
-    const { username } = req.params;
-    profileManager.loadProfile(username);
-    const reviewManager = profileManager.getReviewManager();
+app.get('/api/reviews', async (req, res) => {
+    try {
+        if (!req.session.user) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
 
-    if (reviewManager) {
-        res.json({
-            reviews: reviewManager.getReviews(),
-            averageRating: reviewManager.getAverageRating()
+        const userId = req.session.user.id;
+        const reviews = await Review.findAll({
+            where: { userId: userId },
+            order: [['createdAt', 'DESC']]
         });
-    } else {
-        res.status(404).json({ error: 'Review manager not found' });
+
+        const averageRating = reviews.length > 0 
+            ? (reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length).toFixed(1)
+            : 0;
+
+        res.json({
+            success: true,
+            reviews: reviews.map(review => ({
+                id: review.id,
+                gameTitle: review.gameTitle,
+                rating: review.rating,
+                reviewText: review.reviewText,
+                tags: review.tags || [],
+                helpfulVotes: review.helpfulVotes,
+                isPublic: review.isPublic,
+                createdAt: review.createdAt,
+                updatedAt: review.updatedAt
+            })),
+            averageRating: parseFloat(averageRating),
+            totalReviews: reviews.length
+        });
+    } catch (error) {
+        console.error('Error fetching reviews:', error);
+        res.status(500).json({ error: 'Failed to fetch reviews' });
     }
 });
 
-app.post('/api/reviews/:username/add', (req, res) => {
-    const { username } = req.params;
-    const { gameTitle, rating, reviewText, tags } = req.body;
+app.post('/api/reviews', async (req, res) => {
+    try {
+        if (!req.session.user) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
 
-    profileManager.loadProfile(username);
-    const reviewManager = profileManager.getReviewManager();
+        const { gameTitle, rating, reviewText, tags, isPublic } = req.body;
+        const userId = req.session.user.id;
 
-    if (reviewManager) {
-        const review = reviewManager.addReview(`game_${Date.now()}`, gameTitle, rating, reviewText, tags);
-        res.json({ success: true, review });
-    } else {
-        res.status(404).json({ error: 'Review manager not found' });
+        // Validate required fields
+        if (!gameTitle || !rating || !reviewText) {
+            return res.status(400).json({ error: 'Game title, rating, and review text are required' });
+        }
+
+        // Validate rating
+        if (rating < 1 || rating > 5) {
+            return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+        }
+
+        // Validate review text length
+        if (reviewText.length < 10 || reviewText.length > 5000) {
+            return res.status(400).json({ error: 'Review text must be between 10 and 5000 characters' });
+        }
+
+        const review = await Review.create({
+            userId: userId,
+            gameTitle: gameTitle,
+            rating: rating,
+            reviewText: reviewText,
+            tags: tags || [],
+            isPublic: isPublic !== false, // Default to true
+            helpfulVotes: 0
+        });
+
+        res.json({
+            success: true,
+            review: {
+                id: review.id,
+                gameTitle: review.gameTitle,
+                rating: review.rating,
+                reviewText: review.reviewText,
+                tags: review.tags,
+                helpfulVotes: review.helpfulVotes,
+                isPublic: review.isPublic,
+                createdAt: review.createdAt
+            }
+        });
+    } catch (error) {
+        console.error('Error creating review:', error);
+        res.status(500).json({ error: 'Failed to create review' });
+    }
+});
+
+app.put('/api/reviews/:reviewId', async (req, res) => {
+    try {
+        if (!req.session.user) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        const { reviewId } = req.params;
+        const { gameTitle, rating, reviewText, tags, isPublic } = req.body;
+        const userId = req.session.user.id;
+
+        const review = await Review.findOne({
+            where: { id: reviewId, userId: userId }
+        });
+
+        if (!review) {
+            return res.status(404).json({ error: 'Review not found' });
+        }
+
+        // Validate required fields
+        if (!gameTitle || !rating || !reviewText) {
+            return res.status(400).json({ error: 'Game title, rating, and review text are required' });
+        }
+
+        // Validate rating
+        if (rating < 1 || rating > 5) {
+            return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+        }
+
+        // Validate review text length
+        if (reviewText.length < 10 || reviewText.length > 5000) {
+            return res.status(400).json({ error: 'Review text must be between 10 and 5000 characters' });
+        }
+
+        await review.update({
+            gameTitle: gameTitle,
+            rating: rating,
+            reviewText: reviewText,
+            tags: tags || [],
+            isPublic: isPublic !== false
+        });
+
+        res.json({
+            success: true,
+            review: {
+                id: review.id,
+                gameTitle: review.gameTitle,
+                rating: review.rating,
+                reviewText: review.reviewText,
+                tags: review.tags,
+                helpfulVotes: review.helpfulVotes,
+                isPublic: review.isPublic,
+                createdAt: review.createdAt,
+                updatedAt: review.updatedAt
+            }
+        });
+    } catch (error) {
+        console.error('Error updating review:', error);
+        res.status(500).json({ error: 'Failed to update review' });
+    }
+});
+
+app.delete('/api/reviews/:reviewId', async (req, res) => {
+    try {
+        if (!req.session.user) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        const { reviewId } = req.params;
+        const userId = req.session.user.id;
+
+        const review = await Review.findOne({
+            where: { id: reviewId, userId: userId }
+        });
+
+        if (!review) {
+            return res.status(404).json({ error: 'Review not found' });
+        }
+
+        await review.destroy();
+
+        res.json({ success: true, message: 'Review deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting review:', error);
+        res.status(500).json({ error: 'Failed to delete review' });
     }
 });
 
@@ -450,6 +726,54 @@ app.get('/api/games/search', async (req, res) => {
         res.status(500).json({ 
             success: false, 
             error: 'Internal server error during game search' 
+        });
+    }
+});
+
+// Game search suggestions endpoint
+app.get('/api/games/suggestions', async (req, res) => {
+    const { q: query, limit = 5 } = req.query;
+
+    if (!query || query.trim().length < 2) {
+        return res.json({ success: true, suggestions: [] });
+    }
+
+    try {
+        const result = await gameSearchService.getSearchSuggestions(query.trim(), parseInt(limit));
+        res.json(result);
+    } catch (error) {
+        console.error('Error getting search suggestions:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Internal server error during suggestions fetch' 
+        });
+    }
+});
+
+// Trending games endpoint
+app.get('/api/games/trending', async (req, res) => {
+    try {
+        const result = await gameSearchService.getTrendingGames();
+        res.json(result);
+    } catch (error) {
+        console.error('Error getting trending games:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to fetch trending games' 
+        });
+    }
+});
+
+// Recent games endpoint
+app.get('/api/games/recent', async (req, res) => {
+    try {
+        const result = await gameSearchService.getRecentGames();
+        res.json(result);
+    } catch (error) {
+        console.error('Error getting recent games:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to fetch recent games' 
         });
     }
 });

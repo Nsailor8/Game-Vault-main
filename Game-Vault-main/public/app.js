@@ -99,38 +99,38 @@ class GameVaultApp {
         const showSignup = document.getElementById('showSignup');
         if (showSignup) {
             showSignup.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.loginScreen.showSignupForm();
-            });
+            e.preventDefault();
+            this.loginScreen.showSignupForm();
+        });
         }
 
         const showLogin = document.getElementById('showLogin');
         if (showLogin) {
             showLogin.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.loginScreen.showLoginForm();
-            });
+            e.preventDefault();
+            this.loginScreen.showLoginForm();
+        });
         }
 
         const loginBtn = document.getElementById('loginBtn');
         if (loginBtn) {
             loginBtn.addEventListener('click', () => {
-                this.handleLogin();
-            });
+            this.handleLogin();
+        });
         }
 
         const signupBtn = document.getElementById('signupBtn');
         if (signupBtn) {
             signupBtn.addEventListener('click', () => {
-                this.handleSignup();
-            });
+            this.handleSignup();
+        });
         }
 
         const guestBtnLogin = document.getElementById('guestBtnLogin');
         if (guestBtnLogin) {
             guestBtnLogin.addEventListener('click', () => {
-                this.handleGuestLogin();
-            });
+            this.handleGuestLogin();
+        });
         }
 
         // Sign In Button (in header)
@@ -146,91 +146,111 @@ class GameVaultApp {
         const editProfileBtn = document.getElementById('editProfileBtn');
         if (editProfileBtn) {
             editProfileBtn.addEventListener('click', () => {
-                this.showEditProfileModal();
-            });
+            this.showEditProfileModal();
+        });
         }
 
         const saveProfileBtn = document.getElementById('saveProfileBtn');
         if (saveProfileBtn) {
             saveProfileBtn.addEventListener('click', () => {
-                this.saveProfile();
-            });
+            this.saveProfile();
+        });
         }
 
-        // Friends
-        const addFriendBtn = document.getElementById('addFriendBtn');
-        if (addFriendBtn) {
-            addFriendBtn.addEventListener('click', () => {
-                this.showAddFriendModal();
-            });
-        }
+        // Friends (addFriendBtn removed - using inline form instead)
 
         const sendFriendRequestBtn = document.getElementById('sendFriendRequestBtn');
         if (sendFriendRequestBtn) {
             sendFriendRequestBtn.addEventListener('click', () => {
-                this.sendFriendRequest();
-            });
+            this.sendFriendRequest();
+        });
         }
 
         // Wishlist
         const createWishlistBtn = document.getElementById('createWishlistBtn');
         if (createWishlistBtn) {
             createWishlistBtn.addEventListener('click', () => {
-                this.showCreateWishlistModal();
-            });
+            this.showCreateWishlistModal();
+        });
         }
 
         const createWishlistConfirmBtn = document.getElementById('createWishlistConfirmBtn');
         if (createWishlistConfirmBtn) {
             createWishlistConfirmBtn.addEventListener('click', () => {
-                this.createWishlist();
-            });
+            this.createWishlist();
+        });
         }
 
         // Reviews
         const addReviewBtn = document.getElementById('addReviewBtn');
         if (addReviewBtn) {
             addReviewBtn.addEventListener('click', () => {
-                this.showAddReviewModal();
-            });
+            this.showAddReviewModal();
+        });
         }
 
         const addReviewConfirmBtn = document.getElementById('addReviewConfirmBtn');
         if (addReviewConfirmBtn) {
             addReviewConfirmBtn.addEventListener('click', () => {
-                this.addReview();
+            this.addReview();
+        });
+        }
+
+        const editReviewConfirmBtn = document.getElementById('editReviewConfirmBtn');
+        if (editReviewConfirmBtn) {
+            editReviewConfirmBtn.addEventListener('click', () => {
+            this.updateReview();
+        });
+        }
+
+        // Star rating functionality
+        this.setupStarRating('starRating', 'reviewRating', 'rating-text');
+        this.setupStarRating('editStarRating', 'editRating', 'rating-text');
+        
+        // Character count functionality
+        const reviewText = document.getElementById('reviewText');
+        if (reviewText) {
+            reviewText.addEventListener('input', () => {
+                this.updateCharCount('reviewText', 'charCount');
             });
         }
 
+        const editReviewText = document.getElementById('editReviewText');
+        if (editReviewText) {
+            editReviewText.addEventListener('input', () => {
+                this.updateCharCount('editReviewText', 'editCharCount');
+            });
+        }
+        
         // Admin
         const adminLoginBtn = document.getElementById('adminLoginBtn');
         if (adminLoginBtn) {
             adminLoginBtn.addEventListener('click', () => {
-                this.showAdminLoginModal();
-            });
+            this.showAdminLoginModal();
+        });
         }
 
         const adminLoginConfirmBtn = document.getElementById('adminLoginConfirmBtn');
         if (adminLoginConfirmBtn) {
             adminLoginConfirmBtn.addEventListener('click', () => {
-                this.handleAdminLogin();
-            });
+            this.handleAdminLogin();
+        });
         }
 
         // Logout button
         const logoutBtn = document.getElementById('logoutBtn');
         if (logoutBtn) {
             logoutBtn.addEventListener('click', () => {
-                this.handleLogout();
-            });
+            this.handleLogout();
+        });
         }
 
         // Login button for guests (in profile)
         const loginBtnProfile = document.getElementById('loginBtnProfile');
         if (loginBtnProfile) {
             loginBtnProfile.addEventListener('click', () => {
-                this.showLoginModal();
-            });
+            this.showLoginModal();
+        });
         }
 
         // Modal close buttons
@@ -251,6 +271,18 @@ class GameVaultApp {
                 }
             });
         });
+
+        // Friend request event listeners (already declared above)
+
+        // Enter key for friend username input
+        const friendUsernameInput = document.getElementById('friendUsernameInput');
+        if (friendUsernameInput) {
+            friendUsernameInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.sendFriendRequest();
+                }
+            });
+        }
     }
 
     setupSearchListeners() {
@@ -275,7 +307,7 @@ class GameVaultApp {
                 console.error('Search button not found!');
             }
 
-            // Also search on Enter key press
+            // Also search on Enter key press and autocomplete
             if (searchInput) {
                 searchInput.addEventListener("keypress", (e) => {
                     console.log('Key pressed:', e.key);
@@ -285,6 +317,36 @@ class GameVaultApp {
                         this.performGameSearch();
                     }
                 });
+                
+                // Autocomplete functionality
+                let searchTimeout;
+                searchInput.addEventListener('input', (e) => {
+                    const query = e.target.value.trim();
+                    
+                    // Clear previous timeout
+                    if (searchTimeout) {
+                        clearTimeout(searchTimeout);
+                    }
+                    
+                    // Hide suggestions if query is too short
+                    if (query.length < 2) {
+                        this.hideSearchSuggestions();
+                        return;
+                    }
+                    
+                    // Debounce the search
+                    searchTimeout = setTimeout(() => {
+                        this.getSearchSuggestions(query);
+                    }, 300);
+                });
+                
+                // Hide suggestions when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.search-wrapper')) {
+                        this.hideSearchSuggestions();
+                    }
+                });
+                
                 console.log('Search input listener added');
             } else {
                 console.error('Search input not found!');
@@ -447,17 +509,17 @@ class GameVaultApp {
             const data = await response.json();
             
             if (data.success) {
-                // Clear current user
-                this.currentUser = null;
-                
-                // Reset UI elements
-                this.resetUI();
-                
-                // Show login screen in initial state
-                this.loginScreen.show();
-                this.loginScreen.resetToInitialState();
-                
-                console.log('User logged out successfully');
+        // Clear current user
+        this.currentUser = null;
+        
+        // Reset UI elements
+        this.resetUI();
+        
+        // Show login screen in initial state
+        this.loginScreen.show();
+        this.loginScreen.resetToInitialState();
+        
+        console.log('User logged out successfully');
             } else {
                 console.error('Logout failed:', data.error);
             }
@@ -639,26 +701,57 @@ class GameVaultApp {
         // Update reviews
         this.updateReviews();
         
-        // Hide sign-in button when user is logged in
-        this.hideSignInButton();
+        // Show user section when user is logged in
+        this.showUserSection();
     }
 
     showSignInButton() {
         console.log('showSignInButton called');
         const authSection = document.getElementById('authSection');
+        const userSection = document.getElementById('userSection');
         console.log('authSection element:', authSection);
+        console.log('userSection element:', userSection);
+        
         if (authSection) {
             authSection.style.display = 'block';
             console.log('Sign-in button should now be visible');
         } else {
             console.error('authSection element not found!');
         }
+        
+        if (userSection) {
+            userSection.style.display = 'none';
+        }
     }
 
     hideSignInButton() {
         const authSection = document.getElementById('authSection');
+        const userSection = document.getElementById('userSection');
+        
         if (authSection) {
             authSection.style.display = 'none';
+        }
+        
+        if (userSection) {
+            userSection.style.display = 'block';
+        }
+    }
+
+    showUserSection() {
+        const authSection = document.getElementById('authSection');
+        const userSection = document.getElementById('userSection');
+        const userDisplayName = document.getElementById('userDisplayName');
+        
+        if (authSection) {
+            authSection.style.display = 'none';
+        }
+        
+        if (userSection) {
+            userSection.style.display = 'block';
+        }
+        
+        if (userDisplayName && this.currentUser) {
+            userDisplayName.textContent = this.currentUser.username;
         }
     }
 
@@ -805,48 +898,90 @@ class GameVaultApp {
         if (!container) {
             return; // Element not found, skip update
         }
-        
+
         if (!this.currentUser) {
             container.innerHTML = '<div class="empty-state"><i class="fas fa-star"></i><h3>Login Required</h3><p>Please log in to view your reviews!</p></div>';
             return;
         }
 
         // Call the server API to get reviews
-        fetch(`/api/reviews/${this.currentUser.username}`)
+        fetch('/api/reviews', {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
         .then(response => response.json())
         .then(data => {
+            if (data.success) {
             const reviews = data.reviews || [];
             const averageRating = data.averageRating || 0;
 
-            document.getElementById('totalReviews').textContent = reviews.length;
-            document.getElementById('avgReviewRating').textContent = averageRating;
+                // Update profile statistics if elements exist
+                const totalReviewsEl = document.getElementById('totalReviews');
+                const avgReviewRatingEl = document.getElementById('avgReviewRating');
+                
+                if (totalReviewsEl) totalReviewsEl.textContent = reviews.length;
+                if (avgReviewRatingEl) avgReviewRatingEl.textContent = averageRating;
 
             container.innerHTML = '';
 
             if (reviews.length === 0) {
-                container.innerHTML = '<div class="empty-state"><i class="fas fa-star"></i><h3>No Reviews</h3><p>Write your first review!</p></div>';
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fas fa-star"></i>
+                            <h3>No Reviews Yet</h3>
+                            <p>Start sharing your gaming experiences!</p>
+                            <button class="btn btn-primary" onclick="app.showAddReviewModal()">
+                                <i class="fas fa-plus"></i> Write Your First Review
+                            </button>
+                        </div>
+                    `;
             } else {
                 reviews.forEach(review => {
                     const reviewItem = document.createElement('div');
                     reviewItem.className = 'review-item';
                     reviewItem.innerHTML = `
-                        <div>
-                            <strong>${review.gameTitle}</strong>
-                            <br>
-                            <div class="rating">
+                            <div class="review-content">
+                                <div class="review-header">
+                                    <h4 class="review-game-title">${review.gameTitle}</h4>
+                                    <div class="review-rating">
                                 ${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}
+                                        <span class="rating-number">${review.rating}/5</span>
                             </div>
-                            <p>${review.reviewText}</p>
-                            <small>${new Date(review.createdDate).toLocaleDateString()}</small>
                         </div>
-                        <button class="btn btn-danger" onclick="app.deleteReview(${review.id})">Delete</button>
+                                <div class="review-text">${review.reviewText}</div>
+                                ${review.tags && review.tags.length > 0 ? `
+                                    <div class="review-tags">
+                                        ${review.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}
+                                    </div>
+                                ` : ''}
+                                <div class="review-meta">
+                                    <span class="review-date">${new Date(review.createdAt).toLocaleDateString()}</span>
+                                    ${review.helpfulVotes > 0 ? `<span class="helpful-votes">${review.helpfulVotes} helpful</span>` : ''}
+                                    ${!review.isPublic ? '<span class="private-review">Private</span>' : ''}
+                                </div>
+                            </div>
+                            <div class="review-actions">
+                                <button class="btn btn-secondary btn-sm" onclick="app.editReview(${review.id})">
+                                    <i class="fas fa-edit"></i> Edit
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="app.deleteReview(${review.id})">
+                                    <i class="fas fa-trash"></i> Delete
+                                </button>
+                            </div>
                     `;
                     container.appendChild(reviewItem);
                 });
+                }
+            } else {
+                container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load reviews. Please try again.</p></div>';
             }
         })
         .catch(error => {
             console.error('Error fetching reviews:', error);
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load reviews. Please try again.</p></div>';
         });
     }
 
@@ -1037,26 +1172,171 @@ class GameVaultApp {
         const rating = parseInt(document.getElementById('reviewRating').value);
         const reviewText = document.getElementById('reviewText').value;
         const tags = document.getElementById('reviewTags').value.split(',').map(t => t.trim()).filter(t => t);
+        const isPublic = document.getElementById('reviewPublic').checked;
 
-        if (!gameTitle || !reviewText) {
+        if (!gameTitle || !reviewText || !rating) {
             alert('Please fill in all required fields');
             return;
         }
 
-        const reviewManager = this.profileManager.getReviewManager();
-        if (reviewManager) {
-            reviewManager.addReview(`game_${Date.now()}`, gameTitle, rating, reviewText, tags);
+        if (reviewText.length < 10) {
+            alert('Review text must be at least 10 characters long');
+            return;
+        }
+
+        if (reviewText.length > 5000) {
+            alert('Review text must be less than 5000 characters');
+            return;
+        }
+
+        fetch('/api/reviews', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                gameTitle: gameTitle,
+                rating: rating,
+                reviewText: reviewText,
+                tags: tags,
+                isPublic: isPublic
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
             this.closeModal(document.getElementById('addReviewModal'));
             this.updateReviews();
+                this.showNotification('Review added successfully!', 'success');
+            } else {
+                alert(data.error || 'Failed to add review');
+            }
+        })
+        .catch(error => {
+            console.error('Error adding review:', error);
+            alert('Failed to add review. Please try again.');
+        });
+    }
+
+    editReview(reviewId) {
+        // First, fetch the review data to populate the edit form
+        fetch('/api/reviews', {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const review = data.reviews.find(r => r.id === reviewId);
+                if (review) {
+                    // Populate the edit form
+                    document.getElementById('editReviewId').value = review.id;
+                    document.getElementById('editGameTitle').value = review.gameTitle;
+                    document.getElementById('editRating').value = review.rating;
+                    document.getElementById('editReviewText').value = review.reviewText;
+                    document.getElementById('editTags').value = review.tags ? review.tags.join(', ') : '';
+                    document.getElementById('editReviewPublic').checked = review.isPublic;
+                    
+                    // Update star rating display
+                    this.updateStarRating('editStarRating', review.rating);
+                    this.updateCharCount('editReviewText', 'editCharCount');
+                    
+                    // Show the edit modal
+                    const editModal = document.getElementById('editReviewModal');
+                    if (editModal) {
+                        editModal.style.display = 'block';
+                    }
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching review:', error);
+            alert('Failed to load review for editing');
+        });
+    }
+
+    updateReview() {
+        const reviewId = document.getElementById('editReviewId').value;
+        const gameTitle = document.getElementById('editGameTitle').value;
+        const rating = parseInt(document.getElementById('editRating').value);
+        const reviewText = document.getElementById('editReviewText').value;
+        const tags = document.getElementById('editTags').value.split(',').map(t => t.trim()).filter(t => t);
+        const isPublic = document.getElementById('editReviewPublic').checked;
+
+        if (!gameTitle || !reviewText || !rating) {
+            alert('Please fill in all required fields');
+            return;
         }
+
+        if (reviewText.length < 10) {
+            alert('Review text must be at least 10 characters long');
+            return;
+        }
+
+        if (reviewText.length > 5000) {
+            alert('Review text must be less than 5000 characters');
+            return;
+        }
+
+        fetch(`/api/reviews/${reviewId}`, {
+            method: 'PUT',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                gameTitle: gameTitle,
+                rating: rating,
+                reviewText: reviewText,
+                tags: tags,
+                isPublic: isPublic
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.closeModal(document.getElementById('editReviewModal'));
+                this.updateReviews();
+                this.showNotification('Review updated successfully!', 'success');
+            } else {
+                alert(data.error || 'Failed to update review');
+            }
+        })
+        .catch(error => {
+            console.error('Error updating review:', error);
+            alert('Failed to update review. Please try again.');
+        });
     }
 
     deleteReview(reviewId) {
-        const reviewManager = this.profileManager.getReviewManager();
-        if (reviewManager) {
-            reviewManager.deleteReview(reviewId);
-            this.updateReviews();
+        if (!confirm('Are you sure you want to delete this review? This action cannot be undone.')) {
+            return;
         }
+
+        fetch(`/api/reviews/${reviewId}`, {
+            method: 'DELETE',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+            this.updateReviews();
+                this.showNotification('Review deleted successfully!', 'success');
+            } else {
+                alert(data.error || 'Failed to delete review');
+        }
+        })
+        .catch(error => {
+            console.error('Error deleting review:', error);
+            alert('Failed to delete review. Please try again.');
+        });
     }
 
     showAdminLoginModal() {
@@ -1413,6 +1693,495 @@ class GameVaultApp {
         // This would add the game to the user's wishlist
         alert(`Added "${gameName}" to wishlist!`);
         // You can implement the actual wishlist addition here
+    }
+
+    // Friend management methods
+    async updateFriends() {
+        if (!this.currentUser) {
+            this.showLoginRequired('friends');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/friends/${this.currentUser.username}`, {
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.displayFriends(data.friends);
+                this.displayReceivedRequests(data.receivedRequests);
+                this.displaySentRequests(data.sentRequests);
+            } else {
+                console.error('Failed to load friends');
+            }
+        } catch (error) {
+            console.error('Error loading friends:', error);
+        }
+    }
+
+    displayFriends(friends) {
+        const container = document.getElementById('friendsList');
+        const countElement = document.getElementById('friendsCount');
+        
+        if (!container) return;
+
+        if (countElement) {
+            countElement.textContent = friends.length;
+        }
+
+        if (friends.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-user-friends"></i>
+                    <h3>No friends yet</h3>
+                    <p>Send friend requests to start building your network!</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = '';
+        friends.forEach(friend => {
+            const friendItem = document.createElement('div');
+            friendItem.className = 'friend-item';
+            friendItem.innerHTML = `
+                <div class="friend-info">
+                    <div class="friend-avatar">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                    <div class="friend-details">
+                        <h4>${friend.username}</h4>
+                        <p>Friends since: ${new Date(friend.friendshipDate).toLocaleDateString()}</p>
+                        ${friend.bio ? `<p class="friend-bio">${friend.bio}</p>` : ''}
+                    </div>
+                </div>
+                <div class="friend-actions">
+                    <button class="btn btn-danger" onclick="app.removeFriend(${friend.friendId})">Remove</button>
+                </div>
+            `;
+            container.appendChild(friendItem);
+        });
+    }
+
+    displayReceivedRequests(requests) {
+        const container = document.getElementById('receivedRequests');
+        const countElement = document.getElementById('receivedRequestsCount');
+        
+        if (!container) return;
+
+        if (countElement) {
+            countElement.textContent = requests.length;
+        }
+
+        if (requests.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-user-plus"></i>
+                    <h3>No friend requests</h3>
+                    <p>You'll see friend requests here when people want to add you!</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = '';
+        requests.forEach(request => {
+            const requestItem = document.createElement('div');
+            requestItem.className = 'friend-request-item';
+            requestItem.innerHTML = `
+                <div class="friend-info">
+                    <div class="friend-avatar">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                    <div class="friend-details">
+                        <h4>${request.username}</h4>
+                        <p>Sent: ${new Date(request.sentDate).toLocaleDateString()}</p>
+                        ${request.bio ? `<p class="friend-bio">${request.bio}</p>` : ''}
+                    </div>
+                </div>
+                <div class="friend-actions">
+                    <button class="btn btn-success" onclick="app.acceptFriendRequest(${request.id})">Accept</button>
+                    <button class="btn btn-danger" onclick="app.declineFriendRequest(${request.id})">Decline</button>
+                </div>
+            `;
+            container.appendChild(requestItem);
+        });
+    }
+
+    displaySentRequests(requests) {
+        const container = document.getElementById('sentRequests');
+        const countElement = document.getElementById('sentRequestsCount');
+        
+        if (!container) return;
+
+        if (countElement) {
+            countElement.textContent = requests.length;
+        }
+
+        if (requests.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-paper-plane"></i>
+                    <h3>No sent requests</h3>
+                    <p>Your sent friend requests will appear here!</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = '';
+        requests.forEach(request => {
+            const requestItem = document.createElement('div');
+            requestItem.className = 'friend-request-item';
+            requestItem.innerHTML = `
+                <div class="friend-info">
+                    <div class="friend-avatar">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                    <div class="friend-details">
+                        <h4>${request.username}</h4>
+                        <p>Sent: ${new Date(request.sentDate).toLocaleDateString()}</p>
+                        <span class="status-pending">Pending</span>
+                    </div>
+                </div>
+                <div class="friend-actions">
+                    <button class="btn btn-secondary" onclick="app.cancelFriendRequest(${request.id})">Cancel</button>
+                </div>
+            `;
+            container.appendChild(requestItem);
+        });
+    }
+
+    async sendFriendRequest() {
+        const usernameInput = document.getElementById('friendUsernameInput');
+        if (!usernameInput || !this.currentUser) return;
+
+        const friendUsername = usernameInput.value.trim();
+        if (!friendUsername) {
+            alert('Please enter a username');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/friends/${this.currentUser.username}/request`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ friendUsername })
+            });
+
+            const data = await response.json();
+            
+            if (response.ok) {
+                alert(data.message);
+                usernameInput.value = '';
+                this.updateFriends();
+            } else {
+                alert(data.error || 'Failed to send friend request');
+            }
+        } catch (error) {
+            console.error('Error sending friend request:', error);
+            alert('Failed to send friend request');
+        }
+    }
+
+    async acceptFriendRequest(requestId) {
+        try {
+            const response = await fetch(`/api/friends/${this.currentUser.username}/accept/${requestId}`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+            
+            if (response.ok) {
+                alert(data.message);
+                this.updateFriends();
+            } else {
+                alert(data.error || 'Failed to accept friend request');
+            }
+        } catch (error) {
+            console.error('Error accepting friend request:', error);
+            alert('Failed to accept friend request');
+        }
+    }
+
+    async declineFriendRequest(requestId) {
+        try {
+            const response = await fetch(`/api/friends/${this.currentUser.username}/decline/${requestId}`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+            
+            if (response.ok) {
+                alert(data.message);
+                this.updateFriends();
+            } else {
+                alert(data.error || 'Failed to decline friend request');
+            }
+        } catch (error) {
+            console.error('Error declining friend request:', error);
+            alert('Failed to decline friend request');
+        }
+    }
+
+    async removeFriend(friendId) {
+        if (!confirm('Are you sure you want to remove this friend?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/friends/${this.currentUser.username}/remove/${friendId}`, {
+                method: 'DELETE',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+            
+            if (response.ok) {
+                alert(data.message);
+                this.updateFriends();
+            } else {
+                alert(data.error || 'Failed to remove friend');
+            }
+        } catch (error) {
+            console.error('Error removing friend:', error);
+            alert('Failed to remove friend');
+        }
+    }
+
+    showLoginRequired(section) {
+        const containers = {
+            friends: document.getElementById('friendsList'),
+            received: document.getElementById('receivedRequests'),
+            sent: document.getElementById('sentRequests')
+        };
+
+        Object.values(containers).forEach(container => {
+            if (container) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-sign-in-alt"></i>
+                        <h3>Login Required</h3>
+                        <p>Please log in to manage your friends!</p>
+                    </div>
+                `;
+            }
+        });
+    }
+
+    showNotification(message, type = 'info') {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.innerHTML = `
+            <div class="notification-content">
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+                <span>${message}</span>
+            </div>
+        `;
+        
+        // Add to page
+        document.body.appendChild(notification);
+        
+        // Show notification
+        setTimeout(() => {
+            notification.classList.add('show');
+        }, 100);
+        
+        // Hide and remove notification
+        setTimeout(() => {
+            notification.classList.remove('show');
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 3000);
+    }
+
+    setupStarRating(containerId, inputId, textId) {
+        const container = document.getElementById(containerId);
+        const input = document.getElementById(inputId);
+        const textElement = document.querySelector(`#${containerId} + .rating-text`);
+        
+        if (!container || !input) return;
+
+        const stars = container.querySelectorAll('.star');
+        
+        stars.forEach((star, index) => {
+            star.addEventListener('click', () => {
+                const rating = index + 1;
+                this.updateStarRating(containerId, rating);
+                input.value = rating;
+                if (textElement) {
+                    textElement.textContent = `${rating} star${rating !== 1 ? 's' : ''}`;
+                }
+            });
+
+            star.addEventListener('mouseenter', () => {
+                this.highlightStars(containerId, index + 1);
+            });
+        });
+
+        container.addEventListener('mouseleave', () => {
+            const currentRating = parseInt(input.value) || 5;
+            this.highlightStars(containerId, currentRating);
+        });
+    }
+
+    updateStarRating(containerId, rating) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        const stars = container.querySelectorAll('.star');
+        stars.forEach((star, index) => {
+            if (index < rating) {
+                star.classList.add('active');
+            } else {
+                star.classList.remove('active');
+            }
+        });
+    }
+
+    highlightStars(containerId, rating) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        const stars = container.querySelectorAll('.star');
+        stars.forEach((star, index) => {
+            if (index < rating) {
+                star.style.color = '#ffd700';
+            } else {
+                star.style.color = '#ddd';
+            }
+        });
+    }
+
+    updateCharCount(textareaId, countId) {
+        const textarea = document.getElementById(textareaId);
+        const countElement = document.getElementById(countId);
+        
+        if (textarea && countElement) {
+            const count = textarea.value.length;
+            countElement.textContent = count;
+            
+            // Change color based on character count
+            if (count > 4500) {
+                countElement.style.color = '#e74c3c';
+            } else if (count > 4000) {
+                countElement.style.color = '#f39c12';
+            } else {
+                countElement.style.color = '#7f8c8d';
+            }
+        }
+    }
+
+    // Generate star rating display (1-5 stars with half stars)
+    generateStarRating(rating) {
+        if (!rating || rating <= 0) {
+            return '<span class="no-rating">No rating</span>';
+        }
+
+        // Ensure rating is between 0 and 5
+        const normalizedRating = Math.min(Math.max(rating, 0), 5);
+        const fullStars = Math.floor(normalizedRating);
+        const hasHalfStar = normalizedRating % 1 >= 0.5;
+        const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
+
+        let starsHTML = '';
+        
+        // Full stars
+        for (let i = 0; i < fullStars; i++) {
+            starsHTML += '<i class="fas fa-star star-full"></i>';
+        }
+        
+        // Half star
+        if (hasHalfStar) {
+            starsHTML += '<i class="fas fa-star-half-alt star-half"></i>';
+        }
+        
+        // Empty stars
+        for (let i = 0; i < emptyStars; i++) {
+            starsHTML += '<i class="far fa-star star-empty"></i>';
+        }
+
+        return `<div class="star-rating-display">${starsHTML}</div>`;
+    }
+
+    // Autocomplete functionality
+    async getSearchSuggestions(query) {
+        try {
+            const response = await fetch(`/api/games/suggestions?q=${encodeURIComponent(query)}&limit=5`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch suggestions');
+            }
+            
+            const data = await response.json();
+            if (data.success && data.suggestions.length > 0) {
+                this.showSearchSuggestions(data.suggestions);
+            } else {
+                this.hideSearchSuggestions();
+            }
+        } catch (error) {
+            console.error('Error fetching search suggestions:', error);
+            this.hideSearchSuggestions();
+        }
+    }
+
+    showSearchSuggestions(suggestions) {
+        const suggestionsContainer = document.getElementById('searchSuggestions');
+        if (!suggestionsContainer) return;
+
+        suggestionsContainer.innerHTML = '';
+        
+        suggestions.forEach(suggestion => {
+            const suggestionItem = document.createElement('div');
+            suggestionItem.className = 'suggestion-item';
+            suggestionItem.innerHTML = `
+                <div class="suggestion-content">
+                    <div class="suggestion-title">${suggestion.name}</div>
+                    <div class="suggestion-meta">
+                        ${suggestion.released ? new Date(suggestion.released).getFullYear() : 'TBA'}
+                        ${suggestion.rating ? ` • ${suggestion.rating.toFixed(1)}/5` : ''}
+                    </div>
+                </div>
+            `;
+            
+            suggestionItem.addEventListener('click', () => {
+                document.getElementById('gameSearchInput').value = suggestion.name;
+                this.hideSearchSuggestions();
+                window.location.href = `/search?q=${encodeURIComponent(suggestion.name)}`;
+            });
+            
+            suggestionsContainer.appendChild(suggestionItem);
+        });
+        
+        suggestionsContainer.style.display = 'block';
+    }
+
+    hideSearchSuggestions() {
+        const suggestionsContainer = document.getElementById('searchSuggestions');
+        if (suggestionsContainer) {
+            suggestionsContainer.style.display = 'none';
+        }
     }
 }
 

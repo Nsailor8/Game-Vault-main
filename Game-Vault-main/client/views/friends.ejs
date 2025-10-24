@@ -10,26 +10,49 @@
       <section id="friendsSection" class="content-section active">
         <div class="section-header">
           <h2>Friends</h2>
-          <button id="addFriendBtn" class="btn btn-primary">Add Friend</button>
         </div>
         <div class="friends-content">
+          <!-- Add Friend Section -->
+          <div class="add-friend-section">
+            <h3>Add Friend</h3>
+            <div class="add-friend-form">
+              <input type="text" id="friendUsernameInput" placeholder="Enter username..." class="form-input">
+              <button id="sendFriendRequestBtn" class="btn btn-primary">Send Request</button>
+            </div>
+          </div>
+
+          <!-- Friends List -->
           <div class="friends-list">
-            <h3>Friends List</h3>
+            <h3>Friends (<span id="friendsCount">0</span>)</h3>
             <div id="friendsList" class="list-container">
               <div class="empty-state">
                 <i class="fas fa-user-friends"></i>
                 <h3>No friends yet</h3>
-                <p>Login to add friends!</p>
+                <p>Send friend requests to start building your network!</p>
               </div>
             </div>
           </div>
-          <div class="pending-requests">
-            <h3>Pending Requests</h3>
-            <div id="pendingRequests" class="list-container">
+
+          <!-- Received Requests -->
+          <div class="received-requests">
+            <h3>Friend Requests (<span id="receivedRequestsCount">0</span>)</h3>
+            <div id="receivedRequests" class="list-container">
               <div class="empty-state">
-                <i class="fas fa-clock"></i>
-                <h3>No pending requests</h3>
-                <p>Login to view pending friend requests!</p>
+                <i class="fas fa-user-plus"></i>
+                <h3>No friend requests</h3>
+                <p>You'll see friend requests here when people want to add you!</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sent Requests -->
+          <div class="sent-requests">
+            <h3>Sent Requests (<span id="sentRequestsCount">0</span>)</h3>
+            <div id="sentRequests" class="list-container">
+              <div class="empty-state">
+                <i class="fas fa-paper-plane"></i>
+                <h3>No sent requests</h3>
+                <p>Your sent friend requests will appear here!</p>
               </div>
             </div>
           </div>
