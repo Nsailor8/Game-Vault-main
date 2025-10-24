@@ -849,6 +849,263 @@ class ProfileManager {
       return false;
     }
   }
+
+  // Friend management methods
+  async getUserByUsername(username) {
+    try {
+      const { User } = require('../server/models/index');
+      const user = await User.findOne({ 
+        where: { username: username },
+        attributes: ['user_id', 'username', 'email', 'join_date', 'bio']
+      });
+      if (user) {
+        // Map the database fields to the expected format
+        return {
+          id: user.user_id,
+          username: user.username,
+          email: user.email,
+          joinDate: user.join_date,
+          bio: user.bio
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting user by username:', error);
+      return null;
+    }
+  }
+
+  async getFriendships(userId, status = 'accepted') {
+    try {
+      const { Friendship, User } = require('../server/models/index');
+      const friendships = await Friendship.findAll({
+        where: {
+          [require('sequelize').Op.or]: [
+            { userId: userId, status: status },
+            { friendId: userId, status: status }
+          ]
+        },
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: ['user_id', 'username', 'email', 'join_date', 'bio']
+          },
+          {
+            model: User,
+            as: 'friend',
+            attributes: ['user_id', 'username', 'email', 'join_date', 'bio']
+          }
+        ]
+      });
+
+      return friendships.map(friendship => {
+        const friend = friendship.userId === userId ? friendship.friend : friendship.user;
+        return {
+          id: friendship.id,
+          friendId: friend.user_id,
+          username: friend.username,
+          email: friend.email,
+          joinDate: friend.join_date,
+          bio: friend.bio,
+          friendshipDate: friendship.acceptedDate || friendship.sentDate,
+          status: friendship.status
+        };
+      });
+    } catch (error) {
+      console.error('Error getting friendships:', error);
+      return [];
+    }
+  }
+
+  async getSentFriendRequests(userId) {
+    try {
+      const { Friendship, User } = require('../server/models/index');
+      const requests = await Friendship.findAll({
+        where: {
+          userId: userId,
+          status: 'pending'
+        },
+        include: [
+          {
+            model: User,
+            as: 'friend',
+            attributes: ['user_id', 'username', 'email', 'join_date', 'bio']
+          }
+        ]
+      });
+
+      return requests.map(request => ({
+        id: request.id,
+        friendId: request.friend.user_id,
+        username: request.friend.username,
+        email: request.friend.email,
+        joinDate: request.friend.join_date,
+        bio: request.friend.bio,
+        sentDate: request.sentDate,
+        status: request.status
+      }));
+    } catch (error) {
+      console.error('Error getting sent friend requests:', error);
+      return [];
+    }
+  }
+
+  async getReceivedFriendRequests(userId) {
+    try {
+      const { Friendship, User } = require('../server/models/index');
+      const requests = await Friendship.findAll({
+        where: {
+          friendId: userId,
+          status: 'pending'
+        },
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: ['user_id', 'username', 'email', 'join_date', 'bio']
+          }
+        ]
+      });
+
+      return requests.map(request => ({
+        id: request.id,
+        userId: request.user.user_id,
+        username: request.user.username,
+        email: request.user.email,
+        joinDate: request.user.join_date,
+        bio: request.user.bio,
+        sentDate: request.sentDate,
+        status: request.status
+      }));
+    } catch (error) {
+      console.error('Error getting received friend requests:', error);
+      return [];
+    }
+  }
+
+  async getFriendship(userId, friendId) {
+    try {
+      const { Friendship } = require('../server/models/index');
+      const friendship = await Friendship.findOne({
+        where: {
+          [require('sequelize').Op.or]: [
+            { userId: userId, friendId: friendId },
+            { userId: friendId, friendId: userId }
+          ]
+        }
+      });
+      return friendship;
+    } catch (error) {
+      console.error('Error getting friendship:', error);
+      return null;
+    }
+  }
+
+  async createFriendRequest(userId, friendId) {
+    try {
+      const { Friendship } = require('../server/models/index');
+      const friendship = await Friendship.create({
+        userId: userId,
+        friendId: friendId,
+        status: 'pending',
+        sentDate: new Date()
+      });
+      return friendship;
+    } catch (error) {
+      console.error('Error creating friend request:', error);
+      throw error;
+    }
+  }
+
+  async acceptFriendRequest(requestId, userId) {
+    try {
+      const { Friendship } = require('../server/models/index');
+      const friendship = await Friendship.findOne({
+        where: {
+          id: requestId,
+          friendId: userId,
+          status: 'pending'
+        }
+      });
+
+      if (friendship) {
+        friendship.status = 'accepted';
+        friendship.acceptedDate = new Date();
+        await friendship.save();
+        return friendship;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error accepting friend request:', error);
+      throw error;
+    }
+  }
+
+  async declineFriendRequest(requestId, userId) {
+    try {
+      const { Friendship } = require('../server/models/index');
+      const friendship = await Friendship.findOne({
+        where: {
+          id: requestId,
+          friendId: userId,
+          status: 'pending'
+        }
+      });
+
+      if (friendship) {
+        await friendship.destroy();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error declining friend request:', error);
+      throw error;
+    }
+  }
+
+  async removeFriend(userId, friendId) {
+    try {
+      const { Friendship } = require('../server/models/index');
+      const friendship = await Friendship.findOne({
+        where: {
+          [require('sequelize').Op.or]: [
+            { userId: userId, friendId: friendId },
+            { userId: friendId, friendId: userId }
+          ],
+          status: 'accepted'
+        }
+      });
+
+      if (friendship) {
+        await friendship.destroy();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error removing friend:', error);
+      throw error;
+    }
+  }
+
+  async getAllUsers() {
+    try {
+      const { User } = require('../server/models/index');
+      const users = await User.findAll({
+        attributes: ['user_id', 'username', 'email', 'join_date'],
+        where: { is_active: true }
+      });
+      return users.map(user => ({
+        id: user.user_id,
+        username: user.username,
+        email: user.email,
+        joinDate: user.join_date
+      }));
+    } catch (error) {
+      console.error('Error getting all users:', error);
+      return [];
+    }
+  }
 }
 
 // Export classes for use in other files
