@@ -40,17 +40,31 @@ class DatabaseManager {
   // User operations
   async saveUser(userData) {
     try {
-      const [user, created] = await User.upsert({
+      // Build the data object, only including password_hash if it's provided
+      const userDataToSave = {
         username: userData.username,
         email: userData.email,
-        password_hash: userData.password || userData.password_hash,
         join_date: userData.joinDate || userData.join_date,
         is_active: userData.isActive !== undefined ? userData.isActive : userData.is_active,
         last_login: userData.lastLogin || userData.last_login,
         bio: userData.bio,
         gaming_preferences: userData.gamingPreferences || userData.gaming_preferences,
-        statistics: userData.statistics
-      });
+        statistics: userData.statistics,
+        steam_id: userData.steam_id,
+        steam_profile: userData.steam_profile,
+        steam_linked_at: userData.steam_linked_at,
+        steam_games: userData.steam_games,
+        steam_last_sync: userData.steam_last_sync
+      };
+
+      // Only include password_hash if it's provided and not null/undefined
+      if (userData.password_hash !== undefined && userData.password_hash !== null) {
+        userDataToSave.password_hash = userData.password_hash;
+      } else if (userData.password !== undefined && userData.password !== null) {
+        userDataToSave.password_hash = userData.password;
+      }
+
+      const [user, created] = await User.upsert(userDataToSave);
       
       console.log(`${created ? 'Created' : 'Updated'} user ${userData.username} in database.`);
       return user;
@@ -66,6 +80,26 @@ class DatabaseManager {
       return user;
     } catch (error) {
       console.error('Error loading user:', error);
+      return null;
+    }
+  }
+
+  async getUserByUsername(username) {
+    try {
+      const user = await User.findOne({ where: { username } });
+      return user;
+    } catch (error) {
+      console.error('Error getting user by username:', error);
+      return null;
+    }
+  }
+
+  async getUserBySteamId(steamId) {
+    try {
+      const user = await User.findOne({ where: { steam_id: steamId } });
+      return user;
+    } catch (error) {
+      console.error('Error getting user by Steam ID:', error);
       return null;
     }
   }

@@ -572,7 +572,8 @@ class GameVaultApp {
         // Update profile section
         const profileUsername = document.getElementById('profileUsername');
         if (profileUsername) {
-            profileUsername.textContent = this.currentUser.username;
+            const capitalizedUsername = this.currentUser.username.toUpperCase();
+            profileUsername.textContent = capitalizedUsername;
         }
         
         const profileEmail = document.getElementById('profileEmail');
@@ -588,6 +589,7 @@ class GameVaultApp {
         const profileBio = document.getElementById('profileBio');
         if (profileBio) {
             profileBio.textContent = this.currentUser.isGuest ? 'Guest users cannot save data permanently' : (this.currentUser.bio || 'No bio set');
+            profileBio.className = this.currentUser.bio ? 'detail-value' : 'detail-value empty';
         }
         
         // Update statistics
@@ -614,17 +616,26 @@ class GameVaultApp {
         // Update gaming preferences
         const playStyleDisplay = document.getElementById('playStyleDisplay');
         if (playStyleDisplay) {
-            playStyleDisplay.textContent = this.currentUser.gamingPreferences.playStyle;
+            const playStyle = this.currentUser.gamingPreferences.playStyle || 'Not specified';
+            const capitalizedPlayStyle = playStyle === 'Not specified' ? playStyle : playStyle.charAt(0).toUpperCase() + playStyle.slice(1);
+            playStyleDisplay.textContent = capitalizedPlayStyle;
+            playStyleDisplay.className = playStyle !== 'Not specified' ? 'detail-value' : 'detail-value empty';
         }
         
         const favoriteGenresDisplay = document.getElementById('favoriteGenresDisplay');
         if (favoriteGenresDisplay) {
-            favoriteGenresDisplay.textContent = this.currentUser.gamingPreferences.favoriteGenres.join(', ') || 'None set';
+            const genres = this.currentUser.gamingPreferences.favoriteGenres || [];
+            const genresText = genres.length > 0 ? genres.join(', ') : 'None set';
+            favoriteGenresDisplay.textContent = genresText;
+            favoriteGenresDisplay.className = genres.length > 0 ? 'detail-value' : 'detail-value empty';
         }
         
         const preferredPlatformsDisplay = document.getElementById('preferredPlatformsDisplay');
         if (preferredPlatformsDisplay) {
-            preferredPlatformsDisplay.textContent = this.currentUser.gamingPreferences.preferredPlatforms.join(', ') || 'None set';
+            const platforms = this.currentUser.gamingPreferences.preferredPlatforms || [];
+            const platformsText = platforms.length > 0 ? platforms.join(', ') : 'None set';
+            preferredPlatformsDisplay.textContent = platformsText;
+            preferredPlatformsDisplay.className = platforms.length > 0 ? 'detail-value' : 'detail-value empty';
         }
 
         // Update achievements
@@ -1313,12 +1324,17 @@ class GameVaultApp {
         games.forEach(game => {
             const gameCard = document.createElement('div');
             gameCard.className = 'game-card';
+            
+            // Steam ownership badge
+            const steamBadge = game.steamOwned ? '<span class="steam-game-badge"><i class="fab fa-steam"></i> Owned on Steam</span>' : '';
+            
             gameCard.innerHTML = `
                 <div class="game-image">
                     ${game.backgroundImage ? 
                         `<img src="${game.backgroundImage}" alt="${game.name}" onerror="this.style.display='none'">` : 
                         '<div class="no-image"><i class="fas fa-gamepad"></i></div>'
                     }
+                    ${steamBadge}
                 </div>
                 <div class="game-info">
                     <h3 class="game-title">${game.name}</h3>
@@ -1342,9 +1358,14 @@ class GameVaultApp {
                         <button class="btn btn-primary" onclick="app.viewGameDetails(${game.id})">
                             <i class="fas fa-info-circle"></i> View Details
                         </button>
-                        <button class="btn btn-secondary" onclick="app.addToWishlist(${game.id}, '${game.name}')">
-                            <i class="fas fa-heart"></i> Add to Wishlist
-                        </button>
+                        ${game.steamOwned ? 
+                            `<a href="steam://run/${game.id}" class="btn btn-steam">
+                                <i class="fab fa-steam"></i> Play on Steam
+                            </a>` : 
+                            `<button class="btn btn-secondary" onclick="app.addToWishlist(${game.id}, '${game.name}')">
+                                <i class="fas fa-heart"></i> Add to Wishlist
+                            </button>`
+                        }
                     </div>
                 </div>
             `;
@@ -1404,25 +1425,348 @@ class GameVaultApp {
         // You can implement a detailed game view modal here
     }
 
-    addToWishlist(gameId, gameName) {
+    async addToWishlist(gameId, gameName) {
         if (!this.currentUser) {
             alert('Please log in to add games to your wishlist');
             return;
         }
 
-        // This would add the game to the user's wishlist
-        alert(`Added "${gameName}" to wishlist!`);
-        // You can implement the actual wishlist addition here
+        try {
+            const response = await fetch(`/api/wishlists/${this.currentUser.username}/add-game`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    gameId: gameId,
+                    gameName: gameName,
+                    gameData: {
+                        addedDate: new Date().toISOString()
+                    }
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                alert(`Added "${gameName}" to wishlist!`);
+            } else {
+                alert('Failed to add game to wishlist: ' + result.error);
+            }
+        } catch (error) {
+            console.error('Error adding game to wishlist:', error);
+            alert('Error adding game to wishlist');
+        }
     }
 }
 
 
+// Steam Integration Functions
+class SteamIntegration {
+    constructor() {
+        this.steamLinked = false;
+        this.steamProfile = null;
+    }
+
+    async initializeSteamIntegration() {
+        try {
+            // Get username from URL
+            const username = this.getUsernameFromUrl();
+            if (!username) {
+                console.error('Username not found in URL');
+                return;
+            }
+            
+            // Check Steam link status
+            const response = await fetch(`/api/auth/steam/status/${username}`);
+            const status = await response.json();
+            
+            if (status.linked) {
+                this.steamLinked = true;
+                this.steamProfile = status.steam_profile;
+                this.showSteamProfile();
+                this.loadSteamGames();
+                
+                // Check if Steam auth just completed and auto-import library
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.get('steam_auth') === 'success') {
+                    // Remove the parameter from URL
+                    const newUrl = window.location.pathname + window.location.search.replace(/[?&]steam_auth=success/, '');
+                    window.history.replaceState({}, '', newUrl);
+                    
+                    // Auto-import Steam library
+                    console.log('Steam auth completed, auto-importing library...');
+                    await this.importSteamLibrary();
+                }
+            } else {
+                this.showSteamConnect();
+            }
+        } catch (error) {
+            console.error('Error checking Steam status:', error);
+        }
+    }
+
+    showSteamProfile() {
+        const steamProfileSection = document.getElementById('steamProfileSection');
+        const steamConnectSection = document.getElementById('steamConnectSection');
+        
+        if (steamProfileSection && steamConnectSection) {
+            steamProfileSection.style.display = 'block';
+            steamConnectSection.style.display = 'none';
+            
+            // Update Steam profile info
+            if (this.steamProfile) {
+                const steamAvatar = document.getElementById('steamAvatar');
+                const steamUsername = document.getElementById('steamUsername');
+                const steamProfileUrl = document.getElementById('steamProfileUrl');
+                
+                if (steamAvatar) steamAvatar.src = this.steamProfile.avatarfull || this.steamProfile.avatar;
+                if (steamUsername) steamUsername.textContent = this.steamProfile.personaname || 'Steam User';
+                if (steamProfileUrl) steamProfileUrl.innerHTML = `<a href="${this.steamProfile.profileurl}" target="_blank">View Steam Profile</a>`;
+            }
+        }
+    }
+
+    showSteamConnect() {
+        const steamProfileSection = document.getElementById('steamProfileSection');
+        const steamConnectSection = document.getElementById('steamConnectSection');
+        
+        if (steamProfileSection && steamConnectSection) {
+            steamProfileSection.style.display = 'none';
+            steamConnectSection.style.display = 'block';
+        }
+    }
+
+    async connectSteam() {
+        try {
+            // Get username from URL
+            const username = this.getUsernameFromUrl();
+            if (!username) {
+                alert('Username not found in URL');
+                return;
+            }
+            
+            // Store current page URL for redirect after Steam auth
+            const currentUrl = window.location.pathname + window.location.search;
+            sessionStorage.setItem('preSteamUrl', currentUrl);
+            
+            const response = await fetch(`/api/auth/steam/link/${username}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    returnUrl: currentUrl
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // Redirect to Steam OAuth
+                window.location.href = result.redirectUrl;
+            } else {
+                alert('Failed to connect Steam account: ' + result.error);
+            }
+        } catch (error) {
+            console.error('Error connecting Steam:', error);
+            alert('Error connecting Steam account');
+        }
+    }
+
+    async disconnectSteam() {
+        if (!confirm('Are you sure you want to disconnect your Steam account?')) {
+            return;
+        }
+
+        try {
+            // Get username from URL
+            const username = this.getUsernameFromUrl();
+            if (!username) {
+                alert('Username not found in URL');
+                return;
+            }
+            
+            const response = await fetch(`/api/auth/steam/unlink/${username}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.steamLinked = false;
+                this.steamProfile = null;
+                this.showSteamConnect();
+                alert('Steam account disconnected successfully');
+            } else {
+                alert('Failed to disconnect Steam account: ' + result.error);
+            }
+        } catch (error) {
+            console.error('Error disconnecting Steam:', error);
+            alert('Error disconnecting Steam account');
+        }
+    }
+
+    async importSteamLibrary() {
+        try {
+            console.log('Importing Steam library...');
+            
+            // Get username from URL
+            const username = this.getUsernameFromUrl();
+            if (!username) {
+                alert('Username not found in URL');
+                return;
+            }
+            
+            const response = await fetch(`/api/steam/sync/${username}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            console.log('Import response status:', response.status);
+            const result = await response.json();
+            console.log('Import result:', result);
+            
+            if (result.success) {
+                const gamesCount = result.gamesCount || 0;
+                alert(`Successfully imported ${gamesCount} games from Steam!`);
+                // Stay on the profile page and reload to show updated stats
+                const currentUrl = window.location.href;
+                window.location.href = currentUrl;
+            } else {
+                alert('Failed to import Steam library: ' + result.error);
+            }
+        } catch (error) {
+            console.error('Error importing Steam library:', error);
+            alert('Error importing Steam library: ' + error.message);
+        }
+    }
+
+    getUsernameFromUrl() {
+        // Extract username from URL path like /profile/username
+        const pathParts = window.location.pathname.split('/');
+        const profileIndex = pathParts.indexOf('profile');
+        if (profileIndex !== -1 && pathParts[profileIndex + 1]) {
+            return pathParts[profileIndex + 1];
+        }
+        return null;
+    }
+
+    async loadSteamGames() {
+        try {
+            // Get username from URL
+            const username = this.getUsernameFromUrl();
+            if (!username) {
+                console.error('Username not found in URL');
+                return;
+            }
+            
+            const response = await fetch(`/api/steam/games/${username}`);
+            const result = await response.json();
+            
+            if (result.success) {
+                // Update Steam profile section
+                const steamGameCount = document.getElementById('steamGameCount');
+                if (steamGameCount) {
+                    steamGameCount.textContent = result.games ? result.games.length : 0;
+                }
+
+                // Calculate Steam statistics
+                let totalPlaytime = 0;
+                let totalAchievements = 0;
+                
+                if (result.games && result.games.length > 0) {
+                    totalPlaytime = result.games.reduce((sum, game) => sum + (game.playtime_forever || 0), 0);
+                    // Calculate achievements the same way as games and hours
+                    totalAchievements = result.games.reduce((sum, game) => sum + (game.achievements || 0), 0);
+                }
+
+                // Update main profile stats with Steam data
+                const totalGames = document.getElementById('totalGames');
+                const totalPlaytimeElement = document.getElementById('totalPlaytime');
+                const achievementCount = document.getElementById('achievementCount');
+                
+                if (totalGames) {
+                    totalGames.textContent = result.games ? result.games.length : 0;
+                }
+                if (totalPlaytimeElement) {
+                    totalPlaytimeElement.textContent = Math.round(totalPlaytime / 60); // Convert minutes to hours
+                }
+                if (achievementCount) {
+                    achievementCount.textContent = totalAchievements;
+                }
+
+                // Load site-based ratings (user's game ratings from the site)
+                await this.loadSiteRatings();
+            }
+        } catch (error) {
+            console.error('Error loading Steam games:', error);
+        }
+    }
+
+
+    async loadSiteRatings() {
+        try {
+            // Get user's reviews/ratings from the site
+            const response = await fetch('/api/reviews/current-user');
+            const result = await response.json();
+            
+            if (result.success && result.reviews) {
+                // Calculate average rating from user's reviews
+                const ratings = result.reviews.filter(review => review.rating > 0).map(review => review.rating);
+                const avgRating = ratings.length > 0 ? (ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length).toFixed(1) : 0;
+                
+                // Update the average rating in the stats
+                const avgRatingElement = document.getElementById('avgRating');
+                if (avgRatingElement) {
+                    avgRatingElement.textContent = avgRating;
+                }
+            }
+        } catch (error) {
+            console.error('Error loading site ratings:', error);
+        }
+    }
+
+    async checkWishlistSteamOwnership(username) {
+        try {
+            const response = await fetch(`/api/wishlists/${username}/steam-check`);
+            const result = await response.json();
+            
+            if (result.success) {
+                return {
+                    steamOwnedGames: result.steamOwnedGames,
+                    totalOwned: result.totalOwned
+                };
+            }
+            return null;
+        } catch (error) {
+            console.error('Error checking Steam ownership for wishlist:', error);
+            return null;
+        }
+    }
+
+    generateSteamWishlistLink(gameId) {
+        return `https://store.steampowered.com/app/${gameId}/`;
+    }
+}
+
 // Initialize the app when the page loads
 let app;
+let steamIntegration;
+
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM Content Loaded - Initializing GameVaultApp');
     app = new GameVaultApp();
     window.app = app; // Make app available globally
+    
+    // Initialize Steam integration
+    steamIntegration = new SteamIntegration();
+    window.steamIntegration = steamIntegration; // Make available globally
     
     // Test if search elements exist after initialization
     setTimeout(() => {
@@ -1430,5 +1774,43 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Search button:', document.getElementById("gameSearchBtn"));
         console.log('Search input:', document.getElementById("gameSearchInput"));
         console.log('Global functions available:', typeof window.performSearch, typeof window.testSearch);
+        
+        // Initialize Steam integration after a short delay
+        if (steamIntegration) {
+            steamIntegration.initializeSteamIntegration();
+        }
     }, 500);
 });
+
+// Global Steam functions for use in HTML
+window.connectSteam = function() {
+    if (steamIntegration) {
+        steamIntegration.connectSteam();
+    }
+};
+
+window.disconnectSteam = function() {
+    if (steamIntegration) {
+        steamIntegration.disconnectSteam();
+    }
+};
+
+window.importSteamLibrary = function() {
+    if (steamIntegration) {
+        steamIntegration.importSteamLibrary();
+    }
+};
+
+window.checkWishlistSteamOwnership = function(username) {
+    if (steamIntegration) {
+        return steamIntegration.checkWishlistSteamOwnership(username);
+    }
+    return null;
+};
+
+window.generateSteamWishlistLink = function(gameId) {
+    if (steamIntegration) {
+        return steamIntegration.generateSteamWishlistLink(gameId);
+    }
+    return `https://store.steampowered.com/app/${gameId}/`;
+};

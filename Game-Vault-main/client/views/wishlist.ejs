@@ -10,8 +10,24 @@
       <section id="wishlistSection" class="content-section active">
         <div class="section-header">
           <h2>Wishlist</h2>
-          <button id="addWishlistBtn" class="btn btn-primary">Add Game</button>
+          <div class="wishlist-actions">
+            <button id="checkSteamOwnershipBtn" class="btn btn-steam">
+              <i class="fab fa-steam"></i> Check Steam Ownership
+            </button>
+            <button id="addWishlistBtn" class="btn btn-primary">Add Game</button>
+          </div>
         </div>
+        <!-- Steam Ownership Status -->
+        <div id="steamOwnershipStatus" class="steam-ownership-status" style="display: none;">
+          <div class="ownership-header">
+            <h3><i class="fab fa-steam"></i> Steam Ownership Status</h3>
+            <span id="steamOwnershipCount" class="ownership-count">0 games owned</span>
+          </div>
+          <div id="steamOwnedGamesList" class="steam-owned-games">
+            <!-- Steam owned games will be populated here -->
+          </div>
+        </div>
+
         <div class="wishlists-content">
           <div id="wishlistContainer" class="list-container">
             <!-- Wishlist items will be populated here by JavaScript -->
@@ -33,8 +49,54 @@
     // Initialize the app when the page loads
     document.addEventListener('DOMContentLoaded', () => {
       console.log('Wishlist page - DOM Content Loaded');
-      // The app.js will handle session checking and show/hide login modal as needed
+      
+      // Add event listener for Steam ownership check button
+      const checkSteamOwnershipBtn = document.getElementById('checkSteamOwnershipBtn');
+      if (checkSteamOwnershipBtn) {
+        checkSteamOwnershipBtn.addEventListener('click', async () => {
+          if (window.app && window.app.currentUser) {
+            try {
+              const result = await window.checkWishlistSteamOwnership(window.app.currentUser.username);
+              if (result) {
+                displaySteamOwnershipStatus(result);
+              } else {
+                alert('Failed to check Steam ownership. Make sure you have a Steam account linked.');
+              }
+            } catch (error) {
+              console.error('Error checking Steam ownership:', error);
+              alert('Error checking Steam ownership');
+            }
+          } else {
+            alert('Please log in to check Steam ownership');
+          }
+        });
+      }
     });
+
+    function displaySteamOwnershipStatus(result) {
+      const statusDiv = document.getElementById('steamOwnershipStatus');
+      const countSpan = document.getElementById('steamOwnershipCount');
+      const gamesList = document.getElementById('steamOwnedGamesList');
+
+      if (statusDiv && countSpan && gamesList) {
+        statusDiv.style.display = 'block';
+        countSpan.textContent = `${result.totalOwned} games owned`;
+
+        if (result.steamOwnedGames.length > 0) {
+          gamesList.innerHTML = result.steamOwnedGames.map(game => `
+            <div class="steam-owned-game">
+              <span class="game-name">${game.gameName}</span>
+              <span class="wishlist-name">in ${game.wishlistName}</span>
+              <a href="steam://run/${game.gameId}" class="btn btn-steam btn-sm">
+                <i class="fab fa-steam"></i> Play
+              </a>
+            </div>
+          `).join('');
+        } else {
+          gamesList.innerHTML = '<p class="no-owned-games">No wishlisted games found in your Steam library.</p>';
+        }
+      }
+    }
   </script>
 </body>
 </html>

@@ -13,9 +13,9 @@
             <i class="fas fa-user-circle"></i>
           </div>
           <div class="profile-info">
-            <h2 id="profileUsername">Loading...</h2>
-            <p id="profileEmail">Loading...</p>
-            <p id="profileJoinDate">Loading...</p>
+            <h2 id="profileUsername"><%= profile.username || 'Loading...' %></h2>
+            <p id="profileEmail"><%= profile.email || 'Loading...' %></p>
+            <p id="profileJoinDate">Joined: <%= profile.joinDate ? new Date(profile.joinDate).toLocaleDateString() : 'Loading...' %></p>
           </div>
           <div class="profile-actions">
             <button id="editProfileBtn" class="btn btn-secondary">Edit Profile</button>
@@ -25,35 +25,183 @@
         <div class="profile-stats">
           <div class="stat-card">
             <i class="fas fa-gamepad"></i>
-            <h3 id="totalGames">0</h3>
+            <h3 id="totalGames"><%= profile.totalGames || 0 %></h3>
             <p>Games Played</p>
           </div>
           <div class="stat-card">
             <i class="fas fa-clock"></i>
-            <h3 id="totalPlaytime">0</h3>
+            <h3 id="totalPlaytime"><%= profile.totalPlaytime || 0 %></h3>
             <p>Hours Played</p>
           </div>
           <div class="stat-card">
             <i class="fas fa-star"></i>
-            <h3 id="avgRating">0</h3>
+            <h3 id="avgRating"><%= profile.avgRating || 0 %></h3>
             <p>Avg Rating</p>
           </div>
           <div class="stat-card">
             <i class="fas fa-trophy"></i>
-            <h3 id="achievementCount">0</h3>
+            <h3 id="achievementCount"><%= profile.achievementCount || 0 %></h3>
             <p>Achievements</p>
           </div>
         </div>
+
+
+        <!-- Steam Profile Section -->
+        <% if (profile.steamLinked) { %>
+        <div id="steamProfileSection" class="steam-profile-section">
+          <h3>Steam Profile</h3>
+          <div class="steam-profile-info">
+            <div class="steam-avatar">
+              <% if (profile.steam_profile && profile.steam_profile.avatarfull) { %>
+                <img id="steamAvatar" src="<%= profile.steam_profile.avatarfull %>" alt="Steam Avatar">
+              <% } else { %>
+                <img id="steamAvatar" src="" alt="Steam Avatar">
+              <% } %>
+            </div>
+            <div class="steam-details">
+              <h4 id="steamUsername"><%= profile.steam_profile ? profile.steam_profile.personaname : 'Steam User' %></h4>
+              <% if (profile.steam_profile && profile.steam_profile.profileurl) { %>
+                <p id="steamProfileUrl"><a href="<%= profile.steam_profile.profileurl %>" target="_blank">View Steam Profile</a></p>
+              <% } else { %>
+                <p id="steamProfileUrl">Profile URL</p>
+              <% } %>
+              <div class="steam-actions">
+                <button id="importSteamLibraryBtn" class="btn btn-secondary">Import Steam Library</button>
+                <button id="disconnectSteamBtn" class="btn btn-danger">Disconnect Steam</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <% } else { %>
+        <!-- Steam Connect Section -->
+        <div id="steamConnectSection" class="steam-connect-section">
+          <h3>Connect Your Steam Account</h3>
+          <p>Link your Steam account to import your game library and achievements</p>
+          <button id="connectSteamBtn" class="btn steam-connect-btn">
+            <i class="fab fa-steam"></i> Connect Steam
+          </button>
+        </div>
+        <% } %>
+        
+        <!-- Profile Details Section -->
+        <div class="profile-details">
+          <h3>Profile Information</h3>
+          <div class="detail-item">
+            <div class="detail-label">Bio</div>
+            <div class="detail-value" id="profileBio"><%= profile.bio || 'No bio set' %></div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Play Style</div>
+            <div class="detail-value" id="playStyleDisplay"><%= profile.playStyle || 'Not specified' %></div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Favorite Genres</div>
+            <div class="detail-value" id="favoriteGenresDisplay"><%= profile.favoriteGenres && profile.favoriteGenres.length > 0 ? profile.favoriteGenres.join(', ') : 'None set' %></div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Preferred Platforms</div>
+            <div class="detail-value" id="preferredPlatformsDisplay"><%= profile.preferredPlatforms && profile.preferredPlatforms.length > 0 ? profile.preferredPlatforms.join(', ') : 'None set' %></div>
+          </div>
+        </div>
+
+        <!-- Steam Games Section -->
+        <% if (profile.steamLinked && profile.steam_games && profile.steam_games.length > 0) { %>
+        <div id="steamGamesSection" class="steam-games-section">
+          <h3>Steam Games Library</h3>
+          <div class="games-grid">
+            <% profile.steam_games.forEach(function(game) { %>
+            <div class="game-card">
+              <a href="https://store.steampowered.com/app/<%= game.appid %>" target="_blank" class="game-link">
+                <div class="game-info">
+                  <h4 class="game-title"><%= game.name %></h4>
+                  <div class="game-stats">
+                    <div class="stat">
+                      <i class="fas fa-clock"></i>
+                      <span><%= Math.round((game.playtime_forever || 0) / 60) %> hours</span>
+                    </div>
+                    <% if (game.achievements && game.achievements > 0) { %>
+                    <div class="stat">
+                      <i class="fas fa-trophy"></i>
+                      <span><%= game.achievements %> achievements</span>
+                    </div>
+                    <% } %>
+                  </div>
+                </div>
+              </a>
+            </div>
+            <% }); %>
+          </div>
+        </div>
+        <% } %>
       </section>
     </main>
   </div>
     <%- include('partials/loginModal') %>
+    
+    <!-- Edit Profile Modal -->
+    <div id="editProfileModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Profile</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="editProfileForm">
+                    <div class="form-group">
+                        <label for="editBio">Bio</label>
+                        <textarea id="editBio" name="bio" rows="3" placeholder="Tell us about yourself..."></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="editPlayStyle">Play Style</label>
+                        <select id="editPlayStyle" name="playStyle">
+                            <option value="casual">Casual</option>
+                            <option value="hardcore">Hardcore</option>
+                            <option value="competitive">Competitive</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="editFavoriteGenres">Favorite Genres</label>
+                        <input type="text" id="editFavoriteGenres" name="favoriteGenres" placeholder="Action, RPG, Strategy (comma separated)">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="editPreferredPlatforms">Preferred Platforms</label>
+                        <input type="text" id="editPreferredPlatforms" name="preferredPlatforms" placeholder="PC, PlayStation, Xbox (comma separated)">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="app.closeModal(document.getElementById('editProfileModal'))">Cancel</button>
+                <button type="button" id="saveProfileBtn" class="btn btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+    
   <script src="/app.js"></script>
   <script src="/profile.js"></script>
   <script>
     // Initialize the app when the page loads
     document.addEventListener('DOMContentLoaded', () => {
       console.log('Profile page - DOM Content Loaded');
+      
+      // Set up Steam button event listeners
+      const connectSteamBtn = document.getElementById('connectSteamBtn');
+      if (connectSteamBtn) {
+        connectSteamBtn.addEventListener('click', connectSteam);
+      }
+      
+      const importSteamLibraryBtn = document.getElementById('importSteamLibraryBtn');
+      if (importSteamLibraryBtn) {
+        importSteamLibraryBtn.addEventListener('click', importSteamLibrary);
+      }
+      
+      const disconnectSteamBtn = document.getElementById('disconnectSteamBtn');
+      if (disconnectSteamBtn) {
+        disconnectSteamBtn.addEventListener('click', disconnectSteam);
+      }
+      
       // The app.js will handle session checking and show/hide login modal as needed
     });
   </script>
