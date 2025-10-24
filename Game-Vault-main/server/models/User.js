@@ -87,6 +87,35 @@ const User = sequelize.define('User', {
       totalReviews: 0,
       friendsCount: 0
     }
+  },
+  // Steam integration fields
+  steam_id: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    unique: true,
+    field: 'steam_id'
+  },
+  steam_profile: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    field: 'steam_profile',
+    defaultValue: null
+  },
+  steam_linked_at: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'steam_linked_at'
+  },
+  steam_games: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    field: 'steam_games',
+    defaultValue: null
+  },
+  steam_last_sync: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'steam_last_sync'
   }
 }, {
   tableName: 'users',
