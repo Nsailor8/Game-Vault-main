@@ -1,4 +1,3 @@
-// Global search functions - defined immediately
 window.performSearch = function() {
     console.log('Global performSearch called');
     const query = document.getElementById("gameSearchInput").value.trim();
@@ -22,7 +21,6 @@ window.testSearch = function() {
     }
 };
 
-// Login Screen Component
 class LoginScreen {
     constructor() {
         this.modal = document.getElementById('authModal');
@@ -43,12 +41,11 @@ class LoginScreen {
     }
 
     resetToInitialState() {
-        // Reset to exact initial state
+
         this.title.textContent = 'Welcome to Game Vault';
         this.loginForm.style.display = 'block';
         this.signupForm.style.display = 'none';
-        
-        // Clear all form fields
+
         document.getElementById('loginUsername').value = '';
         document.getElementById('loginPassword').value = '';
         document.getElementById('signupUsername').value = '';
@@ -72,7 +69,6 @@ class LoginScreen {
     }
 }
 
-// Web Application JavaScript
 class GameVaultApp {
     constructor() {
         this.loginScreen = new LoginScreen();
@@ -82,20 +78,19 @@ class GameVaultApp {
 
     init() {
         this.setupEventListeners();
-        this.setupSearchListeners(); // Set up search listeners separately
-        this.resetUI(); // Initialize UI state
-        this.checkAuthStatus(); // Check if user is already logged in
+        this.setupSearchListeners();
+        this.resetUI();
+        this.checkAuthStatus();
     }
 
     setupEventListeners() {
-        // Navigation
+
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 this.switchSection(e.target.dataset.section);
             });
         });
 
-        // Auth Modal
         const showSignup = document.getElementById('showSignup');
         if (showSignup) {
             showSignup.addEventListener('click', (e) => {
@@ -133,7 +128,6 @@ class GameVaultApp {
             });
         }
 
-        // Sign In Button (in header)
         const signInBtn = document.getElementById('signInBtn');
         if (signInBtn) {
             signInBtn.addEventListener('click', () => {
@@ -142,7 +136,6 @@ class GameVaultApp {
             });
         }
 
-        // Profile
         const editProfileBtn = document.getElementById('editProfileBtn');
         if (editProfileBtn) {
             editProfileBtn.addEventListener('click', () => {
@@ -157,7 +150,6 @@ class GameVaultApp {
             });
         }
 
-        // Friends
         const addFriendBtn = document.getElementById('addFriendBtn');
         if (addFriendBtn) {
             addFriendBtn.addEventListener('click', () => {
@@ -172,7 +164,6 @@ class GameVaultApp {
             });
         }
 
-        // Wishlist
         const createWishlistBtn = document.getElementById('createWishlistBtn');
         if (createWishlistBtn) {
             createWishlistBtn.addEventListener('click', () => {
@@ -187,7 +178,6 @@ class GameVaultApp {
             });
         }
 
-        // Reviews
         const addReviewBtn = document.getElementById('addReviewBtn');
         if (addReviewBtn) {
             addReviewBtn.addEventListener('click', () => {
@@ -202,7 +192,6 @@ class GameVaultApp {
             });
         }
 
-        // Admin
         const adminLoginBtn = document.getElementById('adminLoginBtn');
         if (adminLoginBtn) {
             adminLoginBtn.addEventListener('click', () => {
@@ -217,7 +206,6 @@ class GameVaultApp {
             });
         }
 
-        // Logout button
         const logoutBtn = document.getElementById('logoutBtn');
         if (logoutBtn) {
             logoutBtn.addEventListener('click', () => {
@@ -225,7 +213,6 @@ class GameVaultApp {
             });
         }
 
-        // Login button for guests (in profile)
         const loginBtnProfile = document.getElementById('loginBtnProfile');
         if (loginBtnProfile) {
             loginBtnProfile.addEventListener('click', () => {
@@ -233,7 +220,6 @@ class GameVaultApp {
             });
         }
 
-        // Modal close buttons
         document.querySelectorAll('.close').forEach(closeBtn => {
             closeBtn.addEventListener('click', (e) => {
                 const modal = e.target.closest('.modal');
@@ -243,7 +229,6 @@ class GameVaultApp {
             });
         });
 
-        // Close modal when clicking outside (except auth modal)
         document.querySelectorAll('.modal').forEach(modal => {
             modal.addEventListener('click', (e) => {
                 if (e.target === modal && modal.id !== 'authModal') {
@@ -254,9 +239,9 @@ class GameVaultApp {
     }
 
     setupSearchListeners() {
-        // Wait a bit for DOM to be fully ready
+
         setTimeout(() => {
-            // Search button event listener
+
             const searchBtn = document.getElementById("gameSearchBtn");
             const searchInput = document.getElementById("gameSearchInput");
             
@@ -275,7 +260,6 @@ class GameVaultApp {
                 console.error('Search button not found!');
             }
 
-            // Also search on Enter key press
             if (searchInput) {
                 searchInput.addEventListener("keypress", (e) => {
                     console.log('Key pressed:', e.key);
@@ -292,7 +276,6 @@ class GameVaultApp {
         }, 100);
     }
 
-
     closeModal(modal) {
         modal.style.display = 'none';
     }
@@ -306,13 +289,12 @@ class GameVaultApp {
             return;
         }
 
-        // Call the server API to login
         fetch('/api/auth/login', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            credentials: 'include', // Important: include cookies
+            credentials: 'include',
             body: JSON.stringify({
                 username,
                 password
@@ -355,13 +337,12 @@ class GameVaultApp {
             gamingGoals: ['Explore new games', 'Build collection']
         };
 
-        // Call the server API to create the user
         fetch('/api/auth/signup', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            credentials: 'include', // Important: include cookies
+            credentials: 'include',
             body: JSON.stringify({
                 username,
                 email,
@@ -393,7 +374,7 @@ class GameVaultApp {
             console.log('Document cookies:', document.cookie);
             
             const response = await fetch('/api/auth/check', {
-                credentials: 'include', // Important: include cookies
+                credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json'
                 }
@@ -409,27 +390,27 @@ class GameVaultApp {
                 this.currentUser = data.user;
                 this.updateUI();
                 console.log('User already logged in:', data.user.username);
-                // Hide login screen if user is logged in
+
                 this.loginScreen.hide();
             } else {
                 console.log('No active session found');
-                // Only show login modal on the home page, not on every page
+
                 if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
                     console.log('On home page, showing login screen');
                     this.loginScreen.show();
                     this.loginScreen.resetToInitialState();
                 }
-                // Show sign-in button in header
+
                 this.showSignInButton();
             }
         } catch (error) {
             console.error('Error checking auth status:', error);
-            // Only show login modal on home page even on error
+
             if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
                 this.loginScreen.show();
                 this.loginScreen.resetToInitialState();
             }
-            // Show sign-in button in header
+
             this.showSignInButton();
         }
     }
@@ -441,19 +422,17 @@ class GameVaultApp {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                credentials: 'include' // Important: include cookies
+                credentials: 'include'
             });
             
             const data = await response.json();
             
             if (data.success) {
-                // Clear current user
+
                 this.currentUser = null;
-                
-                // Reset UI elements
+
                 this.resetUI();
-                
-                // Show login screen in initial state
+
                 this.loginScreen.show();
                 this.loginScreen.resetToInitialState();
                 
@@ -463,7 +442,7 @@ class GameVaultApp {
             }
         } catch (error) {
             console.error('Error during logout:', error);
-            // Still clear local state even if server logout fails
+
             this.currentUser = null;
             this.resetUI();
             this.loginScreen.show();
@@ -472,13 +451,13 @@ class GameVaultApp {
     }
 
     showLoginModal() {
-        // Show the login modal
+
         this.loginScreen.show();
         this.loginScreen.resetToInitialState();
     }
 
     handleGuestLogin() {
-        // Create a temporary guest user with no persistence
+
         this.currentUser = {
             username: 'Guest',
             email: null,
@@ -508,20 +487,18 @@ class GameVaultApp {
                 showStatistics: true,
                 showFriendsList: true
             },
-            isGuest: true // Flag to identify guest users
+            isGuest: true
         };
 
-        // Hide the login modal
         this.loginScreen.hide();
-        
-        // Update UI but don't show logout button for guests
+
         this.updateUI();
         
         console.log('Guest user logged in successfully');
     }
 
     resetUI() {
-        // Hide all action buttons
+
         const logoutBtn = document.getElementById('logoutBtn');
         if (logoutBtn) {
             logoutBtn.style.display = 'none';
@@ -531,8 +508,7 @@ class GameVaultApp {
         if (loginBtnProfile) {
             loginBtnProfile.style.display = 'none';
         }
-        
-        // Reset profile info
+
         const profileUsername = document.getElementById('profileUsername');
         if (profileUsername) {
             profileUsername.textContent = 'Username';
@@ -555,21 +531,19 @@ class GameVaultApp {
             return;
         }
 
-        // Show appropriate buttons based on user type
         const logoutBtn = document.getElementById('logoutBtn');
         const loginBtnProfile = document.getElementById('loginBtnProfile');
         
         if (this.currentUser.isGuest) {
-            // Guest user - show login button, hide logout
+
             if (logoutBtn) logoutBtn.style.display = 'none';
             if (loginBtnProfile) loginBtnProfile.style.display = 'inline-block';
         } else {
-            // Registered user - show logout button, hide login
+
             if (logoutBtn) logoutBtn.style.display = 'inline-block';
             if (loginBtnProfile) loginBtnProfile.style.display = 'none';
         }
 
-        // Update profile section
         const profileUsername = document.getElementById('profileUsername');
         if (profileUsername) {
             const capitalizedUsername = this.currentUser.username.toUpperCase();
@@ -591,8 +565,7 @@ class GameVaultApp {
             profileBio.textContent = this.currentUser.isGuest ? 'Guest users cannot save data permanently' : (this.currentUser.bio || 'No bio set');
             profileBio.className = this.currentUser.bio ? 'detail-value' : 'detail-value empty';
         }
-        
-        // Update statistics
+
         const totalGames = document.getElementById('totalGames');
         if (totalGames) {
             totalGames.textContent = this.currentUser.statistics.totalGamesPlayed;
@@ -613,7 +586,6 @@ class GameVaultApp {
             achievementCount.textContent = this.currentUser.achievements.length;
         }
 
-        // Update gaming preferences
         const playStyleDisplay = document.getElementById('playStyleDisplay');
         if (playStyleDisplay) {
             const playStyle = this.currentUser.gamingPreferences.playStyle || 'Not specified';
@@ -638,19 +610,14 @@ class GameVaultApp {
             preferredPlatformsDisplay.className = platforms.length > 0 ? 'detail-value' : 'detail-value empty';
         }
 
-        // Update achievements
         this.updateAchievements();
 
-        // Update friends
         this.updateFriends();
 
-        // Update wishlists
         this.updateWishlists();
 
-        // Update reviews
         this.updateReviews();
-        
-        // Hide sign-in button when user is logged in
+
         this.hideSignInButton();
     }
 
@@ -676,7 +643,7 @@ class GameVaultApp {
     updateAchievements() {
         const container = document.getElementById('achievementsList');
         if (!container) {
-            return; // Element not found, skip update
+            return;
         }
         
         container.innerHTML = '';
@@ -710,7 +677,6 @@ class GameVaultApp {
             return;
         }
 
-        // Call the server API to get friends list
         fetch(`/api/friends/${this.currentUser.username}`)
         .then(response => response.json())
         .then(data => {
@@ -738,7 +704,6 @@ class GameVaultApp {
                 });
             }
 
-            // Update pending requests
             const pendingContainer = document.getElementById('pendingRequests');
             
             if (pendingRequests.length === 0) {
@@ -768,7 +733,7 @@ class GameVaultApp {
     updateWishlists() {
         const container = document.getElementById('wishlistContainer');
         if (!container) {
-            return; // Element not found, skip update
+            return;
         }
         
         if (!this.currentUser) {
@@ -776,13 +741,12 @@ class GameVaultApp {
             return;
         }
 
-        // Call the server API to get wishlists
         fetch(`/api/wishlists/${this.currentUser.username}`)
         .then(response => response.json())
         .then(data => {
             const container = document.getElementById('wishlistContainer');
             if (!container) {
-                return; // Element not found, skip update
+                return;
             }
             const wishlists = data.wishlists || [];
             
@@ -814,7 +778,7 @@ class GameVaultApp {
     updateReviews() {
         const container = document.getElementById('reviewsContainer');
         if (!container) {
-            return; // Element not found, skip update
+            return;
         }
         
         if (!this.currentUser) {
@@ -822,7 +786,6 @@ class GameVaultApp {
             return;
         }
 
-        // Call the server API to get reviews
         fetch(`/api/reviews/${this.currentUser.username}`)
         .then(response => response.json())
         .then(data => {
@@ -862,13 +825,12 @@ class GameVaultApp {
     }
 
     switchSection(sectionName) {
-        // Update nav buttons
+
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.classList.remove('active');
         });
         document.querySelector(`[data-section="${sectionName}"]`).classList.add('active');
 
-        // Update content sections
         document.querySelectorAll('.content-section').forEach(section => {
             section.classList.remove('active');
         });
@@ -906,7 +868,6 @@ class GameVaultApp {
             }
         };
 
-        // Call the server API to update profile
         fetch(`/api/profile/${this.currentUser.username}`, {
             method: 'PUT',
             headers: {
@@ -917,7 +878,7 @@ class GameVaultApp {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                // Update local user data
+
                 this.currentUser.bio = bio;
                 this.currentUser.gamingPreferences = updates.gamingPreferences;
                 
@@ -1086,7 +1047,6 @@ class GameVaultApp {
             return;
         }
 
-        // Call the server API to login as admin
         fetch('/api/admin/login', {
             method: 'POST',
             headers: {
@@ -1113,7 +1073,7 @@ class GameVaultApp {
     }
 
     updateAdminPanel() {
-        // Call the server API to get admin statistics
+
         fetch('/api/admin/stats')
         .then(response => response.json())
         .then(data => {
@@ -1158,7 +1118,6 @@ class GameVaultApp {
         });
     }
 
-    // Game Search Methods
     performGameSearch() {
         console.log('performGameSearch called');
         const searchInput = document.getElementById("gameSearchInput");
@@ -1179,13 +1138,13 @@ class GameVaultApp {
         }
 
         console.log('Redirecting to search page with query:', query);
-        // Redirect to search page with query parameter
+
         window.location.href = `/search?q=${encodeURIComponent(query)}`;
     }
 
     async searchGames(query, page = 1) {
         try {
-            // Show loading state
+
             this.showSearchLoading();
 
             console.log('Searching for:', query);
@@ -1212,7 +1171,7 @@ class GameVaultApp {
 
     showSearchResults() {
         console.log('showSearchResults called');
-        // Create search results modal if it doesn't exist
+
         let searchModal = document.getElementById('searchResultsModal');
         if (!searchModal) {
             console.log('Creating new search modal');
@@ -1291,10 +1250,8 @@ class GameVaultApp {
         if (searchResults) searchResults.style.display = 'block';
         if (searchPagination) searchPagination.style.display = 'block';
 
-        // Update title
         document.getElementById('searchTitle').textContent = `Search Results for "${query}" (${totalResults} games found)`;
 
-        // Display games
         const resultsContainer = document.getElementById('searchResults');
         resultsContainer.innerHTML = '';
 
@@ -1309,7 +1266,6 @@ class GameVaultApp {
             return;
         }
 
-        // Add notice for mock data
         const mockDataNotice = document.createElement('div');
         mockDataNotice.className = 'mock-data-notice';
         mockDataNotice.innerHTML = `
@@ -1324,8 +1280,7 @@ class GameVaultApp {
         games.forEach(game => {
             const gameCard = document.createElement('div');
             gameCard.className = 'game-card';
-            
-            // Steam ownership badge
+
             const steamBadge = game.steamOwned ? '<span class="steam-game-badge"><i class="fab fa-steam"></i> Owned on Steam</span>' : '';
             
             gameCard.innerHTML = `
@@ -1359,7 +1314,7 @@ class GameVaultApp {
                             <i class="fas fa-info-circle"></i> View Details
                         </button>
                         ${game.steamOwned ? 
-                            `<a href="steam://run/${game.id}" class="btn btn-steam">
+                            `<a href="steam:
                                 <i class="fab fa-steam"></i> Play on Steam
                             </a>` : 
                             `<button class="btn btn-secondary" onclick="app.addToWishlist(${game.id}, '${game.name}')">
@@ -1372,7 +1327,6 @@ class GameVaultApp {
             resultsContainer.appendChild(gameCard);
         });
 
-        // Display pagination
         this.displaySearchPagination(currentPage, totalPages, query);
     }
 
@@ -1385,7 +1339,6 @@ class GameVaultApp {
         const pagination = document.createElement('div');
         pagination.className = 'pagination';
 
-        // Previous button
         if (currentPage > 1) {
             const prevBtn = document.createElement('button');
             prevBtn.className = 'btn btn-secondary';
@@ -1394,7 +1347,6 @@ class GameVaultApp {
             pagination.appendChild(prevBtn);
         }
 
-        // Page numbers
         const startPage = Math.max(1, currentPage - 2);
         const endPage = Math.min(totalPages, currentPage + 2);
 
@@ -1406,7 +1358,6 @@ class GameVaultApp {
             pagination.appendChild(pageBtn);
         }
 
-        // Next button
         if (currentPage < totalPages) {
             const nextBtn = document.createElement('button');
             nextBtn.className = 'btn btn-secondary';
@@ -1419,10 +1370,9 @@ class GameVaultApp {
     }
 
     viewGameDetails(gameId) {
-        // This would open a detailed view of the game
-        // For now, we'll just show an alert with the game ID
+
         alert(`Viewing details for game ID: ${gameId}`);
-        // You can implement a detailed game view modal here
+
     }
 
     async addToWishlist(gameId, gameName) {
@@ -1460,8 +1410,6 @@ class GameVaultApp {
     }
 }
 
-
-// Steam Integration Functions
 class SteamIntegration {
     constructor() {
         this.steamLinked = false;
@@ -1470,14 +1418,13 @@ class SteamIntegration {
 
     async initializeSteamIntegration() {
         try {
-            // Get username from URL
+
             const username = this.getUsernameFromUrl();
             if (!username) {
                 console.error('Username not found in URL');
                 return;
             }
-            
-            // Check Steam link status
+
             const response = await fetch(`/api/auth/steam/status/${username}`);
             const status = await response.json();
             
@@ -1486,15 +1433,13 @@ class SteamIntegration {
                 this.steamProfile = status.steam_profile;
                 this.showSteamProfile();
                 this.loadSteamGames();
-                
-                // Check if Steam auth just completed and auto-import library
+
                 const urlParams = new URLSearchParams(window.location.search);
                 if (urlParams.get('steam_auth') === 'success') {
-                    // Remove the parameter from URL
+
                     const newUrl = window.location.pathname + window.location.search.replace(/[?&]steam_auth=success/, '');
                     window.history.replaceState({}, '', newUrl);
-                    
-                    // Auto-import Steam library
+
                     console.log('Steam auth completed, auto-importing library...');
                     await this.importSteamLibrary();
                 }
@@ -1513,8 +1458,7 @@ class SteamIntegration {
         if (steamProfileSection && steamConnectSection) {
             steamProfileSection.style.display = 'block';
             steamConnectSection.style.display = 'none';
-            
-            // Update Steam profile info
+
             if (this.steamProfile) {
                 const steamAvatar = document.getElementById('steamAvatar');
                 const steamUsername = document.getElementById('steamUsername');
@@ -1539,14 +1483,13 @@ class SteamIntegration {
 
     async connectSteam() {
         try {
-            // Get username from URL
+
             const username = this.getUsernameFromUrl();
             if (!username) {
                 alert('Username not found in URL');
                 return;
             }
-            
-            // Store current page URL for redirect after Steam auth
+
             const currentUrl = window.location.pathname + window.location.search;
             sessionStorage.setItem('preSteamUrl', currentUrl);
             
@@ -1563,7 +1506,7 @@ class SteamIntegration {
             const result = await response.json();
             
             if (result.success) {
-                // Redirect to Steam OAuth
+
                 window.location.href = result.redirectUrl;
             } else {
                 alert('Failed to connect Steam account: ' + result.error);
@@ -1580,7 +1523,7 @@ class SteamIntegration {
         }
 
         try {
-            // Get username from URL
+
             const username = this.getUsernameFromUrl();
             if (!username) {
                 alert('Username not found in URL');
@@ -1613,8 +1556,7 @@ class SteamIntegration {
     async importSteamLibrary() {
         try {
             console.log('Importing Steam library...');
-            
-            // Get username from URL
+
             const username = this.getUsernameFromUrl();
             if (!username) {
                 alert('Username not found in URL');
@@ -1635,7 +1577,7 @@ class SteamIntegration {
             if (result.success) {
                 const gamesCount = result.gamesCount || 0;
                 alert(`Successfully imported ${gamesCount} games from Steam!`);
-                // Stay on the profile page and reload to show updated stats
+
                 const currentUrl = window.location.href;
                 window.location.href = currentUrl;
             } else {
@@ -1648,7 +1590,7 @@ class SteamIntegration {
     }
 
     getUsernameFromUrl() {
-        // Extract username from URL path like /profile/username
+
         const pathParts = window.location.pathname.split('/');
         const profileIndex = pathParts.indexOf('profile');
         if (profileIndex !== -1 && pathParts[profileIndex + 1]) {
@@ -1659,7 +1601,7 @@ class SteamIntegration {
 
     async loadSteamGames() {
         try {
-            // Get username from URL
+
             const username = this.getUsernameFromUrl();
             if (!username) {
                 console.error('Username not found in URL');
@@ -1670,23 +1612,21 @@ class SteamIntegration {
             const result = await response.json();
             
             if (result.success) {
-                // Update Steam profile section
+
                 const steamGameCount = document.getElementById('steamGameCount');
                 if (steamGameCount) {
                     steamGameCount.textContent = result.games ? result.games.length : 0;
                 }
 
-                // Calculate Steam statistics
                 let totalPlaytime = 0;
                 let totalAchievements = 0;
                 
                 if (result.games && result.games.length > 0) {
                     totalPlaytime = result.games.reduce((sum, game) => sum + (game.playtime_forever || 0), 0);
-                    // Calculate achievements the same way as games and hours
+
                     totalAchievements = result.games.reduce((sum, game) => sum + (game.achievements || 0), 0);
                 }
 
-                // Update main profile stats with Steam data
                 const totalGames = document.getElementById('totalGames');
                 const totalPlaytimeElement = document.getElementById('totalPlaytime');
                 const achievementCount = document.getElementById('achievementCount');
@@ -1695,13 +1635,12 @@ class SteamIntegration {
                     totalGames.textContent = result.games ? result.games.length : 0;
                 }
                 if (totalPlaytimeElement) {
-                    totalPlaytimeElement.textContent = Math.round(totalPlaytime / 60); // Convert minutes to hours
+                    totalPlaytimeElement.textContent = Math.round(totalPlaytime / 60);
                 }
                 if (achievementCount) {
                     achievementCount.textContent = totalAchievements;
                 }
 
-                // Load site-based ratings (user's game ratings from the site)
                 await this.loadSiteRatings();
             }
         } catch (error) {
@@ -1709,19 +1648,17 @@ class SteamIntegration {
         }
     }
 
-
     async loadSiteRatings() {
         try {
-            // Get user's reviews/ratings from the site
+
             const response = await fetch('/api/reviews/current-user');
             const result = await response.json();
             
             if (result.success && result.reviews) {
-                // Calculate average rating from user's reviews
+
                 const ratings = result.reviews.filter(review => review.rating > 0).map(review => review.rating);
                 const avgRating = ratings.length > 0 ? (ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length).toFixed(1) : 0;
-                
-                // Update the average rating in the stats
+
                 const avgRatingElement = document.getElementById('avgRating');
                 if (avgRatingElement) {
                     avgRatingElement.textContent = avgRating;
@@ -1755,34 +1692,29 @@ class SteamIntegration {
     }
 }
 
-// Initialize the app when the page loads
 let app;
 let steamIntegration;
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM Content Loaded - Initializing GameVaultApp');
     app = new GameVaultApp();
-    window.app = app; // Make app available globally
-    
-    // Initialize Steam integration
+    window.app = app;
+
     steamIntegration = new SteamIntegration();
-    window.steamIntegration = steamIntegration; // Make available globally
-    
-    // Test if search elements exist after initialization
+    window.steamIntegration = steamIntegration;
+
     setTimeout(() => {
         console.log('Testing search elements after initialization:');
         console.log('Search button:', document.getElementById("gameSearchBtn"));
         console.log('Search input:', document.getElementById("gameSearchInput"));
         console.log('Global functions available:', typeof window.performSearch, typeof window.testSearch);
-        
-        // Initialize Steam integration after a short delay
+
         if (steamIntegration) {
             steamIntegration.initializeSteamIntegration();
         }
     }, 500);
 });
 
-// Global Steam functions for use in HTML
 window.connectSteam = function() {
     if (steamIntegration) {
         steamIntegration.connectSteam();

@@ -6,7 +6,7 @@
 
   <div class="container">
     <main class="main-content">
-      <!-- Wishlist Section -->
+      
       <section id="wishlistSection" class="content-section active">
         <div class="section-header">
           <h2>Wishlist</h2>
@@ -17,20 +17,20 @@
             <button id="addWishlistBtn" class="btn btn-primary">Add Game</button>
           </div>
         </div>
-        <!-- Steam Ownership Status -->
+        
         <div id="steamOwnershipStatus" class="steam-ownership-status" style="display: none;">
           <div class="ownership-header">
             <h3><i class="fab fa-steam"></i> Steam Ownership Status</h3>
             <span id="steamOwnershipCount" class="ownership-count">0 games owned</span>
           </div>
           <div id="steamOwnedGamesList" class="steam-owned-games">
-            <!-- Steam owned games will be populated here -->
+            
           </div>
         </div>
 
         <div class="wishlists-content">
           <div id="wishlistContainer" class="list-container">
-            <!-- Wishlist items will be populated here by JavaScript -->
+            
             <div class="empty-state">
               <i class="fas fa-heart"></i>
               <h3>Loading...</h3>
@@ -46,11 +46,11 @@
 
   <script src="/app.js"></script>
   <script>
-    // Initialize the app when the page loads
+
     document.addEventListener('DOMContentLoaded', () => {
       console.log('Wishlist page - DOM Content Loaded');
       
-      // Add event listener for Steam ownership check button
+
       const checkSteamOwnershipBtn = document.getElementById('checkSteamOwnershipBtn');
       if (checkSteamOwnershipBtn) {
         checkSteamOwnershipBtn.addEventListener('click', async () => {
@@ -87,7 +87,7 @@
             <div class="steam-owned-game">
               <span class="game-name">${game.gameName}</span>
               <span class="wishlist-name">in ${game.wishlistName}</span>
-              <a href="steam://run/${game.gameId}" class="btn btn-steam btn-sm">
+              <a href="steam:
                 <i class="fab fa-steam"></i> Play
               </a>
             </div>

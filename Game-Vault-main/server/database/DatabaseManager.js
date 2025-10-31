@@ -37,10 +37,9 @@ class DatabaseManager {
     }
   }
 
-  // User operations
   async saveUser(userData) {
     try {
-      // Build the data object, only including password_hash if it's provided
+
       const userDataToSave = {
         username: userData.username,
         email: userData.email,
@@ -57,7 +56,6 @@ class DatabaseManager {
         steam_last_sync: userData.steam_last_sync
       };
 
-      // Only include password_hash if it's provided and not null/undefined
       if (userData.password_hash !== undefined && userData.password_hash !== null) {
         userDataToSave.password_hash = userData.password_hash;
       } else if (userData.password !== undefined && userData.password !== null) {
@@ -147,7 +145,6 @@ class DatabaseManager {
     }
   }
 
-  // Game operations
   async saveGame(gameData) {
     try {
       const [game, created] = await Game.upsert({
@@ -199,7 +196,6 @@ class DatabaseManager {
     }
   }
 
-  // Review operations
   async saveReview(reviewData) {
     try {
       const review = await Review.create({
@@ -246,7 +242,6 @@ class DatabaseManager {
     }
   }
 
-  // Wishlist operations
   async createWishlist(wishlistData) {
     try {
       const wishlist = await Wishlist.create({
@@ -308,7 +303,6 @@ class DatabaseManager {
     }
   }
 
-  // Friendship operations
   async createFriendship(friendshipData) {
     try {
       const friendship = await Friendship.create({
@@ -359,7 +353,6 @@ class DatabaseManager {
     }
   }
 
-  // Achievement operations
   async saveAchievement(achievementData) {
     try {
       const achievement = await Achievement.create({
@@ -391,7 +384,6 @@ class DatabaseManager {
     }
   }
 
-  // Statistics
   async getUserStatistics() {
     try {
       const totalUsers = await User.count({ where: { is_active: true } });
@@ -418,7 +410,6 @@ class DatabaseManager {
     }
   }
 
-  // Close connection
   async close() {
     try {
       await sequelize.close();

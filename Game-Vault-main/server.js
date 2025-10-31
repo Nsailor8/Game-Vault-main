@@ -12,44 +12,37 @@ const SteamService = require('./server/services/SteamService');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ===== Middleware =====
 app.use(cors({
-    origin: true, // Allow requests from any origin (for development)
-    credentials: true // Allow cookies to be sent
+    origin: true,
+    credentials: true
 }));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Session middleware
 app.use(session({
     secret: process.env.SESSION_SECRET || 'game-vault-secret-key',
-    resave: true, // Force session to be saved back to session store
-    saveUninitialized: true, // Allow saving uninitialized sessions
-    rolling: true, // Reset expiration on every request
+    resave: true,
+    saveUninitialized: true,
+    rolling: true,
     cookie: {
-        secure: false, // Set to true if using HTTPS
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours
-        httpOnly: true, // Prevent client-side access to cookies
-        sameSite: 'lax' // CSRF protection
+        secure: false,
+        maxAge: 24 * 60 * 60 * 1000,
+        httpOnly: true,
+        sameSite: 'lax'
     }
 }));
 
-// Debug middleware to log session info
 app.use((req, res, next) => {
     console.log('Session middleware - Session ID:', req.sessionID);
     console.log('Session middleware - Session user:', req.session.user);
     next();
 });
 
-// Serve static assets (CSS, JS, images) from 'public' folder
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ===== EJS Setup =====
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, './client/views'));
 
-
-// ===== Import Profile System Classes =====
 const {
     UserProfile,
     ProfileManager,
@@ -59,27 +52,23 @@ const {
     AdminManager
 } = require('./client/profile.js');
 
-// ===== Initialize Managers =====
 const profileManager = new ProfileManager();
 const adminManager = new AdminManager();
 const gameSearchService = new GameSearchService();
 const steamService = new SteamService();
 
-// ===== Passport Configuration =====
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Steam Strategy Configuration
 passport.use(new SteamStrategy({
     returnURL: process.env.STEAM_RETURN_URL || 'http://localhost:3000/api/auth/steam/return',
     realm: process.env.STEAM_REALM || 'http://localhost:3000',
     apiKey: process.env.STEAM_API_KEY || 'your-steam-api-key-here'
 }, async (identifier, profile, done) => {
     try {
-        // Extract Steam ID from identifier
+
         const steamId = identifier.split('/').pop();
-        
-        // Return Steam profile data
+
         return done(null, {
             steamId: steamId,
             profile: {
@@ -104,7 +93,6 @@ passport.deserializeUser((user, done) => {
 
 let isDatabaseReady = false;
 
-// ===== EJS Page Routes =====
 app.use((req, res, next) => {
     res.locals.homeLink = '/';
     res.locals.profileLink = '/profile';
@@ -121,26 +109,22 @@ app.use((req, res, next) => {
     next();
 });
 
-// ===== Render EJS Views =====
 app.get('/', (req, res) => {
     res.render('index', { trendingGames: [], recentGames: [] });
 });
 
-// User-specific profile routes
 app.get('/profile/:username', async (req, res) => {
     const { username } = req.params;
     let profile;
 
     try {
         console.log('Loading profile for username:', username);
-        
-        // Load user data from database by username
+
         const user = await profileManager.getUserByUsername(username);
         
         if (user) {
             console.log('User found in database:', user.username);
-            
-            // Use statistics from database if available, otherwise calculate from Steam games
+
             let totalGames = 0;
             let totalPlaytime = 0;
             let achievementCount = 0;
@@ -150,8 +134,7 @@ app.get('/profile/:username', async (req, res) => {
             if (user.steam_id) {
                 steamLinked = true;
                 console.log('User has Steam account linked:', user.steam_id);
-                
-                // Use statistics from database if available
+
                 if (user.statistics) {
                     totalGames = user.statistics.totalGamesPlayed || 0;
                     totalPlaytime = user.statistics.totalPlaytime || 0;
@@ -164,11 +147,11 @@ app.get('/profile/:username', async (req, res) => {
                         avgRating
                     });
                 } else if (user.steam_games && user.steam_games.length > 0) {
-                    // Fallback: calculate from Steam games if statistics not available
+
                     totalGames = user.steam_games.length;
                     totalPlaytime = user.steam_games.reduce((sum, game) => sum + (game.playtime_forever || 0), 0);
                     achievementCount = user.steam_games.reduce((sum, game) => sum + (game.achievements || 0), 0);
-                    totalPlaytime = Math.round(totalPlaytime / 60); // Convert to hours
+                    totalPlaytime = Math.round(totalPlaytime / 60);
                     console.log('Statistics calculated from Steam games:', { 
                         totalGames, 
                         totalPlaytime, 
@@ -186,8 +169,8 @@ app.get('/profile/:username', async (req, res) => {
                 email: user.email,
                 joinDate: user.joinDate,
                 totalGames: totalGames,
-                totalPlaytime: totalPlaytime, // Already in hours from statistics
-                avgRating: avgRating, // From statistics or 0 if not available
+                totalPlaytime: totalPlaytime,
+                avgRating: avgRating,
                 achievementCount: achievementCount,
                 bio: user.bio || '',
                 playStyle: user.gamingPreferences?.playStyle || '',
@@ -203,12 +186,10 @@ app.get('/profile/:username', async (req, res) => {
             };
         } else {
             console.log('User not found in database, checking session data');
-            
-            // User not found - check if this is the current user from session
+
             if (req.session.user && req.session.user.username === username) {
                 console.log('Using session data as fallback for user:', username);
-                
-                // Calculate Steam stats from session if available
+
                 let totalGames = 0;
                 let totalPlaytime = 0;
                 let achievementCount = 0;
@@ -218,8 +199,7 @@ app.get('/profile/:username', async (req, res) => {
                     totalPlaytime = req.session.user.steam_games.reduce((sum, game) => sum + (game.playtime_forever || 0), 0);
                     achievementCount = req.session.user.steam_games.reduce((sum, game) => sum + (game.achievements || 0), 0);
                 }
-                
-                // Use session data as fallback
+
                 profile = {
                     username: req.session.user.username,
                     email: req.session.user.email || '',
@@ -242,8 +222,7 @@ app.get('/profile/:username', async (req, res) => {
                 };
             } else {
                 console.log('User not found and not current user');
-                
-                // User not found
+
                 profile = {
                     username: username,
                     email: '',
@@ -289,7 +268,6 @@ app.get('/profile/:username', async (req, res) => {
     }
 });
 
-// Default profile route - redirect to current user's profile
 app.get('/profile', async (req, res) => {
     if (req.session.user && req.session.user.username) {
         res.redirect(`/profile/${req.session.user.username}`);
@@ -307,9 +285,6 @@ app.get('/wishlist', (req, res) => res.render('wishlist'));
 app.get('/reviews', (req, res) => res.render('reviews'));
 app.get('/admin', (req, res) => res.render('admin'));
 
-// ===== API Routes =====
-
-// Authentication routes
 app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body;
 
@@ -323,7 +298,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     const user = await profileManager.login(username, password);
         if (user) {
-            // Store user data in session
+
             req.session.user = {
                 username: user.username,
                 email: user.email,
@@ -336,8 +311,7 @@ app.post('/api/auth/login', async (req, res) => {
             
             console.log('Login successful, session user set:', req.session.user);
             console.log('Session ID:', req.sessionID);
-            
-            // Force session save
+
             req.session.save((err) => {
                 if (err) {
                     console.error('Session save error:', err);
@@ -370,7 +344,7 @@ app.post('/api/auth/signup', async (req, res) => {
     try {
         const user = await profileManager.signUp(username, email, password, gamingPreferences || {});
         if (user) {
-            // Store user data in session
+
             req.session.user = {
                 username: user.username,
                 email: user.email,
@@ -383,8 +357,7 @@ app.post('/api/auth/signup', async (req, res) => {
             
             console.log('Signup successful, session user set:', req.session.user);
             console.log('Session ID:', req.sessionID);
-            
-            // Force session save
+
             req.session.save((err) => {
                 if (err) {
                     console.error('Session save error:', err);
@@ -421,7 +394,6 @@ app.post('/api/auth/signup', async (req, res) => {
     }
 });
 
-// Check if user is logged in
 app.get('/api/auth/check', (req, res) => {
     console.log('Auth check - session user:', req.session.user);
     console.log('Auth check - session ID:', req.sessionID);
@@ -439,7 +411,6 @@ app.get('/api/auth/check', (req, res) => {
     }
 });
 
-// Logout route
 app.post('/api/auth/logout', (req, res) => {
     req.session.destroy((err) => {
         if (err) {
@@ -449,7 +420,6 @@ app.post('/api/auth/logout', (req, res) => {
     });
 });
 
-// Steam OAuth routes
 app.get('/api/auth/steam', passport.authenticate('steam', { failureRedirect: '/' }), (req, res) => {
     res.redirect('/profile');
 });
@@ -462,22 +432,20 @@ app.get('/api/auth/steam/return', passport.authenticate('steam', { failureRedire
         console.log('Stored Steam link user info:', req.session.steamLinkUser);
         
         if (req.user && req.user.steamId) {
-            // Always try to link Steam account to existing account first
+
             const steamProfileResult = await steamService.getUserProfile(req.user.steamId);
             if (steamProfileResult.success) {
                 console.log('Steam profile fetched successfully:', steamProfileResult.profile.personaname);
-                
-                // Check if user is already logged in
+
                 if (req.session.user && req.session.user.username) {
                     console.log('Linking Steam to existing user:', req.session.user.username);
-                    
-                    // Link Steam account to existing account
+
                     const user = await profileManager.getUserByUsername(req.session.user.username);
                     if (user) {
-                        // Check if user already has Steam linked
+
                         if (user.steam_id) {
                             console.log('User already has Steam account linked:', user.steam_id);
-                            // Just reload the data
+
                             const updatedUser = await profileManager.getUserByUsername(req.session.user.username);
                             req.session.user = {
                                 username: updatedUser.username,
@@ -493,14 +461,12 @@ app.get('/api/auth/steam/return', passport.authenticate('steam', { failureRedire
                                 steam_last_sync: updatedUser.steam_last_sync
                             };
                         } else {
-                            // Link Steam account and auto-import games
+
                             const linkResult = await steamService.linkSteamAccount(user, req.user.steamId, steamProfileResult.profile);
                             console.log('Steam account linked:', linkResult);
-                            
-                            // Reload user data from database to get all fields including Steam data
+
                             const updatedUser = await profileManager.getUserByUsername(req.session.user.username);
-                            
-                            // Update session with complete user data (preserving all existing data)
+
                             req.session.user = {
                                 username: updatedUser.username,
                                 email: updatedUser.email,
@@ -519,19 +485,17 @@ app.get('/api/auth/steam/return', passport.authenticate('steam', { failureRedire
                         console.log('Session updated with complete user data including Steam info');
                     }
                 } else if (req.session.steamLinkUser && req.session.steamLinkUser.username) {
-                    // Session user was lost, but we have the Steam link user info
+
                     console.log('Session user lost, using stored Steam link user:', req.session.steamLinkUser.username);
                     
                     const user = await profileManager.getUserByUsername(req.session.steamLinkUser.username);
                     if (user) {
-                        // Link Steam account and auto-import games
+
                         const linkResult = await steamService.linkSteamAccount(user, req.user.steamId, steamProfileResult.profile);
                         console.log('Steam account linked to stored user:', linkResult);
-                        
-                        // Reload user data from database to get all fields including Steam data
+
                         const updatedUser = await profileManager.getUserByUsername(req.session.steamLinkUser.username);
-                        
-                        // Create session with complete user data
+
                         req.session.user = {
                             username: updatedUser.username,
                             email: updatedUser.email,
@@ -545,25 +509,23 @@ app.get('/api/auth/steam/return', passport.authenticate('steam', { failureRedire
                             steam_games: updatedUser.steam_games,
                             steam_last_sync: updatedUser.steam_last_sync
                         };
-                        
-                        // Clear the stored Steam link user info
+
                         delete req.session.steamLinkUser;
                         
                         console.log('Session restored with complete user data including Steam info');
                     }
                 } else {
                     console.log('Session user is undefined, checking stored Steam link user info...');
-                    
-                    // Check if we have stored Steam link user info first (priority over existing Steam users)
+
                     if (req.session.steamLinkUser && req.session.steamLinkUser.username) {
                         console.log('Using stored Steam link user info:', req.session.steamLinkUser.username);
                         
                         const user = await profileManager.getUserByUsername(req.session.steamLinkUser.username);
                         if (user) {
-                            // Check if user already has Steam linked
+
                             if (user.steam_id) {
                                 console.log('User already has Steam account linked:', user.steam_id);
-                                // Just reload the data
+
                                 const updatedUser = await profileManager.getUserByUsername(req.session.steamLinkUser.username);
                                 req.session.user = {
                                     username: updatedUser.username,
@@ -579,14 +541,12 @@ app.get('/api/auth/steam/return', passport.authenticate('steam', { failureRedire
                                     steam_last_sync: updatedUser.steam_last_sync
                                 };
                             } else {
-                                // Link Steam account and auto-import games
+
                                 const linkResult = await steamService.linkSteamAccount(user, req.user.steamId, steamProfileResult.profile);
                                 console.log('Steam account linked to stored user:', linkResult);
-                                
-                                // Reload user data from database to get all fields including Steam data
+
                                 const updatedUser = await profileManager.getUserByUsername(req.session.steamLinkUser.username);
-                                
-                                // Create session with complete user data
+
                                 req.session.user = {
                                     username: updatedUser.username,
                                     email: updatedUser.email,
@@ -601,31 +561,26 @@ app.get('/api/auth/steam/return', passport.authenticate('steam', { failureRedire
                                     steam_last_sync: updatedUser.steam_last_sync
                                 };
                             }
-                            
-                            // Clear the stored Steam link user info
+
                             delete req.session.steamLinkUser;
                             
                             console.log('Session restored with complete user data including Steam info');
                         }
                     } else {
-                        // Fallback: Try to match Steam username with existing user
+
                         console.log('No stored Steam link user info, trying to match Steam username with existing user...');
                         const steamUsername = steamProfileResult.profile.personaname;
                         console.log('Steam username:', steamUsername);
-                        
-                        // Try to find user by username that matches Steam username
+
                         const matchingUser = await profileManager.getUserByUsername(steamUsername);
                         if (matchingUser && !matchingUser.steam_id) {
                             console.log('Found matching user without Steam linked:', matchingUser.username);
-                            
-                            // Link Steam account to the matching user
+
                             const linkResult = await steamService.linkSteamAccount(matchingUser, req.user.steamId, steamProfileResult.profile);
                             console.log('Steam account linked to matching user:', linkResult);
-                            
-                            // Reload user data from database to get all fields including Steam data
+
                             const updatedUser = await profileManager.getUserByUsername(matchingUser.username);
-                            
-                            // Create session with complete user data
+
                             req.session.user = {
                                 username: updatedUser.username,
                                 email: updatedUser.email,
@@ -642,12 +597,11 @@ app.get('/api/auth/steam/return', passport.authenticate('steam', { failureRedire
                             
                             console.log('Session created with complete user data including Steam info');
                         } else {
-                            // Check if a user with this Steam ID already exists
+
                             const existingUser = await profileManager.getUserBySteamId(req.user.steamId);
                             if (existingUser) {
                                 console.log('Found existing user with Steam ID:', existingUser.username);
-                                
-                                // Log in with existing account - reload complete data
+
                                 const userData = await profileManager.getUserByUsername(existingUser.username);
                                 req.session.user = {
                                     username: userData.username,
@@ -664,12 +618,10 @@ app.get('/api/auth/steam/return', passport.authenticate('steam', { failureRedire
                                 };
                             } else {
                                 console.log('Creating new user account with Steam data');
-                                
-                                // Create a new user account in the database with Steam data
+
                                 const username = steamProfileResult.profile.personaname || 'Steam User';
                                 const email = steamProfileResult.profile.personaname ? `${steamProfileResult.profile.personaname}@steam.local` : 'steam@local.com';
-                                
-                                // Create user account in database
+
                                 const newUser = await profileManager.createProfile(username, email, 'steam_password', {
                                     playStyle: 'casual',
                                     favoriteGenres: [],
@@ -677,14 +629,12 @@ app.get('/api/auth/steam/return', passport.authenticate('steam', { failureRedire
                                 });
                                 
                                 if (newUser) {
-                                    // Link Steam account to the new user and auto-import games
+
                                     const linkResult = await steamService.linkSteamAccount(newUser, req.user.steamId, steamProfileResult.profile);
                                     console.log('New user Steam account linked:', linkResult);
-                                    
-                                    // Reload user data to get Steam games
+
                                     const userData = await profileManager.getUserByUsername(username);
-                                    
-                                    // Create session with complete data
+
                                     req.session.user = {
                                         username: userData.username,
                                         email: userData.email,
@@ -699,7 +649,7 @@ app.get('/api/auth/steam/return', passport.authenticate('steam', { failureRedire
                                         steam_last_sync: userData.steam_last_sync
                                     };
                                 } else {
-                                    // Fallback to session-only if user creation fails
+
                                     req.session.user = {
                                         steam_id: req.user.steamId,
                                         steam_profile: steamProfileResult.profile,
@@ -716,12 +666,10 @@ app.get('/api/auth/steam/return', passport.authenticate('steam', { failureRedire
                 console.error('Failed to fetch Steam profile:', steamProfileResult.error);
             }
         }
-        
-        // Check if there's a return URL in the session or redirect to user's profile
+
         let returnUrl = req.session.returnUrl;
-        delete req.session.returnUrl; // Clear it after use
-        
-        // If no return URL, redirect to user's profile
+        delete req.session.returnUrl;
+
         if (!returnUrl && req.session.user && req.session.user.username) {
             returnUrl = `/profile/${req.session.user.username}`;
         } else if (!returnUrl) {
@@ -729,8 +677,7 @@ app.get('/api/auth/steam/return', passport.authenticate('steam', { failureRedire
         }
         
         console.log('Redirecting to:', returnUrl);
-        
-        // Add success parameter to indicate Steam auth completed
+
         const separator = returnUrl.includes('?') ? '&' : '?';
         res.redirect(`${returnUrl}${separator}steam_auth=success`);
     } catch (error) {
@@ -739,10 +686,9 @@ app.get('/api/auth/steam/return', passport.authenticate('steam', { failureRedire
     }
 });
 
-// Link Steam account to existing user
 app.post('/api/auth/steam/link/:username?', async (req, res) => {
     try {
-        // Get username from URL parameter or session
+
         const username = req.params.username || (req.session.user ? req.session.user.username : null);
         
         if (!username) {
@@ -758,24 +704,21 @@ app.post('/api/auth/steam/link/:username?', async (req, res) => {
             return res.status(400).json({ error: 'Steam account already linked' });
         }
 
-        // Store return URL from request body if provided
         if (req.body.returnUrl) {
             req.session.returnUrl = req.body.returnUrl;
             console.log('Stored return URL:', req.body.returnUrl);
         } else {
-            // Default to user's profile page
+
             req.session.returnUrl = `/profile/${username}`;
             console.log('Using default return URL:', req.session.returnUrl);
         }
-        
-        // Also store the current user info in session for Steam return
+
         req.session.steamLinkUser = {
             username: username,
             email: user.email
         };
         console.log('Stored Steam link user info:', req.session.steamLinkUser);
 
-        // Redirect to Steam OAuth
         res.json({ 
             success: true, 
             message: 'Redirecting to Steam authentication',
@@ -787,7 +730,6 @@ app.post('/api/auth/steam/link/:username?', async (req, res) => {
     }
 });
 
-// Unlink Steam account
 app.post('/api/auth/steam/unlink', async (req, res) => {
     try {
         if (!req.session.user) {
@@ -801,7 +743,7 @@ app.post('/api/auth/steam/unlink', async (req, res) => {
 
         const result = await steamService.unlinkSteamAccount(user);
         if (result.success) {
-            // Remove Steam data from session
+
             req.session.user.steam_id = null;
             req.session.user.steam_profile = null;
             res.json({ success: true, message: 'Steam account unlinked successfully' });
@@ -814,17 +756,15 @@ app.post('/api/auth/steam/unlink', async (req, res) => {
     }
 });
 
-// Check Steam link status
 app.get('/api/auth/steam/status/:username?', async (req, res) => {
     try {
-        // Get username from URL parameter or session
+
         const username = req.params.username || (req.session.user ? req.session.user.username : null);
         
         if (!username) {
             return res.json({ linked: false });
         }
 
-        // Try to load user from database first
         const user = await profileManager.getUserByUsername(username);
         if (user && user.steam_id) {
             res.json({
@@ -835,7 +775,7 @@ app.get('/api/auth/steam/status/:username?', async (req, res) => {
                 steam_last_sync: user.steam_last_sync
             });
         } else {
-            // Check session data as fallback
+
             if (req.session.user && req.session.user.username === username && req.session.user.steam_id) {
                 res.json({
                     linked: true,
@@ -852,10 +792,9 @@ app.get('/api/auth/steam/status/:username?', async (req, res) => {
     }
 });
 
-// Unlink Steam account
 app.post('/api/auth/steam/unlink/:username?', async (req, res) => {
     try {
-        // Get username from URL parameter or session
+
         const username = req.params.username || (req.session.user ? req.session.user.username : null);
         
         if (!username) {
@@ -879,8 +818,6 @@ app.post('/api/auth/steam/unlink/:username?', async (req, res) => {
     }
 });
 
-// Steam API routes
-// Get current user's Steam profile
 app.get('/api/steam/profile', async (req, res) => {
     try {
         if (!req.session.user || !req.session.user.steam_id) {
@@ -899,22 +836,19 @@ app.get('/api/steam/profile', async (req, res) => {
     }
 });
 
-// Get user's Steam game library
 app.get('/api/steam/games/:username?', async (req, res) => {
     try {
-        // Get username from URL parameter or session
+
         const username = req.params.username || (req.session.user ? req.session.user.username : null);
         
         if (!username) {
             return res.status(401).json({ error: 'Username required' });
         }
 
-        // Try to load user from database first
         let user = await profileManager.getUserByUsername(username);
-        
-        // If not found in database, check session data
+
         if (!user && req.session.user && req.session.user.username === username) {
-            // Create a temporary user object from session data
+
             user = {
                 username: req.session.user.username,
                 steam_id: req.session.user.steam_id,
@@ -931,10 +865,9 @@ app.get('/api/steam/games/:username?', async (req, res) => {
             return res.status(400).json({ error: 'No Steam account linked' });
         }
 
-        // Return cached games if available and recent
         if (user.steam_games && user.steam_last_sync) {
             const hoursSinceSync = (new Date() - new Date(user.steam_last_sync)) / (1000 * 60 * 60);
-            if (hoursSinceSync < 24) { // Use cache if less than 24 hours old
+            if (hoursSinceSync < 24) {
                 return res.json({
                     success: true,
                     games: user.steam_games,
@@ -945,10 +878,9 @@ app.get('/api/steam/games/:username?', async (req, res) => {
             }
         }
 
-        // Fetch fresh data
         const result = await steamService.getUserGameLibrary(req.session.user.steam_id);
         if (result.success) {
-            // Update cache
+
             user.steam_games = result.games;
             user.steam_last_sync = new Date();
             await user.save();
@@ -961,17 +893,15 @@ app.get('/api/steam/games/:username?', async (req, res) => {
     }
 });
 
-// Import Steam library (sync games to database)
 app.post('/api/steam/sync/:username?', async (req, res) => {
     try {
-        // Get username from URL parameter or session
+
         const username = req.params.username || (req.session.user ? req.session.user.username : null);
         
         if (!username) {
             return res.status(401).json({ error: 'Username required' });
         }
 
-        // Load user from database - must be a proper Sequelize model instance
         const user = await profileManager.databaseManager.getUserByUsername(username);
         
         if (!user) {
@@ -984,10 +914,9 @@ app.post('/api/steam/sync/:username?', async (req, res) => {
 
         const syncResult = await steamService.syncUserGames(user);
         if (syncResult.success) {
-            // Reload user data from database to get updated statistics
+
             const updatedUser = await profileManager.databaseManager.getUserByUsername(username);
-            
-            // Update session if this is the current user
+
             if (req.session.user && req.session.user.username === username) {
                 req.session.user.statistics = updatedUser.statistics;
                 req.session.user.steam_games = updatedUser.steam_games;
@@ -1005,7 +934,6 @@ app.post('/api/steam/sync/:username?', async (req, res) => {
     }
 });
 
-// Get achievements for a specific game
 app.get('/api/steam/games/:appId/achievements', async (req, res) => {
     try {
         if (!req.session.user || !req.session.user.steam_id) {
@@ -1025,7 +953,6 @@ app.get('/api/steam/games/:appId/achievements', async (req, res) => {
     }
 });
 
-// Get Steam game details
 app.get('/api/steam/game/:appId', async (req, res) => {
     try {
         const { appId } = req.params;
@@ -1041,7 +968,6 @@ app.get('/api/steam/game/:appId', async (req, res) => {
     }
 });
 
-// Get current user's reviews for site ratings
 app.get('/api/reviews/current-user', async (req, res) => {
     try {
         if (!req.session.user) {
@@ -1068,14 +994,12 @@ app.get('/api/reviews/current-user', async (req, res) => {
     }
 });
 
-// Test endpoint to see existing users
 app.get('/api/test/users', async (req, res) => {
     try {
         if (!profileManager.isInitialized) {
             return res.status(503).json({ error: 'Database not ready' });
         }
-        
-        // Get all users (this is a test endpoint)
+
         const users = await profileManager.getAllUsers();
         res.json({ users: users.map(u => ({ username: u.username, email: u.email })) });
     } catch (error) {
@@ -1084,7 +1008,6 @@ app.get('/api/test/users', async (req, res) => {
     }
 });
 
-// Profile routes
 app.get('/api/profile/:username', (req, res) => {
     const { username } = req.params;
     const profile = profileManager.profiles.find(p => p.username === username);
@@ -1122,7 +1045,6 @@ app.put('/api/profile/:username', async (req, res) => {
     }
 });
 
-// Friends routes
 app.get('/api/friends/:username', (req, res) => {
     const { username } = req.params;
     profileManager.loadProfile(username);
@@ -1153,7 +1075,6 @@ app.post('/api/friends/:username/add', (req, res) => {
     }
 });
 
-// Wishlist routes
 app.get('/api/wishlists/:username', (req, res) => {
     const { username } = req.params;
     profileManager.loadProfile(username);
@@ -1183,7 +1104,6 @@ app.post('/api/wishlists/:username/create', (req, res) => {
     }
 });
 
-// Add game to wishlist with Steam integration
 app.post('/api/wishlists/:username/add-game', async (req, res) => {
     try {
         const { username } = req.params;
@@ -1200,7 +1120,6 @@ app.post('/api/wishlists/:username/add-game', async (req, res) => {
             return res.status(404).json({ error: 'Wishlist manager not found' });
         }
 
-        // Add game to default wishlist
         const defaultWishlist = wishlistManager.getWishlists().find(w => w.name === 'Default') || 
                                wishlistManager.createWishlist('Default', 'Default wishlist');
         
@@ -1225,7 +1144,6 @@ app.post('/api/wishlists/:username/add-game', async (req, res) => {
     }
 });
 
-// Check Steam ownership for wishlisted games
 app.get('/api/wishlists/:username/steam-check', async (req, res) => {
     try {
         const { username } = req.params;
@@ -1276,7 +1194,6 @@ app.get('/api/wishlists/:username/steam-check', async (req, res) => {
     }
 });
 
-// Reviews routes
 app.get('/api/reviews/:username', (req, res) => {
     const { username } = req.params;
     profileManager.loadProfile(username);
@@ -1307,7 +1224,6 @@ app.post('/api/reviews/:username/add', (req, res) => {
     }
 });
 
-// Admin routes
 app.post('/api/admin/login', (req, res) => {
     const { username, password } = req.body;
 
@@ -1329,7 +1245,6 @@ app.get('/api/admin/stats', (req, res) => {
     });
 });
 
-// Game search routes
 app.get('/api/games/search', async (req, res) => {
     const { q: query, page = 1, pageSize = 20 } = req.query;
 
@@ -1342,8 +1257,7 @@ app.get('/api/games/search', async (req, res) => {
 
     try {
         const result = await gameSearchService.searchGames(query.trim(), parseInt(page), parseInt(pageSize));
-        
-        // Add Steam ownership information if user is logged in and has Steam linked
+
         if (req.session.user && req.session.user.steam_id) {
             const user = await profileManager.getUserByUsername(req.session.user.username);
             if (user && user.steam_games) {
@@ -1383,7 +1297,6 @@ app.get('/api/games/:gameId', async (req, res) => {
     }
 });
 
-// Steam API routes
 app.get('/api/steam/profile', async (req, res) => {
     try {
         if (!req.session.user) {
@@ -1417,10 +1330,9 @@ app.get('/api/steam/games', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Return cached games if available and recent
         if (user.steam_games && user.steam_last_sync) {
             const hoursSinceSync = (new Date() - new Date(user.steam_last_sync)) / (1000 * 60 * 60);
-            if (hoursSinceSync < 24) { // Use cache if less than 24 hours old
+            if (hoursSinceSync < 24) {
                 return res.json({
                     success: true,
                     games: user.steam_games,
@@ -1431,10 +1343,9 @@ app.get('/api/steam/games', async (req, res) => {
             }
         }
 
-        // Fetch fresh data
         const result = await steamService.getUserGameLibrary(req.session.user.steam_id);
         if (result.success) {
-            // Update cache
+
             user.steam_games = result.games;
             user.steam_last_sync = new Date();
             await user.save();
@@ -1500,7 +1411,6 @@ app.get('/api/steam/game/:appId', async (req, res) => {
     }
 });
 
-// ===== Error Handling =====
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({ error: 'Something went wrong!' });
@@ -1510,7 +1420,6 @@ app.use((req, res) => {
     res.status(404).json({ error: 'Route not found' });
 });
 
-// ===== Start Server =====
 app.listen(PORT, async () => {
     console.log(`🎮 Game Vault Profile System running on http://localhost:${PORT}`);
     console.log(`📊 Admin panel available at http://localhost:${PORT}`);

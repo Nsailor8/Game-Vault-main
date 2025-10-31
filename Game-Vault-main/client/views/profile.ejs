@@ -4,9 +4,9 @@
 <body>
     <%- include('partials/header') %>
   <div class="container">
-    <!-- Main Content -->
+    
     <main id="mainContent" class="main-content">
-      <!-- Profile Section -->
+      
       <section id="profileSection" class="content-section active">
         <div class="profile-header">
           <div class="profile-avatar">
@@ -46,7 +46,7 @@
         </div>
 
 
-        <!-- Steam Profile Section -->
+        
         <% if (profile.steamLinked) { %>
         <div id="steamProfileSection" class="steam-profile-section">
           <h3>Steam Profile</h3>
@@ -73,7 +73,7 @@
           </div>
         </div>
         <% } else { %>
-        <!-- Steam Connect Section -->
+        
         <div id="steamConnectSection" class="steam-connect-section">
           <h3>Connect Your Steam Account</h3>
           <p>Link your Steam account to import your game library and achievements</p>
@@ -83,7 +83,7 @@
         </div>
         <% } %>
         
-        <!-- Profile Details Section -->
+        
         <div class="profile-details">
           <h3>Profile Information</h3>
           <div class="detail-item">
@@ -104,7 +104,7 @@
           </div>
         </div>
 
-        <!-- Steam Games Section -->
+        
         <% if (profile.steamLinked && profile.steam_games && profile.steam_games.length > 0) { %>
         <div id="steamGamesSection" class="steam-games-section">
           <h3>Steam Games Library</h3>
@@ -138,7 +138,7 @@
   </div>
     <%- include('partials/loginModal') %>
     
-    <!-- Edit Profile Modal -->
+    
     <div id="editProfileModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -182,11 +182,11 @@
   <script src="/app.js"></script>
   <script src="/profile.js"></script>
   <script>
-    // Initialize the app when the page loads
+
     document.addEventListener('DOMContentLoaded', () => {
       console.log('Profile page - DOM Content Loaded');
       
-      // Set up Steam button event listeners
+
       const connectSteamBtn = document.getElementById('connectSteamBtn');
       if (connectSteamBtn) {
         connectSteamBtn.addEventListener('click', connectSteam);
@@ -202,7 +202,7 @@
         disconnectSteamBtn.addEventListener('click', disconnectSteam);
       }
       
-      // The app.js will handle session checking and show/hide login modal as needed
+
     });
   </script>
 </body>

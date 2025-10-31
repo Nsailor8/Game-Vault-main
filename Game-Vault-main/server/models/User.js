@@ -61,7 +61,7 @@ const User = sequelize.define('User', {
     allowNull: true,
     defaultValue: ''
   },
-  // Gaming preferences as JSON
+
   gaming_preferences: {
     type: DataTypes.JSONB,
     allowNull: true,
@@ -73,7 +73,7 @@ const User = sequelize.define('User', {
       gamingGoals: []
     }
   },
-  // Statistics as JSON
+
   statistics: {
     type: DataTypes.JSONB,
     allowNull: true,
@@ -88,7 +88,7 @@ const User = sequelize.define('User', {
       friendsCount: 0
     }
   },
-  // Steam integration fields
+
   steam_id: {
     type: DataTypes.STRING(50),
     allowNull: true,
@@ -119,7 +119,7 @@ const User = sequelize.define('User', {
   }
 }, {
   tableName: 'users',
-  timestamps: false, // Disable automatic timestamps since the existing table doesn't have them
+  timestamps: false,
   indexes: [
     {
       unique: true,

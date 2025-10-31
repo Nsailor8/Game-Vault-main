@@ -9,10 +9,10 @@
 </head>
 <body>
     <div class="app-container">
-        <!-- Header -->
+        
         <%- include('partials/header', { activePage: 'search', homeLink: '/' }) %>
 
-        <!-- Main Content -->
+        
         <main class="main-content">
             <div class="search-results-page">
                 <div class="search-header">
@@ -27,13 +27,13 @@
                     </div>
                 </div>
 
-                <!-- Loading State -->
+                
                 <div id="searchLoading" class="search-loading">
                     <i class="fas fa-spinner fa-spin"></i>
                     <p>Searching games...</p>
                 </div>
 
-                <!-- Error State -->
+                
                 <div id="searchError" class="search-error" style="display: none;">
                     <i class="fas fa-exclamation-triangle"></i>
                     <h3>Search Error</h3>
@@ -41,24 +41,24 @@
                     <button class="btn btn-primary" onclick="retrySearch()">Try Again</button>
                 </div>
 
-                <!-- Mock Data Notice -->
+                
                 <div id="mockDataNotice" class="mock-data-notice" style="display: none;">
                     <i class="fas fa-info-circle"></i>
                     <strong>Demo Mode:</strong> This is sample data. To search real games, configure your RAWG.io API key.
                     <a href="https://rawg.io/apidocs" target="_blank">Get API Key</a>
                 </div>
 
-                <!-- Search Results -->
+                
                 <div id="searchResults" class="search-results-grid" style="display: none;">
-                    <!-- Game cards will be populated here -->
+                    
                 </div>
 
-                <!-- Pagination -->
+                
                 <div id="searchPagination" class="search-pagination" style="display: none;">
-                    <!-- Pagination will be populated here -->
+                    
                 </div>
 
-                <!-- No Results -->
+                
                 <div id="noResults" class="no-results" style="display: none;">
                     <i class="fas fa-search"></i>
                     <h3>No Games Found</h3>
@@ -68,17 +68,17 @@
             </div>
         </main>
 
-        <!-- Footer -->
+        
         <%- include('partials/footer') %>
     </div>
 
     <script>
-        // Get search parameters from URL
+
         const urlParams = new URLSearchParams(window.location.search);
         const query = urlParams.get('q');
         const page = parseInt(urlParams.get('page')) || 1;
 
-        // Initialize search when page loads
+
         document.addEventListener('DOMContentLoaded', function() {
             if (query) {
                 performSearch(query, page);
@@ -146,11 +146,11 @@
             document.getElementById('searchPagination').style.display = 'block';
             document.getElementById('noResults').style.display = 'none';
 
-            // Update title
+
             document.getElementById('searchTitle').textContent = `Search Results for "${query}"`;
             document.getElementById('searchSubtitle').textContent = `${totalResults} games found`;
 
-            // Display games
+
             const resultsContainer = document.getElementById('searchResults');
             resultsContainer.innerHTML = '';
 
@@ -210,7 +210,7 @@
                 resultsContainer.appendChild(gameCard);
             });
 
-            // Display pagination
+
             displayPagination(currentPage, totalPages, query);
         }
 
@@ -223,7 +223,7 @@
             const pagination = document.createElement('div');
             pagination.className = 'pagination-large';
 
-            // Previous button
+
             if (currentPage > 1) {
                 const prevBtn = document.createElement('button');
                 prevBtn.className = 'btn btn-secondary';
@@ -232,7 +232,7 @@
                 pagination.appendChild(prevBtn);
             }
 
-            // Page numbers
+
             const startPage = Math.max(1, currentPage - 2);
             const endPage = Math.min(totalPages, currentPage + 2);
 
@@ -244,7 +244,7 @@
                 pagination.appendChild(pageBtn);
             }
 
-            // Next button
+
             if (currentPage < totalPages) {
                 const nextBtn = document.createElement('button');
                 nextBtn.className = 'btn btn-secondary';
@@ -258,12 +258,12 @@
 
         function viewGameDetails(gameId) {
             alert(`Viewing details for game ID: ${gameId}`);
-            // You can implement a detailed game view modal here
+
         }
 
         function addToWishlist(gameId, gameName) {
             alert(`Added "${gameName}" to wishlist!`);
-            // You can implement the actual wishlist addition here
+
         }
 
         function retrySearch() {

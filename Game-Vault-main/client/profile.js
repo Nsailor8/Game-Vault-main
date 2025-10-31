@@ -1,16 +1,15 @@
-// User Profile Class
 class UserProfile {
   constructor(username, email, password, joinDate, gamingPreferences = {}) {
     this.username = username;
     this.email = email;
-    this.password = password; // This will be hashed when saved to database
+    this.password = password;
     this.joinDate = joinDate;
     this.isActive = true;
     this.lastLogin = null;
     this.gamingPreferences = {
       favoriteGenres: gamingPreferences.favoriteGenres || [],
       preferredPlatforms: gamingPreferences.preferredPlatforms || [],
-      playStyle: gamingPreferences.playStyle || 'casual', // casual, hardcore, competitive
+      playStyle: gamingPreferences.playStyle || 'casual',
       gamingGoals: gamingPreferences.gamingGoals || [],
       ...gamingPreferences
     };
@@ -28,7 +27,7 @@ class UserProfile {
     this.bio = '';
     this.avatar = null;
     this.privacySettings = {
-      profileVisibility: 'public', // public, friends, private
+      profileVisibility: 'public',
       showEmail: false,
       showStatistics: true,
       showFriendsList: true
@@ -37,13 +36,11 @@ class UserProfile {
 
   async authenticate(password) {
     if (!this.isActive) return false;
-    
-    // If password is already hashed (from database), compare with bcrypt
+
     if (this.password.startsWith('$2b$')) {
       return await bcrypt.compare(password, this.password);
     }
-    
-    // If password is plain text (for backward compatibility), compare directly
+
     return this.password === password;
   }
 
@@ -93,26 +90,22 @@ class UserProfile {
   updateStatistics(gameLibrary) {
     const games = gameLibrary.getAllGames();
     this.statistics.totalGamesPlayed = games.length;
-    
-    // Calculate total playtime (simplified - assumes playtime is in format "X hours")
+
     this.statistics.totalPlaytime = games.reduce((total, game) => {
       const hours = parseInt(game.playtime) || 0;
       return total + hours;
     }, 0);
 
-    // Calculate average rating
     const ratedGames = games.filter(g => g.rating > 0);
     if (ratedGames.length > 0) {
       this.statistics.averageRating = (ratedGames.reduce((sum, g) => sum + g.rating, 0) / ratedGames.length).toFixed(2);
     }
 
-    // Find favorite game (highest rated)
     const favoriteGame = games.reduce((fav, game) => {
       return (!fav || game.rating > fav.rating) ? game : fav;
     }, null);
     this.statistics.favoriteGame = favoriteGame ? favoriteGame.title : null;
 
-    // Find most played platform
     const platformCounts = games.reduce((acc, game) => {
       acc[game.platform] = (acc[game.platform] || 0) + 1;
       return acc;
@@ -120,7 +113,6 @@ class UserProfile {
     this.statistics.mostPlayedPlatform = Object.keys(platformCounts).reduce((a, b) => 
       platformCounts[a] > platformCounts[b] ? a : b, null);
 
-    // Calculate completion rate
     const completedGames = games.filter(g => g.status === 'completed').length;
     this.statistics.completionRate = games.length > 0 ? 
       ((completedGames / games.length) * 100).toFixed(1) : 0;
@@ -154,7 +146,6 @@ ${this.achievements.map(a => `- ${a.name}: ${a.description}`).join('\n')}
   }
 }
 
-// Friends List Class
 class FriendsList {
   constructor(userId) {
     this.userId = userId;
@@ -223,7 +214,7 @@ class FriendsList {
       username: username,
       blockedDate: new Date().toISOString()
     });
-    // Remove from friends if they were friends
+
     this.removeFriend(userId);
     console.log(`${username} has been blocked.`);
   }
@@ -241,7 +232,6 @@ class FriendsList {
   }
 }
 
-// Wishlist Manager Class
 class WishlistManager {
   constructor(userId) {
     this.userId = userId;
@@ -275,7 +265,7 @@ class WishlistManager {
         title: game.title,
         platform: game.platform,
         addedDate: new Date().toISOString(),
-        priority: 'medium' // low, medium, high
+        priority: 'medium'
       });
       console.log(`${game.title} added to wishlist "${wishlist.name}"!`);
       return true;
@@ -327,7 +317,6 @@ class WishlistManager {
   }
 }
 
-// Review System Class
 class ReviewManager {
   constructor(userId) {
     this.userId = userId;
@@ -339,7 +328,7 @@ class ReviewManager {
       id: this.reviews.length + 1,
       gameId: gameId,
       gameTitle: gameTitle,
-      rating: rating, // 1-5 stars
+      rating: rating,
       reviewText: reviewText,
       tags: tags,
       createdDate: new Date().toISOString(),
@@ -392,7 +381,6 @@ class ReviewManager {
   }
 }
 
-// Admin Manager Class
 class AdminManager {
   constructor() {
     this.admins = [];
@@ -452,11 +440,9 @@ class AdminManager {
   }
 }
 
-// Import the real DatabaseManager
 const RealDatabaseManager = require('../server/database/DatabaseManager');
 const bcrypt = require('bcrypt');
 
-// Profile Manager Class
 class ProfileManager {
   constructor() {
     this.currentProfile = null;
@@ -466,8 +452,7 @@ class ProfileManager {
     this.reviewManagers = new Map();
     this.databaseManager = new RealDatabaseManager();
     this.isInitialized = false;
-    
-    // Initialize database connection
+
     this.initializeDatabase();
   }
 
@@ -477,11 +462,11 @@ class ProfileManager {
       if (connected) {
         this.isInitialized = true;
         console.log('✅ Database initialized for ProfileManager');
-        // Load existing users from database
+
         await this.loadExistingUsers();
       } else {
         console.error('❌ Failed to initialize database connection');
-        // Fallback to empty state
+
         this.isInitialized = true;
       }
     } catch (error) {
@@ -495,7 +480,7 @@ class ProfileManager {
       const existingUsers = await this.databaseManager.getAllUsers();
       
       for (const userData of existingUsers) {
-        // Convert database format to UserProfile format
+
         const profile = new UserProfile(
           userData.username,
           userData.email,
@@ -503,11 +488,10 @@ class ProfileManager {
           userData.join_date,
           userData.gaming_preferences || {}
         );
-        
-        // Restore additional properties
+
         profile.bio = userData.bio || '';
         profile.statistics = userData.statistics || profile.statistics;
-        profile.achievements = []; // Will be loaded separately if needed
+        profile.achievements = [];
         profile.isActive = userData.is_active !== undefined ? userData.is_active : true;
         profile.lastLogin = userData.last_login || null;
         profile.privacySettings = {
@@ -518,8 +502,7 @@ class ProfileManager {
         };
         
         this.profiles.push(profile);
-        
-        // Initialize related managers
+
         this.friendsLists.set(userData.username, new FriendsList(userData.username));
         this.wishlistManagers.set(userData.username, new WishlistManager(userData.username));
         this.reviewManagers.set(userData.username, new ReviewManager(userData.username));
@@ -534,7 +517,7 @@ class ProfileManager {
   }
 
   async createProfile(username, email, password, gamingPreferences = {}) {
-    // Check if database is initialized
+
     if (!this.isInitialized) {
       console.log('Database not initialized yet, please wait...');
       return false;
@@ -546,27 +529,24 @@ class ProfileManager {
       return false;
     }
 
-    // Hash the password before creating profile
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
     
     const profile = new UserProfile(username, email, hashedPassword, new Date().toISOString(), gamingPreferences);
     this.profiles.push(profile);
     this.currentProfile = profile;
-    
-    // Initialize related managers
+
     this.friendsLists.set(username, new FriendsList(username));
     this.wishlistManagers.set(username, new WishlistManager(username));
     this.reviewManagers.set(username, new ReviewManager(username));
-    
-    // Save to database
+
     try {
       await this.databaseManager.saveUser(profile);
       console.log(`Profile created successfully for ${username}!`);
       return profile;
     } catch (error) {
       console.error('Error saving profile to database:', error);
-      // Remove from local array if database save failed
+
       const index = this.profiles.findIndex(p => p.username === username);
       if (index !== -1) {
         this.profiles.splice(index, 1);
@@ -584,7 +564,7 @@ class ProfileManager {
     if (profile) {
       if (await profile.login(password)) {
         this.currentProfile = profile;
-        // Update last login in database
+
         this.updateLastLogin(username);
         return profile;
       }
@@ -594,14 +574,14 @@ class ProfileManager {
 
   async getUserByUsername(username) {
     try {
-      // First try to find in local profiles array
+
       let profile = this.profiles.find(p => p.username === username);
       
       if (!profile && this.isInitialized) {
-        // If not found locally, try to load from database
+
         const userData = await this.databaseManager.getUserByUsername(username);
         if (userData) {
-          // Convert database format to UserProfile format
+
           profile = new UserProfile(
             userData.username,
             userData.email,
@@ -609,8 +589,7 @@ class ProfileManager {
             userData.join_date,
             userData.gaming_preferences || {}
           );
-          
-          // Restore additional properties
+
           profile.bio = userData.bio || '';
           profile.statistics = userData.statistics || profile.statistics;
           profile.achievements = [];
@@ -622,8 +601,7 @@ class ProfileManager {
             showStatistics: true,
             showFriendsList: true
           };
-          
-          // Add Steam properties if they exist
+
           if (userData.steam_id) {
             profile.steam_id = userData.steam_id;
             profile.steam_profile = userData.steam_profile;
@@ -631,11 +609,9 @@ class ProfileManager {
             profile.steam_games = userData.steam_games;
             profile.steam_last_sync = userData.steam_last_sync;
           }
-          
-          // Add to local profiles array
+
           this.profiles.push(profile);
-          
-          // Initialize related managers if they don't exist
+
           if (!this.friendsLists.has(username)) {
             this.friendsLists.set(username, new FriendsList(username));
           }
@@ -657,14 +633,14 @@ class ProfileManager {
 
   async getUserBySteamId(steamId) {
     try {
-      // First try to find in local profiles array
+
       let profile = this.profiles.find(p => p.steam_id === steamId);
       
       if (!profile && this.isInitialized) {
-        // If not found locally, try to load from database
+
         const userData = await this.databaseManager.getUserBySteamId(steamId);
         if (userData) {
-          // Convert database format to UserProfile format
+
           profile = new UserProfile(
             userData.username,
             userData.email,
@@ -672,8 +648,7 @@ class ProfileManager {
             userData.join_date,
             userData.gaming_preferences || {}
           );
-          
-          // Restore additional properties
+
           profile.bio = userData.bio || '';
           profile.statistics = userData.statistics || profile.statistics;
           profile.achievements = [];
@@ -685,8 +660,7 @@ class ProfileManager {
             showStatistics: true,
             showFriendsList: true
           };
-          
-          // Add Steam properties if they exist
+
           if (userData.steam_id) {
             profile.steam_id = userData.steam_id;
             profile.steam_profile = userData.steam_profile;
@@ -694,11 +668,9 @@ class ProfileManager {
             profile.steam_games = userData.steam_games;
             profile.steam_last_sync = userData.steam_last_sync;
           }
-          
-          // Add to local profiles array
+
           this.profiles.push(profile);
-          
-          // Initialize related managers if they don't exist
+
           if (!this.friendsLists.has(userData.username)) {
             this.friendsLists.set(userData.username, new FriendsList(userData.username));
           }
@@ -800,7 +772,7 @@ class ProfileManager {
       if (this.currentProfile && this.currentProfile.username === username) {
         this.currentProfile = null;
       }
-      // Clean up related data
+
       this.friendsLists.delete(username);
       this.wishlistManagers.delete(username);
       this.reviewManagers.delete(username);
@@ -813,7 +785,6 @@ class ProfileManager {
     }
   }
 
-  // Friends management
   getFriendsList() {
     if (this.currentProfile) {
       return this.friendsLists.get(this.currentProfile.username);
@@ -821,7 +792,6 @@ class ProfileManager {
     return null;
   }
 
-  // Wishlist management
   getWishlistManager() {
     if (this.currentProfile) {
       return this.wishlistManagers.get(this.currentProfile.username);
@@ -829,7 +799,6 @@ class ProfileManager {
     return null;
   }
 
-  // Review management
   getReviewManager() {
     if (this.currentProfile) {
       return this.reviewManagers.get(this.currentProfile.username);
@@ -837,11 +806,10 @@ class ProfileManager {
     return null;
   }
 
-  // Import game libraries (placeholder for third-party API integration)
   importGameLibrary(source, credentials) {
     if (this.currentProfile) {
       console.log(`Importing game library from ${source}...`);
-      // This would integrate with third-party APIs like Steam, PlayStation, etc.
+
       console.log('Game library import completed!');
       return true;
     } else {
@@ -851,7 +819,6 @@ class ProfileManager {
   }
 }
 
-// Export classes for use in other files
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { 
     UserProfile, 
@@ -863,27 +830,20 @@ if (typeof module !== 'undefined' && module.exports) {
   };
 }
 
-// Demo functionality has been removed to prevent automatic user creation
-
-// ===== Steam Integration Functions =====
-// Only run browser-specific code in browser environment
 if (typeof window !== 'undefined') {
-    // Global Steam functions for profile page
+
     window.connectSteam = async function() {
         try {
             console.log('Initiating Steam connection...');
-            
-            // Show loading state
+
             const connectBtn = document.getElementById('connectSteamBtn');
             if (connectBtn) {
                 connectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Connecting...';
                 connectBtn.disabled = true;
             }
-            
-            // Get current profile URL to return to
+
             const currentUrl = window.location.pathname;
-            
-            // Call the Steam link endpoint
+
             const response = await fetch('/api/auth/steam/link', {
                 method: 'POST',
                 headers: {
@@ -897,7 +857,7 @@ if (typeof window !== 'undefined') {
             const result = await response.json();
             
             if (result.success) {
-                // Redirect to Steam OAuth
+
                 window.location.href = result.redirectUrl;
             } else {
                 throw new Error(result.error || 'Failed to initiate Steam connection');
@@ -905,8 +865,7 @@ if (typeof window !== 'undefined') {
         } catch (error) {
             console.error('Error connecting to Steam:', error);
             alert('Failed to connect to Steam: ' + error.message);
-            
-            // Reset button state
+
             const connectBtn = document.getElementById('connectSteamBtn');
             if (connectBtn) {
                 connectBtn.innerHTML = '<i class="fab fa-steam"></i> Connect Steam';
@@ -918,19 +877,16 @@ if (typeof window !== 'undefined') {
     window.importSteamLibrary = async function() {
         try {
             console.log('Importing Steam library...');
-            
-            // Show loading state
+
             const importBtn = document.getElementById('importSteamLibraryBtn');
             if (importBtn) {
                 importBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importing...';
                 importBtn.disabled = true;
             }
-            
-            // Get current username from URL or session
+
             const pathParts = window.location.pathname.split('/');
             const username = pathParts[pathParts.length - 1];
-            
-            // Call the Steam sync endpoint
+
             const response = await fetch(`/api/steam/sync/${username}`, {
                 method: 'POST',
                 headers: {
@@ -942,11 +898,9 @@ if (typeof window !== 'undefined') {
             
             if (result.success) {
                 console.log(`Successfully imported ${result.gamesCount} games from Steam`);
-                
-                // Show success message
+
                 showNotification(`Successfully imported ${result.gamesCount} games from Steam!`, 'success');
-                
-                // Reload the page to show updated stats
+
                 setTimeout(() => {
                     window.location.reload();
                 }, 1500);
@@ -956,8 +910,7 @@ if (typeof window !== 'undefined') {
         } catch (error) {
             console.error('Error importing Steam library:', error);
             alert('Failed to import Steam library: ' + error.message);
-            
-            // Reset button state
+
             const importBtn = document.getElementById('importSteamLibraryBtn');
             if (importBtn) {
                 importBtn.innerHTML = 'Import Steam Library';
@@ -973,19 +926,16 @@ if (typeof window !== 'undefined') {
             }
             
             console.log('Disconnecting Steam account...');
-            
-            // Show loading state
+
             const disconnectBtn = document.getElementById('disconnectSteamBtn');
             if (disconnectBtn) {
                 disconnectBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Disconnecting...';
                 disconnectBtn.disabled = true;
             }
-            
-            // Get current username from URL or session
+
             const pathParts = window.location.pathname.split('/');
             const username = pathParts[pathParts.length - 1];
-            
-            // Call the Steam unlink endpoint
+
             const response = await fetch(`/api/auth/steam/unlink/${username}`, {
                 method: 'POST',
                 headers: {
@@ -997,11 +947,9 @@ if (typeof window !== 'undefined') {
             
             if (result.success) {
                 console.log('Steam account disconnected successfully');
-                
-                // Show success message
+
                 showNotification('Steam account disconnected successfully', 'success');
-                
-                // Reload the page to hide Steam section
+
                 setTimeout(() => {
                     window.location.reload();
                 }, 1000);
@@ -1011,8 +959,7 @@ if (typeof window !== 'undefined') {
         } catch (error) {
             console.error('Error disconnecting Steam account:', error);
             alert('Failed to disconnect Steam account: ' + error.message);
-            
-            // Reset button state
+
             const disconnectBtn = document.getElementById('disconnectSteamBtn');
             if (disconnectBtn) {
                 disconnectBtn.innerHTML = 'Disconnect Steam';
@@ -1021,19 +968,17 @@ if (typeof window !== 'undefined') {
         }
     };
 
-    // Load Steam profile data on page load
     window.loadSteamProfile = async function() {
         try {
-            // Get current username from URL
+
             const pathParts = window.location.pathname.split('/');
             const username = pathParts[pathParts.length - 1];
-            
-            // Check Steam link status
+
             const statusResponse = await fetch(`/api/auth/steam/status/${username}`);
             const statusResult = await statusResponse.json();
             
             if (statusResult.linked) {
-                // Show Steam profile section
+
                 const steamProfileSection = document.getElementById('steamProfileSection');
                 const steamConnectSection = document.getElementById('steamConnectSection');
                 
@@ -1043,8 +988,7 @@ if (typeof window !== 'undefined') {
                 if (steamConnectSection) {
                     steamConnectSection.style.display = 'none';
                 }
-                
-                // Update Steam profile info
+
                 if (statusResult.steam_profile) {
                     const steamAvatar = document.getElementById('steamAvatar');
                     const steamUsername = document.getElementById('steamUsername');
@@ -1060,13 +1004,12 @@ if (typeof window !== 'undefined') {
                         steamProfileUrl.innerHTML = `<a href="${statusResult.steam_profile.profileurl}" target="_blank">View Steam Profile</a>`;
                     }
                 }
-                
-                // Update stats with Steam data
+
                 if (statusResult.steam_games && statusResult.steam_games.length > 0) {
                     updateSteamStats(statusResult.steam_games);
                 }
             } else {
-                // Show Steam connect section
+
                 const steamProfileSection = document.getElementById('steamProfileSection');
                 const steamConnectSection = document.getElementById('steamConnectSection');
                 
@@ -1082,15 +1025,13 @@ if (typeof window !== 'undefined') {
         }
     };
 
-    // Update profile stats with Steam data
     function updateSteamStats(steamGames) {
         try {
-            // Calculate Steam statistics
+
             const totalGames = steamGames.length;
             const totalPlaytime = steamGames.reduce((sum, game) => sum + (game.playtime_forever || 0), 0);
             const totalAchievements = steamGames.reduce((sum, game) => sum + (game.achievements || 0), 0);
-            
-            // Update the stats display
+
             const totalGamesElement = document.getElementById('totalGames');
             const totalPlaytimeElement = document.getElementById('totalPlaytime');
             const achievementCountElement = document.getElementById('achievementCount');
@@ -1099,7 +1040,7 @@ if (typeof window !== 'undefined') {
                 totalGamesElement.textContent = totalGames;
             }
             if (totalPlaytimeElement) {
-                totalPlaytimeElement.textContent = Math.round(totalPlaytime / 60); // Convert minutes to hours
+                totalPlaytimeElement.textContent = Math.round(totalPlaytime / 60);
             }
             if (achievementCountElement) {
                 achievementCountElement.textContent = totalAchievements;
@@ -1111,14 +1052,12 @@ if (typeof window !== 'undefined') {
         }
     }
 
-    // Show notification helper function
     function showNotification(message, type = 'info') {
-        // Create notification element
+
         const notification = document.createElement('div');
         notification.className = `notification notification-${type}`;
         notification.textContent = message;
-        
-        // Style the notification
+
         notification.style.cssText = `
             position: fixed;
             top: 20px;
@@ -1130,8 +1069,7 @@ if (typeof window !== 'undefined') {
             z-index: 10000;
             animation: slideIn 0.3s ease-out;
         `;
-        
-        // Set background color based on type
+
         switch (type) {
             case 'success':
                 notification.style.backgroundColor = '#4CAF50';
@@ -1145,11 +1083,9 @@ if (typeof window !== 'undefined') {
             default:
                 notification.style.backgroundColor = '#2196F3';
         }
-        
-        // Add to page
+
         document.body.appendChild(notification);
-        
-        // Remove after 3 seconds
+
         setTimeout(() => {
             notification.style.animation = 'slideOut 0.3s ease-in';
             setTimeout(() => {
@@ -1160,7 +1096,6 @@ if (typeof window !== 'undefined') {
         }, 3000);
     }
 
-    // Add CSS animations for notifications
     const style = document.createElement('style');
     style.textContent = `
         @keyframes slideIn {
@@ -1174,9 +1109,8 @@ if (typeof window !== 'undefined') {
     `;
     document.head.appendChild(style);
 
-    // Initialize Steam profile when page loads
     document.addEventListener('DOMContentLoaded', () => {
-        // Only load Steam profile if we're on a profile page
+
         if (window.location.pathname.startsWith('/profile')) {
             loadSteamProfile();
         }

@@ -6,11 +6,6 @@ class SteamService {
         this.baseUrl = 'https://api.steampowered.com';
     }
 
-    /**
-     * Get user's Steam profile information
-     * @param {string} steamId - Steam ID
-     * @returns {Object} Steam profile data
-     */
     async getUserProfile(steamId) {
         try {
             if (!this.apiKey || this.apiKey === 'your-steam-api-key-here') {
@@ -56,11 +51,6 @@ class SteamService {
         }
     }
 
-    /**
-     * Get user's Steam game library
-     * @param {string} steamId - Steam ID
-     * @returns {Object} Steam game library data
-     */
     async getUserGameLibrary(steamId) {
         try {
             if (!this.apiKey || this.apiKey === 'your-steam-api-key-here') {
@@ -91,7 +81,7 @@ class SteamService {
                     playtime_disconnected: game.playtime_disconnected || 0,
                     has_community_visible_stats: game.has_community_visible_stats || false,
                     playtime_2weeks: game.playtime_2weeks || 0,
-                    // Add achievement count if available
+
                     achievements: game.achievements || 0
                 })),
                 game_count: response.data.response.game_count || games.length
@@ -107,12 +97,6 @@ class SteamService {
         }
     }
 
-    /**
-     * Get user's achievements for a specific game
-     * @param {string} steamId - Steam ID
-     * @param {number} appId - Steam App ID
-     * @returns {Object} Game achievements data
-     */
     async getUserAchievements(steamId, appId) {
         try {
             if (!this.apiKey || this.apiKey === 'your-steam-api-key-here') {
@@ -135,8 +119,8 @@ class SteamService {
                     apiname: achievement.apiname,
                     achieved: achievement.achieved === 1,
                     unlocktime: achievement.unlocktime,
-                    name: achievement.apiname, // Steam API doesn't provide display names in this endpoint
-                    description: achievement.apiname // Steam API doesn't provide descriptions in this endpoint
+                    name: achievement.apiname,
+                    description: achievement.apiname
                 }))
             };
         } catch (error) {
@@ -149,18 +133,12 @@ class SteamService {
         }
     }
 
-    /**
-     * Get Steam game details
-     * @param {number} appId - Steam App ID
-     * @returns {Object} Game details
-     */
     async getGameDetails(appId) {
         try {
             if (!this.apiKey || this.apiKey === 'your-steam-api-key-here') {
                 throw new Error('Steam API key not configured');
             }
 
-            // Steam Store API endpoint for game details
             const response = await axios.get(`https://store.steampowered.com/api/appdetails`, {
                 params: {
                     appids: appId,
@@ -214,11 +192,6 @@ class SteamService {
         }
     }
 
-    /**
-     * Sync user's Steam library to database
-     * @param {Object} user - User model instance
-     * @returns {Object} Sync result
-     */
     async syncUserGames(user) {
         try {
             console.log('Starting Steam games sync for user:', user.username);
@@ -240,27 +213,23 @@ class SteamService {
 
             console.log(`Fetched ${libraryResult.game_count} games from Steam API`);
 
-            // Update user's Steam games
             user.steam_games = libraryResult.games;
             user.steam_last_sync = new Date();
-            
-            // Calculate and update statistics
+
             const totalPlaytime = libraryResult.games.reduce((sum, game) => sum + (game.playtime_forever || 0), 0);
             const totalAchievements = libraryResult.games.reduce((sum, game) => sum + (game.achievements || 0), 0);
-            
-            // Update user statistics with Steam data
+
             if (!user.statistics) {
                 user.statistics = {};
             }
             user.statistics.totalGamesPlayed = libraryResult.game_count;
-            user.statistics.totalPlaytime = Math.round(totalPlaytime / 60); // Convert to hours
+            user.statistics.totalPlaytime = Math.round(totalPlaytime / 60);
             user.statistics.totalAchievements = totalAchievements;
-            // Keep existing averageRating if it exists, otherwise set to 0
+
             if (user.statistics.averageRating === undefined) {
                 user.statistics.averageRating = 0;
             }
-            
-            // Save to database
+
             await user.save();
             
             console.log('Steam games and statistics saved to database successfully');
@@ -282,28 +251,18 @@ class SteamService {
         }
     }
 
-    /**
-     * Link Steam account to user
-     * @param {Object} user - User model instance
-     * @param {string} steamId - Steam ID
-     * @param {Object} steamProfile - Steam profile data
-     * @returns {Object} Link result
-     */
     async linkSteamAccount(user, steamId, steamProfile) {
         try {
             console.log('Linking Steam account:', { steamId, username: user.username });
-            
-            // Update user with Steam data
+
             user.steam_id = steamId;
             user.steam_profile = steamProfile;
             user.steam_linked_at = new Date();
-            
-            // Save to database
+
             await user.save();
             
             console.log('Steam account linked and saved to database');
 
-            // Sync games after linking
             const syncResult = await this.syncUserGames(user);
             console.log('Steam games synced:', syncResult);
             
@@ -321,11 +280,6 @@ class SteamService {
         }
     }
 
-    /**
-     * Unlink Steam account from user
-     * @param {Object} user - User model instance
-     * @returns {Object} Unlink result
-     */
     async unlinkSteamAccount(user) {
         try {
             user.steam_id = null;
@@ -349,12 +303,6 @@ class SteamService {
         }
     }
 
-    /**
-     * Check if user owns a specific Steam game
-     * @param {Object} user - User model instance
-     * @param {number} appId - Steam App ID
-     * @returns {boolean} Whether user owns the game
-     */
     userOwnsGame(user, appId) {
         if (!user.steam_games || !Array.isArray(user.steam_games)) {
             return false;
@@ -363,12 +311,6 @@ class SteamService {
         return user.steam_games.some(game => game.appid === appId);
     }
 
-    /**
-     * Get Steam ownership status for games
-     * @param {Object} user - User model instance
-     * @param {Array} games - Array of games to check
-     * @returns {Array} Games with Steam ownership status
-     */
     getSteamOwnershipStatus(user, games) {
         if (!user.steam_games || !Array.isArray(user.steam_games)) {
             return games.map(game => ({ ...game, steamOwned: false }));

@@ -2,7 +2,7 @@ const axios = require('axios');
 
 class GameSearchService {
     constructor() {
-        // IGDB API configuration - free tier available
+
         this.clientId = process.env.IGDB_CLIENT_ID || 'your-client-id-here';
         this.clientSecret = process.env.IGDB_CLIENT_SECRET || 'your-client-secret-here';
         this.baseUrl = 'https://api.igdb.com/v4';
@@ -11,14 +11,13 @@ class GameSearchService {
 
     async searchGames(query, page = 1, pageSize = 20) {
         try {
-            // Check if API credentials are properly configured
+
             if (!this.clientId || this.clientId === 'your-client-id-here' || 
                 !this.clientSecret || this.clientSecret === 'your-client-secret-here') {
                 console.log('IGDB API credentials not configured, using mock data');
                 return this.getMockSearchResults(query, page, pageSize);
             }
 
-            // Get access token if we don't have one
             if (!this.accessToken) {
                 await this.getAccessToken();
             }
@@ -26,7 +25,6 @@ class GameSearchService {
             console.log('IGDB API - Client ID:', this.clientId);
             console.log('IGDB API - Access Token:', this.accessToken ? 'Present' : 'Missing');
 
-            // IGDB API query - correct format for v4
             const searchQuery = `fields name,summary,rating,rating_count,first_release_date,cover.url,platforms.name,genres.name;
 search "${query}";
 limit ${pageSize};`;
@@ -50,8 +48,7 @@ limit ${pageSize};`;
             };
         } catch (error) {
             console.error('Error searching games:', error);
-            
-            // If API fails, return mock data for demonstration
+
             if (error.response && (error.response.status === 401 || error.response.status === 403)) {
                 console.log('IGDB API credentials invalid, using mock data');
                 return this.getMockSearchResults(query, page, pageSize);
@@ -120,7 +117,7 @@ limit ${pageSize};`;
     }
 
     getMockSearchResults(query, page = 1, pageSize = 20) {
-        // Mock data for demonstration when API key is not configured
+
         const mockGames = [
             {
                 id: 1,
