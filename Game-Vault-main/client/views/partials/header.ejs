@@ -7,8 +7,13 @@
 
   
   <div class="search-bar">
-    <input type="text" id="gameSearchInput" placeholder="Search games..." onkeypress="if(event.key==='Enter') { const query = this.value.trim(); if(query) window.location.href = '/search?q=' + encodeURIComponent(query); }">
-    <button id="gameSearchBtn" onclick="const query = document.getElementById('gameSearchInput').value.trim(); if(query) window.location.href = '/search?q=' + encodeURIComponent(query); else alert('Please enter a search term');"><i class="fas fa-search"></i></button>
+    <div class="search-wrapper">
+      <input type="text" id="gameSearchInput" placeholder="Search games..." autocomplete="off" onkeypress="if(event.key==='Enter') { const query = this.value.trim(); if(query) window.location.href = '/search?q=' + encodeURIComponent(query); }">
+      <button id="gameSearchBtn" onclick="const query = document.getElementById('gameSearchInput').value.trim(); if(query) window.location.href = '/search?q=' + encodeURIComponent(query); else alert('Please enter a search term');"><i class="fas fa-search"></i></button>
+      <div id="searchSuggestions" class="search-suggestions" style="display: none;">
+        <!-- Autocomplete suggestions will appear here -->
+      </div>
+    </div>
   </div>
 
   
@@ -20,8 +25,16 @@
     <a class="nav-btn <%= activePage === 'admin' ? 'active' : '' %>" href="/admin">Admin</a>
   </nav>
 
-  
+  <!-- Authentication Section -->
   <div class="auth-section" id="authSection" style="display: none;">
     <button id="signInBtn" class="btn btn-primary">Sign In</button>
+  </div>
+
+  <!-- User Section (shown when logged in) -->
+  <div class="user-section" id="userSection" style="display: none;">
+    <div class="user-info">
+      <span id="userDisplayName">User</span>
+      <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+    </div>
   </div>
 </header>

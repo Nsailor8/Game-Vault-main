@@ -17,18 +17,77 @@
       
       <section class="section">
         <div class="section-header">
-          <h2>Trending Games</h2>
+          <h2>🔥 Trending Games</h2>
+          <p>Most popular and highly rated games</p>
         </div>
-        <div id="trendingList" class="list-container">
+        <div id="trendingList" class="games-grid">
           <% if (trendingGames && trendingGames.length) { %>
             <% trendingGames.forEach(function(game) { %>
-              <div class="game-card">
-                <h3><%= game.title %></h3>
-                <p><%= game.description %></p>
+              <div class="game-card-homepage">
+                <div class="game-image-container">
+                  <% if (game.background_image) { %>
+                    <img src="<%= game.background_image %>" alt="<%= game.name %>" class="game-image" loading="lazy">
+                  <% } else { %>
+                    <div class="no-image">
+                      <i class="fas fa-gamepad"></i>
+                    </div>
+                  <% } %>
+                  <div class="game-rating">
+                    <% if (game.rating && game.rating > 0) { %>
+                      <div class="star-rating-display">
+                        <% 
+                        const rating = Math.min(Math.max(game.rating, 0), 5);
+                        const fullStars = Math.floor(rating);
+                        const hasHalfStar = rating % 1 >= 0.5;
+                        const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
+                        %>
+                        <% for (let i = 0; i < fullStars; i++) { %>
+                          <i class="fas fa-star star-full"></i>
+                        <% } %>
+                        <% if (hasHalfStar) { %>
+                          <i class="fas fa-star-half-alt star-half"></i>
+                        <% } %>
+                        <% for (let i = 0; i < emptyStars; i++) { %>
+                          <i class="far fa-star star-empty"></i>
+                        <% } %>
+                      </div>
+                      <span class="rating-number"><%= rating.toFixed(1) %>/5</span>
+                    <% } else { %>
+                      <span class="no-rating">No rating</span>
+                    <% } %>
+                  </div>
+                </div>
+                <div class="game-info">
+                  <h3 class="game-title"><%= game.name %></h3>
+                  <p class="game-description"><%= game.description_raw ? game.description_raw.substring(0, 120) + '...' : 'No description available' %></p>
+                  <div class="game-meta">
+                    <% if (game.released) { %>
+                      <span class="release-date"><i class="fas fa-calendar"></i> <%= new Date(game.released).getFullYear() %></span>
+                    <% } %>
+                    <% if (game.platforms && game.platforms.length > 0) { %>
+                      <span class="platforms">
+                        <i class="fas fa-desktop"></i>
+                        <%= game.platforms.slice(0, 2).map(p => p.name).join(', ') %>
+                        <% if (game.platforms.length > 2) { %>+<%= game.platforms.length - 2 %> more<% } %>
+                      </span>
+                    <% } %>
+                  </div>
+                  <% if (game.genres && game.genres.length > 0) { %>
+                    <div class="game-genres">
+                      <% game.genres.slice(0, 3).forEach(function(genre) { %>
+                        <span class="genre-tag"><%= genre.name %></span>
+                      <% }); %>
+                    </div>
+                  <% } %>
+                </div>
               </div>
             <% }); %>
           <% } else { %>
-            <p>No trending games available.</p>
+            <div class="empty-state">
+              <i class="fas fa-fire"></i>
+              <h3>No trending games available</h3>
+              <p>Check back later for the latest trending games!</p>
+            </div>
           <% } %>
         </div>
       </section>
@@ -36,18 +95,77 @@
       
       <section class="section">
         <div class="section-header">
-          <h2>Recently Added</h2>
+          <h2>🆕 Recently Released</h2>
+          <p>Latest games that just hit the market</p>
         </div>
-        <div id="recentList" class="list-container">
+        <div id="recentList" class="games-grid">
           <% if (recentGames && recentGames.length) { %>
             <% recentGames.forEach(function(game) { %>
-              <div class="game-card">
-                <h3><%= game.title %></h3>
-                <p><%= game.description %></p>
+              <div class="game-card-homepage">
+                <div class="game-image-container">
+                  <% if (game.background_image) { %>
+                    <img src="<%= game.background_image %>" alt="<%= game.name %>" class="game-image" loading="lazy">
+                  <% } else { %>
+                    <div class="no-image">
+                      <i class="fas fa-gamepad"></i>
+                    </div>
+                  <% } %>
+                  <div class="game-rating">
+                    <% if (game.rating && game.rating > 0) { %>
+                      <div class="star-rating-display">
+                        <% 
+                        const rating = Math.min(Math.max(game.rating, 0), 5);
+                        const fullStars = Math.floor(rating);
+                        const hasHalfStar = rating % 1 >= 0.5;
+                        const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
+                        %>
+                        <% for (let i = 0; i < fullStars; i++) { %>
+                          <i class="fas fa-star star-full"></i>
+                        <% } %>
+                        <% if (hasHalfStar) { %>
+                          <i class="fas fa-star-half-alt star-half"></i>
+                        <% } %>
+                        <% for (let i = 0; i < emptyStars; i++) { %>
+                          <i class="far fa-star star-empty"></i>
+                        <% } %>
+                      </div>
+                      <span class="rating-number"><%= rating.toFixed(1) %>/5</span>
+                    <% } else { %>
+                      <span class="no-rating">No rating</span>
+                    <% } %>
+                  </div>
+                </div>
+                <div class="game-info">
+                  <h3 class="game-title"><%= game.name %></h3>
+                  <p class="game-description"><%= game.description_raw ? game.description_raw.substring(0, 120) + '...' : 'No description available' %></p>
+                  <div class="game-meta">
+                    <% if (game.released) { %>
+                      <span class="release-date"><i class="fas fa-calendar"></i> <%= new Date(game.released).getFullYear() %></span>
+                    <% } %>
+                    <% if (game.platforms && game.platforms.length > 0) { %>
+                      <span class="platforms">
+                        <i class="fas fa-desktop"></i>
+                        <%= game.platforms.slice(0, 2).map(p => p.name).join(', ') %>
+                        <% if (game.platforms.length > 2) { %>+<%= game.platforms.length - 2 %> more<% } %>
+                      </span>
+                    <% } %>
+                  </div>
+                  <% if (game.genres && game.genres.length > 0) { %>
+                    <div class="game-genres">
+                      <% game.genres.slice(0, 3).forEach(function(genre) { %>
+                        <span class="genre-tag"><%= genre.name %></span>
+                      <% }); %>
+                    </div>
+                  <% } %>
+                </div>
               </div>
             <% }); %>
           <% } else { %>
-            <p>No recent games available.</p>
+            <div class="empty-state">
+              <i class="fas fa-clock"></i>
+              <h3>No recent games available</h3>
+              <p>Check back later for the latest releases!</p>
+            </div>
           <% } %>
         </div>
       </section>

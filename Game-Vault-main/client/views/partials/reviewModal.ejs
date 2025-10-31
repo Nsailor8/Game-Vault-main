@@ -1,0 +1,136 @@
+<!-- Review Modal -->
+<div id="addReviewModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Write a Review</h3>
+            <span class="close" onclick="app.closeModal(document.getElementById('addReviewModal'))">&times;</span>
+        </div>
+        <div class="modal-body">
+            <form id="reviewForm">
+                <div class="form-group">
+                    <label for="reviewGameTitle">Game Title *</label>
+                    <input type="text" id="reviewGameTitle" name="gameTitle" required 
+                           placeholder="Enter the game title" maxlength="200">
+                </div>
+                
+                <div class="form-group">
+                    <label for="reviewRating">Rating *</label>
+                    <div class="rating-input">
+                        <div class="star-rating" id="starRating">
+                            <span class="star" data-rating="1">★</span>
+                            <span class="star" data-rating="2">★</span>
+                            <span class="star" data-rating="3">★</span>
+                            <span class="star" data-rating="4">★</span>
+                            <span class="star" data-rating="5">★</span>
+                        </div>
+                        <input type="hidden" id="reviewRating" name="rating" value="5" required>
+                        <span class="rating-text">5 stars</span>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="reviewText">Review Text *</label>
+                    <textarea id="reviewText" name="reviewText" required 
+                              placeholder="Write your review here (10-5000 characters)" 
+                              minlength="10" maxlength="5000" rows="6"></textarea>
+                    <div class="char-count">
+                        <span id="charCount">0</span>/5000 characters
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="reviewTags">Tags (optional)</label>
+                    <input type="text" id="reviewTags" name="tags" 
+                           placeholder="Enter tags separated by commas (e.g., action, RPG, multiplayer)">
+                    <small>Add tags to help categorize your review</small>
+                </div>
+                
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="reviewPublic" name="isPublic" checked>
+                        <span class="checkmark"></span>
+                        Make this review public
+                    </label>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" 
+                    onclick="app.closeModal(document.getElementById('addReviewModal'))">
+                Cancel
+            </button>
+            <button type="button" class="btn btn-primary" id="addReviewConfirmBtn">
+                <i class="fas fa-star"></i> Submit Review
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Review Modal -->
+<div id="editReviewModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Edit Review</h3>
+            <span class="close" onclick="app.closeModal(document.getElementById('editReviewModal'))">&times;</span>
+        </div>
+        <div class="modal-body">
+            <form id="editReviewForm">
+                <input type="hidden" id="editReviewId" name="reviewId">
+                
+                <div class="form-group">
+                    <label for="editGameTitle">Game Title *</label>
+                    <input type="text" id="editGameTitle" name="gameTitle" required 
+                           placeholder="Enter the game title" maxlength="200">
+                </div>
+                
+                <div class="form-group">
+                    <label for="editRating">Rating *</label>
+                    <div class="rating-input">
+                        <div class="star-rating" id="editStarRating">
+                            <span class="star" data-rating="1">★</span>
+                            <span class="star" data-rating="2">★</span>
+                            <span class="star" data-rating="3">★</span>
+                            <span class="star" data-rating="4">★</span>
+                            <span class="star" data-rating="5">★</span>
+                        </div>
+                        <input type="hidden" id="editRating" name="rating" value="5" required>
+                        <span class="rating-text">5 stars</span>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editReviewText">Review Text *</label>
+                    <textarea id="editReviewText" name="reviewText" required 
+                              placeholder="Write your review here (10-5000 characters)" 
+                              minlength="10" maxlength="5000" rows="6"></textarea>
+                    <div class="char-count">
+                        <span id="editCharCount">0</span>/5000 characters
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editTags">Tags (optional)</label>
+                    <input type="text" id="editTags" name="tags" 
+                           placeholder="Enter tags separated by commas">
+                </div>
+                
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="editReviewPublic" name="isPublic" checked>
+                        <span class="checkmark"></span>
+                        Make this review public
+                    </label>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" 
+                    onclick="app.closeModal(document.getElementById('editReviewModal'))">
+                Cancel
+            </button>
+            <button type="button" class="btn btn-primary" id="editReviewConfirmBtn">
+                <i class="fas fa-save"></i> Update Review
+            </button>
+        </div>
+    </div>
+</div>

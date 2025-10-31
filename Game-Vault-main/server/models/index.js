@@ -20,7 +20,12 @@ const setupAssociations = () => {
     foreignKey: 'userId',
     otherKey: 'friendId'
   });
-
+  
+  // Friendship belongsTo associations
+  Friendship.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+  Friendship.belongsTo(User, { foreignKey: 'friendId', as: 'friend' });
+  
+  // Review associations
   Review.belongsTo(User, { foreignKey: 'userId', as: 'user' });
   Review.belongsTo(Game, { foreignKey: 'gameId', as: 'game' });
 
