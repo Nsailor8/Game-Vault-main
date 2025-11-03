@@ -3,186 +3,510 @@ const https = require('https');
 
 class GameSearchService {
     constructor() {
-        // IGDB API configuration - free tier available
-        this.clientId = process.env.IGDB_CLIENT_ID || 'your-client-id-here';
-        this.clientSecret = process.env.IGDB_CLIENT_SECRET || 'your-client-secret-here';
-        this.baseUrl = 'https://api.igdb.com/v4';
-        this.accessToken = null;
+        // Steam API configuration
+        this.apiKey = process.env.STEAM_API_KEY;
+        this.steamApiBase = 'https://api.steampowered.com';
+        this.steamStoreBase = 'https://store.steampowered.com/api';
+        // Cache for app list
+        this.appListCache = null;
+        this.appListCacheTime = null;
+        this.cacheExpiration = 24 * 60 * 60 * 1000; // 24 hours
     }
 
     async searchGames(query, page = 1, pageSize = 20) {
         try {
-            // Check if API credentials are properly configured
-            if (!this.clientId || this.clientId === 'your-client-id-here' || 
-                !this.clientSecret || this.clientSecret === 'your-client-secret-here') {
-                console.log('IGDB API credentials not configured, using mock data');
-                return this.getMockSearchResults(query, page, pageSize);
-            }
-
-            // Get access token if we don't have one
-            if (!this.accessToken) {
-                await this.getAccessToken();
+            console.log(`🔍 [Search] Searching Steam for: "${query}"`);
+            
+            // Get Steam app list (cached)
+            let appList;
+            try {
+                appList = await this.getSteamAppList();
+            } catch (error) {
+                console.error(`❌ [Search] Failed to get Steam app list:`, error.message);
+                appList = null;
             }
             
-            console.log('IGDB API - Client ID:', this.clientId);
-            console.log('IGDB API - Access Token:', this.accessToken ? 'Present' : 'Missing');
+            if (!appList || appList.length === 0) {
+                console.log(`⚠️ [Search] No Steam app list available (cache: ${this.appListCache ? this.appListCache.length : 0} games), using mock data`);
+                console.log(`💡 [Search] Tip: Visit /api/games/test-steam to check Steam API status`);
+                const mockResult = this.getMockSearchResults(query, page, pageSize);
+                mockResult.isMockData = true;
+                return mockResult;
+            }
 
-            // IGDB API query - simplified format that works
-            const searchQuery = `fields name,summary,rating,rating_count,first_release_date,cover.url,platforms.name,genres.name;
-search "${query}";
-limit ${pageSize};`;
+            console.log(`✅ [Search] Using Steam app list with ${appList.length} games`);
 
-            // Use axios with proper configuration for IGDB API
-            const response = await axios.post(`${this.baseUrl}/games`, searchQuery, {
-                headers: {
-                    'Client-ID': this.clientId,
-                    'Authorization': `Bearer ${this.accessToken}`,
-                    'Accept': 'application/json',
-                    'Content-Type': 'text/plain'
-                },
-                transformRequest: [(data) => data],
-                timeout: 10000
+            // Search locally through the app list
+            const searchQuery = query.toLowerCase().trim();
+            const matchingGames = appList.filter(game => 
+                game.name && game.name.toLowerCase().includes(searchQuery)
+            );
+
+            // Sort by relevance (exact matches first, then partial matches) - initial sort
+            matchingGames.sort((a, b) => {
+                const aName = a.name.toLowerCase();
+                const bName = b.name.toLowerCase();
+                const aExact = aName === searchQuery || aName.startsWith(searchQuery);
+                const bExact = bName === searchQuery || bName.startsWith(searchQuery);
+                
+                if (aExact && !bExact) return -1;
+                if (!aExact && bExact) return 1;
+                return aName.localeCompare(bName);
             });
 
-            console.log('IGDB API Response:', JSON.stringify(response.data, null, 2));
+            // Fetch details for more games than needed (to allow proper rating-based sorting)
+            // Limit to first 100 matches to avoid performance issues
+            const maxGamesToFetch = Math.min(100, matchingGames.length);
+            const gamesToFetch = matchingGames.slice(0, maxGamesToFetch);
 
-            // Filter out games with similar titles to prevent duplicates
-            const uniqueGames = this.removeSimilarTitles(response.data);
+            // Get detailed information for games (in batches to avoid overwhelming the API)
+            const batchSize = 10;
+            const gamesWithDetails = [];
             
-            // Filter out games without ratings
-            const gamesWithRatings = uniqueGames.filter(game => game.rating && game.rating > 0);
-            
-            return {
+            for (let i = 0; i < gamesToFetch.length; i += batchSize) {
+                const batch = gamesToFetch.slice(i, i + batchSize);
+                const batchResults = await Promise.all(
+                    batch.map(async (game) => {
+                        try {
+                            const details = await this.getSteamGameDetails(game.appid);
+                            const formattedGame = this.formatSteamGameData(game, details);
+                            return formattedGame;
+                        } catch (error) {
+                            console.error(`Error fetching details for app ${game.appid}:`, error);
+                            return null; // Skip games where we can't get details
+                        }
+                    })
+                );
+                gamesWithDetails.push(...batchResults);
+            }
+
+            // Filter out null games, games without ratings, DLCs, videos, and non-games
+            let gamesWithRatings = gamesWithDetails.filter(g => {
+                if (!g) return false;
+                
+                // Filter out DLCs, videos, trailers, demos, and non-games
+                // Check game name for common indicators - be very strict
+                const name = g.name ? g.name.toLowerCase().trim() : '';
+                
+                // More comprehensive DLC detection - but allow game editions (Enhanced, GOTY, etc.)
+                // Only exclude actual DLC/expansion content, not full game editions
+                const isDLC = name.includes('downloadable content') ||
+                             name.includes('expansion pack') ||
+                             name.includes('expansion:') ||
+                             (name.includes(' - ') && name.split(' - ')[1].toLowerCase().includes('dlc')) ||
+                             (name.includes(' - ') && (
+                                name.split(' - ')[1].toLowerCase().includes('pack') && 
+                                !name.split(' - ')[1].toLowerCase().includes('edition')
+                             )) ||
+                             name.includes('add-on') ||
+                             name.includes('addon') ||
+                             // DLC in name but only if it's clearly DLC, not part of game title
+                             (name.includes('dlc') && (
+                                name.endsWith(' dlc') ||
+                                name.includes(' - dlc') ||
+                                name.includes(' dlc -')
+                             ));
+                
+                // Game editions are OK - these are full games
+                // Don't filter: Enhanced Edition, GOTY Edition, Definitive Edition, Complete Edition, etc.
+                
+                // Video/Trailer detection
+                const isVideo = name.includes('trailer') || 
+                               name.includes('video') ||
+                               name.includes('movie') ||
+                               name.includes('film') ||
+                               name.includes('cinematic') ||
+                               g.id < 1000; // Steam uses low app IDs for non-game content
+                
+                // Demo detection - stricter
+                const isDemo = name.includes('demo') || 
+                             name.includes('demo ') ||
+                             name.includes(' demo') ||
+                             name.includes('trial');
+                
+                // Tool/Editor detection
+                const isTool = name.includes('tool') || 
+                              name.includes('editor') ||
+                              name.includes('sdk') ||
+                              name.includes('kit');
+                
+                // Soundtrack/OST detection
+                const isSoundtrack = name.includes('soundtrack') || 
+                                    name.includes('ost') ||
+                                    name.includes('music') && (name.includes('album') || name.includes('collection'));
+                
+                // Asset/Content pack detection
+                const isAssetPack = name.includes('assets') && name.includes('pack') ||
+                                   name.includes('graphic assets') ||
+                                   name.includes('texture pack') ||
+                                   name.includes('content pack');
+                
+                // Hardware detection
+                const isHardware = name.includes('hardware') || 
+                                  name.includes('controller') ||
+                                  name.includes('peripheral');
+                
+                // Switcher apps (often browser extensions, not games)
+                const isSwitcherApp = name.includes('switcher') && (
+                    name.includes('chrome') || 
+                    name.includes('browser') ||
+                    name.includes('extension')
+                );
+                
+                // Only include actual games - reject if any non-game indicator found
+                if (isDLC || isVideo || isTool || isDemo || isSoundtrack || isAssetPack || isHardware || isSwitcherApp) {
+                    console.log(`🚫 [Filter] Excluding non-game: "${g.name}" (DLC: ${isDLC}, Video: ${isVideo}, Demo: ${isDemo}, Tool: ${isTool}, Soundtrack: ${isSoundtrack}, AssetPack: ${isAssetPack})`);
+                    return false;
+                }
+                
+                // REQUIRE a rating (metacritic or user rating) - don't include games without ratings
+                const hasMetacritic = g.metacritic !== null && g.metacritic !== undefined && g.metacritic > 0;
+                const hasRating = g.rating !== null && g.rating !== undefined && g.rating > 0;
+                
+                // Only include games with ratings
+                return (hasMetacritic || hasRating);
+            });
+
+            // Sort by rating (highest to lowest) - prioritize metacritic, then user rating
+            gamesWithRatings.sort((a, b) => {
+                const scoreA = (a.metacritic || 0) * 10 + (a.rating || 0) * 2;
+                const scoreB = (b.metacritic || 0) * 10 + (b.rating || 0) * 2;
+                return scoreB - scoreA;
+            });
+
+            console.log(`📊 [Search] Filtered to ${gamesWithRatings.length} games with ratings (from ${gamesWithDetails.filter(g => g !== null).length} total games with details)`);
+
+            // Paginate after sorting by ratings
+            const startIndex = (page - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            const paginatedGames = gamesWithRatings.slice(startIndex, endIndex);
+
+            const result = {
                 success: true,
-                games: gamesWithRatings.map(game => this.formatIGDBGameData(game)),
+                games: paginatedGames,
                 totalResults: gamesWithRatings.length,
                 currentPage: page,
-                totalPages: Math.ceil(gamesWithRatings.length / pageSize)
+                totalPages: gamesWithRatings.length > 0 ? Math.ceil(gamesWithRatings.length / pageSize) : 0,
+                isMockData: false
             };
-        } catch (error) {
-            console.error('Error searching games:', error);
             
-            // If API fails, return mock data for demonstration
-            if (error.response && (error.response.status === 401 || error.response.status === 403)) {
-                console.log('IGDB API credentials invalid, using mock data');
-                return this.getMockSearchResults(query, page, pageSize);
+            console.log(`✅ [Search] Completed: Returning ${result.games.length} games`);
+            if (gamesWithRatings.length === 0) {
+                console.log(`ℹ️ [Search] No games found matching "${query}" - try a different search term`);
             }
-            
-            return {
-                success: false,
-                error: 'Failed to search games. Please try again.',
-                games: [],
-                totalResults: 0
-            };
-        }
-    }
-
-    async getAccessToken() {
-        try {
-            const response = await axios.post('https://id.twitch.tv/oauth2/token', null, {
-                params: {
-                    client_id: this.clientId,
-                    client_secret: this.clientSecret,
-                    grant_type: 'client_credentials'
-                }
-            });
-            this.accessToken = response.data.access_token;
+            return result;
         } catch (error) {
-            console.error('Error getting IGDB access token:', error);
-            throw error;
+            console.error(`❌ [Search] Error searching Steam games:`, error.message);
+            console.error(`   Stack:`, error.stack?.split('\n').slice(0, 3).join('\n'));
+            // Fallback to mock data
+            console.log(`⚠️ [Search] Falling back to mock data due to error`);
+            const mockResult = this.getMockSearchResults(query, page, pageSize);
+            mockResult.isMockData = true;
+            return mockResult;
         }
     }
 
-    // Helper method to make IGDB API calls using native https module
-    async makeIGDBRequest(query) {
-        return new Promise((resolve, reject) => {
-            console.log('Making IGDB request with query:', query);
-            console.log('Access token:', this.accessToken ? 'Present' : 'Missing');
+    async getSteamAppList() {
+        try {
+            // Check cache
+            if (this.appListCache && this.appListCacheTime && 
+                (Date.now() - this.appListCacheTime) < this.cacheExpiration) {
+                console.log(`✅ Using cached Steam app list (${this.appListCache.length} games)`);
+                return this.appListCache;
+            }
+
+            console.log('🔄 Fetching Steam app list from Steam API (this may take 30-60 seconds)...');
+            const startTime = Date.now();
             
-            const options = {
-                hostname: 'api.igdb.com',
-                port: 443,
-                path: '/v4/games',
-                method: 'POST',
-                headers: {
-                    'Client-ID': this.clientId,
-                    'Authorization': `Bearer ${this.accessToken}`,
-                    'Accept': 'application/json',
-                    'Content-Type': 'text/plain',
-                    'Content-Length': Buffer.byteLength(query, 'utf8')
-                }
-            };
-
-            const req = https.request(options, (res) => {
-                console.log('IGDB Response status:', res.statusCode);
-                console.log('IGDB Response headers:', res.headers);
-                
-                let data = '';
-
-                res.on('data', (chunk) => {
-                    data += chunk;
-                });
-
-                res.on('end', () => {
-                    console.log('IGDB Raw response:', data);
-                    try {
-                        const parsedData = JSON.parse(data);
-                        console.log('IGDB Parsed response:', parsedData);
-                        resolve(parsedData);
-                    } catch (error) {
-                        console.error('Failed to parse IGDB response:', error);
-                        console.error('Raw data:', data);
-                        reject(new Error(`Failed to parse IGDB response: ${error.message}`));
+            try {
+                const response = await axios.get(`${this.steamApiBase}/ISteamApps/GetAppList/v0002/`, {
+                    timeout: 120000, // 120 second timeout for large response
+                    maxContentLength: Infinity,
+                    maxBodyLength: Infinity,
+                    headers: {
+                        'Accept': 'application/json',
+                        'User-Agent': 'Game-Vault/1.0'
                     }
                 });
-            });
+                const fetchTime = Date.now() - startTime;
+                console.log(`⏱️ Steam API responded in ${fetchTime}ms`);
 
-            req.on('error', (error) => {
-                console.error('IGDB Request error:', error);
-                reject(error);
-            });
+                if (!response.data) {
+                    console.error('❌ Steam API returned no data');
+                    throw new Error('No data in Steam API response');
+                }
 
-            req.write(query, 'utf8');
-            req.end();
-        });
+                if (!response.data.applist) {
+                    console.error('❌ Steam API response missing applist. Response keys:', Object.keys(response.data));
+                    throw new Error('Invalid Steam API response format - missing applist');
+                }
+
+                if (!response.data.applist.apps || !Array.isArray(response.data.applist.apps)) {
+                    console.error('❌ Steam API response missing apps array');
+                    throw new Error('Invalid Steam API response format - missing apps array');
+                }
+
+                console.log(`📦 Received ${response.data.applist.apps.length} apps from Steam API`);
+                
+                const filterStartTime = Date.now();
+                // Filter out non-games (DLCs, videos, etc. typically have appid < 1000)
+                // Also filter out test apps, tools, DLCs, videos, and trailers
+                const games = response.data.applist.apps.filter(app => {
+                    if (!app.name || app.name.trim().length === 0) return false;
+                    if (app.appid < 1000) return false; // Low app IDs are usually non-games
+                    
+                    const name = app.name.toLowerCase();
+                    
+                    // Filter out obvious non-games
+                    const isTest = name.includes('test') || name.startsWith('test ');
+                    const isServer = name.includes('server') || name.includes('dedicated server');
+                    const isTool = name.includes('tool') || name.includes('editor') || name.includes('sdk');
+                    const isDemo = name.includes('demo -') || name.includes('demo:') || name.includes(' demo');
+                    // Allow game editions - only filter actual DLCs
+                    const isDLC = name.includes('downloadable content') ||
+                                 name.includes('expansion pack') ||
+                                 name.includes('expansion:') ||
+                                 (name.includes(' - ') && name.split(' - ')[1].toLowerCase().includes('dlc')) ||
+                                 (name.includes('dlc') && (
+                                    name.endsWith(' dlc') ||
+                                    name.includes(' - dlc')
+                                 ));
+                    const isVideo = name.includes('trailer') || 
+                                   name.includes('video') ||
+                                   name.includes('movie') ||
+                                   (name.includes('soundtrack') && !name.includes('game')) ||
+                                   (name.includes('ost') && !name.includes('game'));
+                    const isHardware = name.includes('hardware') || name.includes('controller');
+                    
+                    return !isTest && !isServer && !isTool && !isDemo && !isDLC && !isVideo && !isHardware;
+                });
+                const filterTime = Date.now() - filterStartTime;
+                console.log(`🔍 Filtered ${games.length} games in ${filterTime}ms`);
+
+                if (games.length === 0) {
+                    console.warn('⚠️ No games after filtering - check filter criteria');
+                    // Return unfiltered apps if filtering removed everything (shouldn't happen but safety check)
+                    if (response.data.applist.apps.length > 0) {
+                        console.log('📋 Returning unfiltered app list as fallback');
+                        this.appListCache = response.data.applist.apps;
+                        this.appListCacheTime = Date.now();
+                        return this.appListCache;
+                    }
+                    throw new Error('No games found in Steam app list');
+                }
+
+                // Cache the results
+                this.appListCache = games;
+                this.appListCacheTime = Date.now();
+                
+                console.log(`✅ Successfully cached ${games.length} Steam games (filtered from ${response.data.applist.apps.length} total apps)`);
+                return games;
+            } catch (axiosError) {
+                console.error('❌ Axios error fetching Steam app list:', axiosError.message);
+                if (axiosError.response) {
+                    console.error(`   Status: ${axiosError.response.status}`);
+                    console.error(`   Status Text: ${axiosError.response.statusText}`);
+                }
+                if (axiosError.code === 'ECONNABORTED') {
+                    console.error('   ⚠️ Request timed out - Steam API may be slow');
+                }
+                throw axiosError;
+            }
+        } catch (error) {
+            console.error('❌ Error fetching Steam app list:', error.message);
+            if (error.stack) {
+                console.error('   Stack:', error.stack.split('\n').slice(0, 3).join('\n'));
+            }
+            
+            // Return cached data if available, even if expired
+            if (this.appListCache && this.appListCache.length > 0) {
+                console.log(`⚠️ Using expired cache (${this.appListCache.length} games) due to error`);
+                return this.appListCache;
+            }
+            
+            console.error('❌ No cached data available and Steam API failed');
+            return [];
+        }
     }
 
-    formatIGDBGameData(game) {
-        return {
-            id: game.id,
-            name: game.name,
-            slug: game.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-            description_raw: game.summary || 'No description available',
-            released: game.first_release_date ? new Date(game.first_release_date * 1000).toISOString().split('T')[0] : 'Unknown',
-            rating: game.rating && typeof game.rating === 'number' ? parseFloat((game.rating / 20).toFixed(1)) : 0,
-            rating_top: 5,
-            ratings_count: game.rating_count || 0,
-            metacritic: null,
-            playtime: null,
-            platforms: game.platforms ? game.platforms.map(p => ({
-                id: p.id || 0,
-                name: p.name || 'Unknown',
-                slug: p.name ? p.name.toLowerCase().replace(/\s+/g, '-') : 'unknown'
-            })) : [],
-            genres: game.genres ? game.genres.map(g => ({
-                id: g.id || 0,
-                name: g.name || 'Unknown',
-                slug: g.name ? g.name.toLowerCase().replace(/\s+/g, '-') : 'unknown'
-            })) : [],
-            developers: game.developers ? game.developers.map(d => ({
-                id: d.id || 0,
-                name: d.name || 'Unknown',
-                slug: d.name ? d.name.toLowerCase().replace(/\s+/g, '-') : 'unknown'
-            })) : [],
-            publishers: game.publishers ? game.publishers.map(p => ({
-                id: p.id || 0,
-                name: p.name || 'Unknown',
-                slug: p.name ? p.name.toLowerCase().replace(/\s+/g, '-') : 'unknown'
-            })) : [],
-            background_image: game.cover && game.cover.url ? `https:${game.cover.url.replace('t_thumb', 't_cover_big')}` : null,
-            short_screenshots: []
-        };
+    async getSteamGameDetails(appId) {
+        try {
+            console.log(`Fetching Steam game details for app ID: ${appId}`);
+            const response = await axios.get(`${this.steamStoreBase}/appdetails`, {
+                params: {
+                    appids: appId,
+                    l: 'english'
+                },
+                timeout: 15000
+            });
+
+            if (!response.data || !response.data[appId]) {
+                console.log(`No data found for app ID ${appId} in Steam response`);
+                return null;
+            }
+
+            const appData = response.data[appId];
+            if (appData && appData.success && appData.data) {
+                const gameData = appData.data;
+                
+                // Filter out non-games (DLCs, videos, tools, etc.) - check type field
+                const gameType = gameData.type ? gameData.type.toLowerCase() : '';
+                const isGame = gameType === 'game';
+                const isDLC = gameType === 'dlc' || gameData.type === 'DLC';
+                const isVideo = gameType === 'video' || gameData.type === 'Video' || gameData.type === 'movie' || gameType === 'movie';
+                const isHardware = gameData.type === 'Hardware' || gameType === 'hardware';
+                const isSoftware = gameData.type === 'Software' && !isGame; // Some software are games, some aren't
+                
+                // Also check name for additional filtering - but be careful not to exclude game editions
+                const gameName = gameData.name ? gameData.name.toLowerCase() : '';
+                
+                // Only flag as DLC if it's clearly an expansion/add-on, not a game edition
+                const nameIsDLC = (gameName.includes('dlc') && !gameName.match(/^\w+\s+dlc$/)) || // Exclude "Game DLC" pattern
+                                 (gameName.includes('pack') && (
+                                    gameName.includes('graphic assets') ||
+                                    gameName.includes('texture pack') ||
+                                    gameName.includes('asset pack') ||
+                                    gameName.includes('content pack')
+                                 )) || 
+                                 (gameName.includes('expansion') && (
+                                    gameName.includes('expansion pack') ||
+                                    gameName.includes('expansion:')
+                                 )) ||
+                                 (gameName.includes('add-on') && !gameName.includes('game'));
+                
+                const nameIsDemo = gameName.includes('demo') && (
+                                    gameName.includes(' demo') ||
+                                    gameName.includes('demo ') ||
+                                    gameName.endsWith(' demo')
+                                 );
+                const nameIsVideo = gameName.includes('trailer') || 
+                                  (gameName.includes('video') && !gameName.includes('game')) || 
+                                  gameName.includes('movie') ||
+                                  gameName.includes('film');
+                const nameIsAsset = (gameName.includes('assets') && gameName.includes('pack')) ||
+                                   gameName.includes('graphic assets') ||
+                                   gameName.includes('texture pack');
+                
+                // Check if it's actually a game - but allow game editions
+                // Only exclude if Steam explicitly says it's not a game AND has clear non-game indicators
+                // OR if it's clearly DLC/video/demo/asset
+                const shouldExclude = (!isGame && (isDLC || isVideo || isHardware)) || 
+                                     nameIsDLC || 
+                                     nameIsDemo || 
+                                     nameIsVideo || 
+                                     nameIsAsset;
+                
+                if (shouldExclude) {
+                    console.log(`🚫 [Details] Skipping non-game: ${gameData.name} (type: ${gameData.type || 'unknown'}, indicators: DLC=${nameIsDLC}, Demo=${nameIsDemo}, Video=${nameIsVideo}, Asset=${nameIsAsset})`);
+                    return null;
+                }
+                
+                // If Steam says it's a game type, trust it
+                // Also allow if type is missing but has game-like properties (name, description, etc.)
+                if (isGame || (!gameData.type && gameData.name && gameData.short_description)) {
+                    console.log(`✅ [Details] Including game: ${gameData.name} (type: ${gameData.type || 'unknown - but has game properties'})`);
+                }
+                
+                console.log(`Successfully fetched details for ${gameData.name || appId}`);
+                // Add type to the data so we can use it later
+                gameData._steamType = gameData.type;
+                return gameData;
+            } else {
+                console.log(`Steam API returned success=false for app ID ${appId}`);
+                if (appData && appData.data) {
+                    const gameData = appData.data;
+                    // Check type even if success is false
+                    const gameType = gameData.type ? gameData.type.toLowerCase() : '';
+                    if (gameType !== 'game' && gameType !== '') {
+                        return null; // Skip non-games
+                    }
+                    // Even if success is false, sometimes data is still available
+                    gameData._steamType = gameData.type;
+                    return gameData;
+                }
+                return null;
+            }
+        } catch (error) {
+            console.error(`Error fetching Steam game details for ${appId}:`, error.message);
+            if (error.response) {
+                console.error(`Response status: ${error.response.status}`);
+            }
+            return null;
+        }
     }
+
+    formatSteamGameData(game, details) {
+        // Use details if available, otherwise use basic app list data
+        if (details) {
+            return {
+                id: game.appid,
+                name: details.name || game.name,
+                slug: details.name ? details.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : '',
+                description: details.short_description || details.detailed_description || 'No description available',
+                description_raw: details.detailed_description || details.short_description || 'No description available',
+                released: details.release_date && details.release_date.date ? details.release_date.date : 'TBA',
+                rating: details.metacritic ? (details.metacritic.score / 100) * 5 : null,
+                ratingTop: 5,
+                ratingsCount: details.recommendations ? details.recommendations.total : 0,
+                metacritic: details.metacritic ? details.metacritic.score : null,
+                playtime: null,
+                platforms: details.platforms ? Object.keys(details.platforms)
+                    .filter(key => details.platforms[key])
+                    .map(key => ({
+                        id: 0,
+                        name: key.charAt(0).toUpperCase() + key.slice(1),
+                        slug: key.toLowerCase()
+                    })) : [],
+                genres: details.genres ? details.genres.map(g => ({
+                    id: g.id || 0,
+                    name: g.description || 'Unknown',
+                    slug: (g.description || 'unknown').toLowerCase().replace(/\s+/g, '-')
+                })) : [],
+                developers: details.developers ? details.developers.map((d, idx) => ({
+                    id: idx,
+                    name: d,
+                    slug: d.toLowerCase().replace(/\s+/g, '-')
+                })) : [],
+                publishers: details.publishers ? details.publishers.map((p, idx) => ({
+                    id: idx,
+                    name: p,
+                    slug: p.toLowerCase().replace(/\s+/g, '-')
+                })) : [],
+                backgroundImage: details.header_image || details.capsule_imagev5 || details.capsule_image || null,
+                backgroundImageAdditional: null,
+                website: details.website || null,
+                screenshots: details.screenshots ? details.screenshots.map((s, idx) => ({
+                    id: idx,
+                    image: s.path_full || s.path_thumbnail || s.path_thumbnail
+                })) : []
+            };
+        } else {
+            // Basic format with minimal data from app list
+            return {
+                id: game.appid,
+                name: game.name,
+                slug: game.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+                description: 'No description available',
+                description_raw: 'No description available',
+                released: 'TBA',
+                rating: null,
+                ratingTop: 5,
+                ratingsCount: 0,
+                metacritic: null,
+                playtime: null,
+                platforms: [{ id: 0, name: 'PC', slug: 'pc' }],
+                genres: [],
+                developers: [],
+                publishers: [],
+                backgroundImage: null,
+                backgroundImageAdditional: null,
+                website: null,
+                screenshots: []
+            };
+        }
+    }
+
+
 
     // Remove games with similar titles to prevent duplicates
     removeSimilarTitles(games) {
@@ -288,13 +612,13 @@ limit ${pageSize};`;
     }
 
     getMockSearchResults(query, page = 1, pageSize = 20) {
-        // Mock data for demonstration when API key is not configured
+        // Mock data for demonstration when Steam API is not available
         const mockGames = [
             {
                 id: 1,
                 name: `Sample Game: ${query}`,
                 slug: `sample-game-${query.toLowerCase().replace(/\s+/g, '-')}`,
-                description_raw: `This is a sample game result for "${query}". To get real game data, please configure your RAWG.io API key.`,
+                description_raw: `This is a sample game result for "${query}". The Steam API is being used for real game data. If you see this, the Steam app list may not be loaded yet.`,
                 released: '2023-01-01',
                 rating: 4.5,
                 rating_top: 5,
@@ -323,7 +647,7 @@ limit ${pageSize};`;
                 id: 2,
                 name: `Another Game: ${query}`,
                 slug: `another-game-${query.toLowerCase().replace(/\s+/g, '-')}`,
-                description_raw: `Another sample game result for "${query}". Configure your RAWG.io API key for real data.`,
+                description_raw: `Another sample game result for "${query}". The search function uses Steam API for real game data.`,
                 released: '2023-06-15',
                 rating: 4.2,
                 rating_top: 5,
@@ -349,9 +673,35 @@ limit ${pageSize};`;
             }
         ];
 
+        // Format mock games using Steam format
+        const formattedGames = mockGames.map(game => {
+            const appInfo = { appid: game.id, name: game.name };
+            return {
+                id: game.id,
+                name: game.name,
+                slug: game.slug,
+                description: game.description_raw || 'No description available',
+                description_raw: game.description_raw || 'No description available',
+                released: game.released,
+                rating: game.rating,
+                ratingTop: game.rating_top || 5,
+                ratingsCount: game.ratings_count || 0,
+                metacritic: game.metacritic,
+                playtime: game.playtime,
+                platforms: game.platforms || [],
+                genres: game.genres || [],
+                developers: game.developers || [],
+                publishers: game.publishers || [],
+                backgroundImage: game.background_image,
+                backgroundImageAdditional: null,
+                website: null,
+                screenshots: []
+            };
+        });
+
         return {
             success: true,
-            games: mockGames.map(game => this.formatGameData(game)),
+            games: formattedGames,
             totalResults: mockGames.length,
             currentPage: page,
             totalPages: 1,
@@ -361,24 +711,72 @@ limit ${pageSize};`;
 
     async getGameDetails(gameId) {
         try {
-            const response = await axios.get(`${this.baseUrl}/games/${gameId}`, {
-                params: {
-                    key: this.apiKey
-                }
-            });
+            const parsedId = parseInt(gameId);
+            if (isNaN(parsedId)) {
+                console.error(`Invalid game ID: ${gameId}`);
+                return {
+                    success: false,
+                    error: 'Invalid game ID',
+                    game: null
+                };
+            }
 
-            return {
-                success: true,
-                game: this.formatGameData(response.data)
-            };
+            console.log(`[Game Details] Fetching Steam game details for app ID: ${parsedId}`);
+            
+            const details = await this.getSteamGameDetails(parsedId);
+            
+            if (details) {
+                // Get basic app info to format properly
+                const appInfo = { appid: parsedId, name: details.name || 'Unknown Game' };
+                const gameData = this.formatSteamGameData(appInfo, details);
+                console.log(`[Game Details] Successfully formatted game: ${gameData.name}`);
+                return {
+                    success: true,
+                    game: gameData
+                };
+            } else {
+                // Fallback to mock data
+                console.log(`[Game Details] Game details not found for ${parsedId}, using mock data`);
+                return this.getMockGameDetails(parsedId);
+            }
         } catch (error) {
-            console.error('Error fetching game details:', error);
+            console.error('[Game Details] Error fetching Steam game details:', error);
+            console.error('[Game Details] Error stack:', error.stack);
+            // Return error instead of mock data so frontend knows something went wrong
             return {
                 success: false,
-                error: 'Failed to fetch game details.',
+                error: `Failed to fetch game details: ${error.message}`,
                 game: null
             };
         }
+    }
+
+    getMockGameDetails(gameId) {
+        // Mock game details for demonstration
+        const appInfo = { appid: parseInt(gameId), name: `Sample Game ${gameId}` };
+        const mockDetails = {
+            name: `Sample Game ${gameId}`,
+            short_description: `This is sample game data for game ID ${gameId}. Steam API is being used for real game information.`,
+            detailed_description: `This is sample game data for game ID ${gameId}. The Steam Store API provides detailed information about games.`,
+            release_date: { date: '2023-01-01' },
+            metacritic: { score: 85 },
+            recommendations: { total: 100 },
+            platforms: { windows: true, mac: false, linux: false },
+            genres: [
+                { id: 1, description: 'Action' },
+                { id: 2, description: 'Adventure' }
+            ],
+            developers: ['Sample Developer'],
+            publishers: ['Sample Publisher'],
+            header_image: '/images/gamevault-logo.png',
+            website: 'https://example.com',
+            screenshots: []
+        };
+
+        return {
+            success: true,
+            game: this.formatSteamGameData(appInfo, mockDetails)
+        };
     }
 
     formatGameData(game) {
@@ -440,74 +838,349 @@ limit ${pageSize};`;
         };
     }
 
-    // Get trending games (highly rated games)
+    // Get current player count for a Steam game
+    async getCurrentPlayerCount(appId) {
+        try {
+            const response = await axios.get(`${this.steamApiBase}/ISteamUserStats/GetNumberOfCurrentPlayers/v1/`, {
+                params: {
+                    appid: appId
+                },
+                timeout: 5000
+            });
+            
+            if (response.data && response.data.response && response.data.response.result === 1) {
+                return response.data.response.player_count || 0;
+            }
+            return 0;
+        } catch (error) {
+            // Silently fail - not all games have player count data
+            return 0;
+        }
+    }
+
+    // Get trending games (most played games from Steam)
     async getTrendingGames(limit = 8) {
         try {
-            // Use mock data with known working image URLs for popular games
-            console.log('Using mock trending games data with correct image URLs');
-            return this.getMockTrendingGamesWithCorrectImages(limit);
+            console.log(`🔍 [Trending] Fetching most played games from Steam...`);
+            
+            // Get Steam app list (cached)
+            const appList = await this.getSteamAppList();
+            
+            if (!appList || appList.length === 0) {
+                console.log('⚠️ [Trending] No Steam app list available');
+                return { success: true, games: [] };
+            }
+
+            // Start with first 200 games (typically most established/popular)
+            // We'll sample from this list to get player counts
+            const sampleSize = Math.min(200, appList.length);
+            const sampleGames = appList.slice(0, sampleSize);
+            
+            // Fetch details and player counts in batches
+            const batchSize = 10;
+            const gamesWithPlayerCounts = [];
+            const targetGames = limit * 5; // Fetch 5x the limit to ensure we get good results
+            
+            for (let i = 0; i < Math.min(sampleGames.length, targetGames); i += batchSize) {
+                const batch = sampleGames.slice(i, i + batchSize);
+                const batchResults = await Promise.all(
+                    batch.map(async (game) => {
+                        try {
+                            const details = await this.getSteamGameDetails(game.appid);
+                            if (details) {
+                                const formattedGame = this.formatSteamGameData(game, details);
+                                // Get current player count
+                                const playerCount = await this.getCurrentPlayerCount(game.appid);
+                                formattedGame.currentPlayers = playerCount;
+                                return formattedGame;
+                            }
+                            return null;
+                        } catch (error) {
+                            return null;
+                        }
+                    })
+                );
+                
+                const validGames = batchResults.filter(g => g !== null);
+                gamesWithPlayerCounts.push(...validGames);
+                
+                // Sort what we have so far by player count
+                gamesWithPlayerCounts.sort((a, b) => (b.currentPlayers || 0) - (a.currentPlayers || 0));
+                
+                // If we have enough games with significant player counts, stop early
+                const gamesWithPlayers = gamesWithPlayerCounts.filter(g => (g.currentPlayers || 0) > 0);
+                if (gamesWithPlayers.length >= limit * 2) {
+                    console.log(`✅ [Trending] Found ${gamesWithPlayers.length} games with players, stopping early`);
+                    break;
+                }
+            }
+
+            // Filter to only games with ratings (as a quality filter)
+            // But prioritize player count for sorting
+            const ratedGames = gamesWithPlayerCounts.filter(g => {
+                if (!g) return false;
+                const hasMetacritic = g.metacritic !== null && g.metacritic !== undefined && g.metacritic > 0;
+                const hasRating = g.rating !== null && g.rating !== undefined && g.rating > 0;
+                // Prioritize games with both player count and ratings
+                return (hasMetacritic || hasRating) && (g.currentPlayers || 0) > 0;
+            });
+
+            // If we don't have enough rated games with players, include games with just players
+            if (ratedGames.length < limit) {
+                const gamesWithJustPlayers = gamesWithPlayerCounts.filter(g => {
+                    if (!g || !g.currentPlayers || g.currentPlayers === 0) return false;
+                    const hasMetacritic = g.metacritic !== null && g.metacritic !== undefined && g.metacritic > 0;
+                    const hasRating = g.rating !== null && g.rating !== undefined && g.rating > 0;
+                    return !hasMetacritic && !hasRating; // Games with players but no ratings
+                });
+                ratedGames.push(...gamesWithJustPlayers);
+            }
+
+            // Sort by player count (highest first)
+            ratedGames.sort((a, b) => (b.currentPlayers || 0) - (a.currentPlayers || 0));
+
+            const topGames = ratedGames.slice(0, limit);
+            console.log(`✅ [Trending] Found ${topGames.length} most played games from Steam (checked ${gamesWithPlayerCounts.length} games)`);
+            
+            // Log top games for debugging
+            topGames.forEach((g, idx) => {
+                console.log(`  ${idx + 1}. ${g.name}: ${g.currentPlayers || 0} players`);
+            });
+
+            return {
+                success: true,
+                games: topGames
+            };
         } catch (error) {
-            console.error('Error fetching trending games:', error);
-            return this.getMockTrendingGames(limit);
+            console.error('❌ [Trending] Error fetching trending games:', error.message);
+            return { success: true, games: [] };
+        }
+    }
+
+    // Get popular/highest-rated games from Steam
+    async getPopularGamesFallback(limit = 8) {
+        try {
+            console.log(`🔍 [Trending] Fetching highest-rated games from Steam...`);
+            
+            // Get Steam app list (cached)
+            const appList = await this.getSteamAppList();
+            
+            if (!appList || appList.length === 0) {
+                console.log('⚠️ [Trending] No Steam app list available');
+                return { success: true, games: [] };
+            }
+
+            // Focus on the first portion of the app list - these are typically more established/popular games
+            // Steam's app list is roughly sorted by popularity/age (older, more popular games first)
+            // Check first 2000 games for best selection
+            const sampleSize = Math.min(2000, appList.length);
+            const sampleGames = appList.slice(0, sampleSize);
+            
+            // Fetch details in batches
+            const batchSize = 10;
+            const gamesWithDetails = [];
+            const targetGames = limit * 15; // Fetch even more to ensure we get enough with high ratings
+            
+            for (let i = 0; i < Math.min(sampleGames.length, targetGames); i += batchSize) {
+                const batch = sampleGames.slice(i, i + batchSize);
+                const batchResults = await Promise.all(
+                    batch.map(async (game) => {
+                        try {
+                            const details = await this.getSteamGameDetails(game.appid);
+                            if (details) {
+                                return this.formatSteamGameData(game, details);
+                            }
+                            return null;
+                        } catch (error) {
+                            return null;
+                        }
+                    })
+                );
+                
+                gamesWithDetails.push(...batchResults.filter(g => g !== null));
+                
+                // Count how many games we have with ratings so far
+                const ratedCount = gamesWithDetails.filter(g => {
+                    if (!g) return false;
+                    const hasMetacritic = g.metacritic !== null && g.metacritic !== undefined && g.metacritic > 0;
+                    const hasRating = g.rating !== null && g.rating !== undefined && g.rating > 0;
+                    return hasMetacritic || hasRating;
+                }).length;
+                
+                // Stop if we have enough highly-rated games (at least 3x the limit to ensure quality)
+                if (ratedCount >= limit * 3) break;
+                
+                // Also stop if we've fetched enough games overall (even if not all have ratings)
+                if (gamesWithDetails.length >= targetGames) break;
+            }
+
+            // Filter games with ratings (require at least one rating type)
+            const ratedGames = gamesWithDetails.filter(g => {
+                if (!g) return false;
+                const hasMetacritic = g.metacritic !== null && g.metacritic !== undefined && g.metacritic > 0;
+                const hasRating = g.rating !== null && g.rating !== undefined && g.rating > 0;
+                return hasMetacritic || hasRating;
+            });
+
+            // Sort by rating score (highest first) - prioritize metacritic, then user rating, then review count
+            ratedGames.sort((a, b) => {
+                const scoreA = (a.metacritic || 0) * 10 + (a.rating || 0) * 3 + Math.min(a.ratingsCount || 0, 50000) / 1000;
+                const scoreB = (b.metacritic || 0) * 10 + (b.rating || 0) * 3 + Math.min(b.ratingsCount || 0, 50000) / 1000;
+                return scoreB - scoreA;
+            });
+
+            const topGames = ratedGames.slice(0, limit);
+            console.log(`✅ [Trending] Found ${topGames.length} highest-rated games from Steam (checked ${gamesWithDetails.length} games, ${ratedGames.length} had ratings)`);
+
+            return {
+                success: true,
+                games: topGames
+            };
+        } catch (error) {
+            console.error('❌ [Trending] Error fetching trending games:', error.message);
+            return { success: true, games: [] };
         }
     }
 
     // Get recent games (newly released)
     async getRecentGames(limit = 8) {
         try {
-            // Use mock data for recent games to ensure we get popular, well-known games
-            console.log('Using mock recent games data with correct image URLs');
-            return this.getMockRecentGames(limit);
+            console.log(`🔍 [Recent] Fetching recent games from Steam...`);
+            
+            // Get Steam app list (cached)
+            const appList = await this.getSteamAppList();
+            
+            if (!appList || appList.length === 0) {
+                console.log('⚠️ [Recent] No Steam app list available, returning empty');
+                return { success: true, games: [] };
+            }
+
+            // Take games from the end of the list (newer games typically have higher app IDs)
+            // Also take some from middle for variety
+            const recentSampleSize = Math.min(200, appList.length);
+            const recentIndices = [
+                ...Array.from({ length: recentSampleSize }, (_, i) => appList.length - 1 - i), // Last N games
+                ...Array.from({ length: recentSampleSize }, (_, i) => Math.floor(appList.length * 0.8) + i) // Games from 80% through list
+            ];
+            
+            const sampleGames = recentIndices
+                .filter(idx => idx >= 0 && idx < appList.length)
+                .map(idx => appList[idx]);
+
+            // Fetch details in batches
+            const batchSize = 10;
+            const gamesWithDetails = [];
+            
+            for (let i = 0; i < Math.min(recentSampleSize * 2, sampleGames.length); i += batchSize) {
+                const batch = sampleGames.slice(i, i + batchSize);
+                const batchResults = await Promise.all(
+                    batch.map(async (game) => {
+                        try {
+                            const details = await this.getSteamGameDetails(game.appid);
+                            if (details) {
+                                return this.formatSteamGameData(game, details);
+                            }
+                            return null;
+                        } catch (error) {
+                            return null;
+                        }
+                    })
+                );
+                
+                gamesWithDetails.push(...batchResults.filter(g => g !== null));
+                
+                if (gamesWithDetails.length >= limit * 3) break;
+            }
+
+            // Filter games with release dates - prefer those with ratings too
+            let gamesWithDates = gamesWithDetails.filter(g => {
+                if (!g || !g.released) return false;
+                return g.released !== 'TBA' && g.released !== 'No release date';
+            });
+            
+            // Prefer games with ratings if we have enough
+            const gamesWithRatingsAndDates = gamesWithDates.filter(g => {
+                const hasMetacritic = g.metacritic !== null && g.metacritic !== undefined && g.metacritic > 0;
+                const hasRating = g.rating !== null && g.rating !== undefined && g.rating > 0;
+                return hasMetacritic || hasRating;
+            });
+            
+            // Use games with ratings if we have enough, otherwise use all games with dates
+            if (gamesWithRatingsAndDates.length >= limit) {
+                gamesWithDates = gamesWithRatingsAndDates;
+            }
+
+            // Sort by release date (newest first), but prioritize games with ratings
+            gamesWithDates.sort((a, b) => {
+                // First, prioritize games with ratings
+                const aHasRating = (a.metacritic > 0) || (a.rating > 0);
+                const bHasRating = (b.metacritic > 0) || (b.rating > 0);
+                if (aHasRating && !bHasRating) return -1;
+                if (!aHasRating && bHasRating) return 1;
+                
+                // Then sort by release date (newest first)
+                const dateA = new Date(a.released);
+                const dateB = new Date(b.released);
+                if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0;
+                return dateB - dateA; // Newest first
+            });
+
+            const recentGames = gamesWithDates.slice(0, limit);
+            console.log(`✅ [Recent] Found ${recentGames.length} recent games (with ratings where available)`);
+
+            return {
+                success: true,
+                games: recentGames
+            };
         } catch (error) {
-            console.error('Error fetching recent games:', error);
-            return this.getMockRecentGames(limit);
+            console.error('❌ [Recent] Error fetching recent games:', error.message);
+            return { success: true, games: [] };
         }
     }
 
     // Get search suggestions for autocomplete
     async getSearchSuggestions(query, limit = 5) {
         try {
-            if (!this.accessToken) {
-                await this.getAccessToken();
-            }
-
-            // IGDB API query for search suggestions - simplified format
-            const suggestionsQuery = `fields name,first_release_date,rating,cover.url;
-search "${query}";
-limit ${limit};`;
-
-            const response = await axios.post(`${this.baseUrl}/games`, suggestionsQuery, {
-                headers: {
-                    'Client-ID': this.clientId,
-                    'Authorization': `Bearer ${this.accessToken}`,
-                    'Accept': 'application/json',
-                    'Content-Type': 'text/plain'
-                },
-                transformRequest: [(data) => data],
-                timeout: 10000
-            });
-
-            if (response.data && response.data.length > 0) {
-                // Filter out games without ratings first
-                const gamesWithRatings = response.data.filter(game => game.rating && game.rating > 0);
-                
-                const suggestions = gamesWithRatings.map(game => ({
-                    name: game.name,
-                    released: game.first_release_date ? new Date(game.first_release_date * 1000).toISOString().split('T')[0] : null,
-                    rating: game.rating ? parseFloat((game.rating / 20).toFixed(1)) : 0,
-                    cover: game.cover ? `https:${game.cover.url}` : null
-                }));
-
-                return {
-                    success: true,
-                    suggestions: this.removeSimilarTitles(suggestions)
-                };
-            } else {
+            // Get Steam app list (cached)
+            const appList = await this.getSteamAppList();
+            
+            if (!appList || appList.length === 0) {
                 return {
                     success: true,
                     suggestions: []
                 };
             }
+
+            // Search locally through the app list
+            const searchQuery = query.toLowerCase().trim();
+            const matchingGames = appList.filter(game => 
+                game.name && game.name.toLowerCase().includes(searchQuery)
+            ).slice(0, limit * 2); // Get more to filter for best matches
+
+            // Sort by relevance
+            matchingGames.sort((a, b) => {
+                const aName = a.name.toLowerCase();
+                const bName = b.name.toLowerCase();
+                const aExact = aName === searchQuery || aName.startsWith(searchQuery);
+                const bExact = bName === searchQuery || bName.startsWith(searchQuery);
+                
+                if (aExact && !bExact) return -1;
+                if (!aExact && bExact) return 1;
+                return aName.localeCompare(bName);
+            });
+
+            // Format suggestions
+            const suggestions = matchingGames.slice(0, limit).map(game => ({
+                name: game.name,
+                released: null, // Steam app list doesn't have release dates
+                rating: null,
+                cover: null
+            }));
+
+            return {
+                success: true,
+                suggestions: suggestions
+            };
         } catch (error) {
             console.error('Error fetching search suggestions:', error);
             return {

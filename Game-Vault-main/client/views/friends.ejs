@@ -66,9 +66,29 @@
   <script src="/app.js"></script>
   <script>
     // Initialize the app when the page loads
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
       console.log('Friends page - DOM Content Loaded');
-      // The app.js will handle session checking and show/hide login modal as needed
+      
+      // Wait for app to initialize
+      if (window.app) {
+        // Check auth status first
+        await window.app.checkAuthStatus();
+        
+        // If user is logged in, update friends
+        if (window.app.currentUser) {
+          window.app.updateFriends();
+        }
+      } else {
+        // Wait a bit for app to initialize
+        setTimeout(async () => {
+          if (window.app) {
+            await window.app.checkAuthStatus();
+            if (window.app.currentUser) {
+              window.app.updateFriends();
+            }
+          }
+        }, 500);
+      }
     });
   </script>
 </body>

@@ -540,10 +540,24 @@ class ProfileManager {
       return false;
     }
 
-    const existingProfile = this.profiles.find(p => p.username === username);
-    if (existingProfile) {
-      console.log(`Profile with username "${username}" already exists!`);
-      return false;
+    // Check if user already exists in database first
+    try {
+      const existingUser = await this.getUserByUsername(username);
+      if (existingUser) {
+        console.log(`Profile with username "${username}" already exists in database!`);
+        return false;
+      }
+
+      // Also check by email
+      const { User } = require('../server/models/index');
+      const existingEmail = await User.findOne({ where: { email: email } });
+      if (existingEmail) {
+        console.log(`Profile with email "${email}" already exists in database!`);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error checking for existing user:', error);
+      // If there's an error checking, we should still try to create, but the database constraint will catch duplicates
     }
 
     // Hash the password before creating profile
@@ -551,27 +565,52 @@ class ProfileManager {
     const hashedPassword = await bcrypt.hash(password, saltRounds);
     
     const profile = new UserProfile(username, email, hashedPassword, new Date().toISOString(), gamingPreferences);
-    this.profiles.push(profile);
-    this.currentProfile = profile;
     
     // Initialize related managers
     this.friendsLists.set(username, new FriendsList(username));
     this.wishlistManagers.set(username, new WishlistManager(username));
     this.reviewManagers.set(username, new ReviewManager(username));
     
-    // Save to database
+    // Save to database using create (not upsert) to ensure we don't overwrite existing users
     try {
-      await this.databaseManager.saveUser(profile);
+      const { User } = require('../server/models/index');
+      const user = await User.create({
+        username: username,
+        email: email,
+        password_hash: hashedPassword,
+        join_date: new Date(),
+        is_active: true,
+        bio: '',
+        gaming_preferences: gamingPreferences,
+        statistics: {
+          totalGamesPlayed: 0,
+          totalPlaytime: 0,
+          averageRating: 0,
+          favoriteGame: null,
+          mostPlayedPlatform: null,
+          completionRate: 0,
+          totalReviews: 0,
+          friendsCount: 0
+        }
+      });
+      
+      // Add to local profiles array
+      this.profiles.push(profile);
+      this.currentProfile = profile;
+      
       console.log(`Profile created successfully for ${username}!`);
       return profile;
     } catch (error) {
-      console.error('Error saving profile to database:', error);
-      // Remove from local array if database save failed
-      const index = this.profiles.findIndex(p => p.username === username);
-      if (index !== -1) {
-        this.profiles.splice(index, 1);
+      console.error('Error creating profile in database:', error);
+      
+      // If it's a unique constraint error, that's expected - user already exists
+      if (error.name === 'SequelizeUniqueConstraintError') {
+        console.log(`User "${username}" or email "${email}" already exists in database`);
+        return false;
       }
-      return false;
+      
+      // Re-throw other errors so they can be handled upstream
+      throw error;
     }
   }
 
@@ -1060,6 +1099,28 @@ class ProfileManager {
       return false;
     } catch (error) {
       console.error('Error declining friend request:', error);
+      throw error;
+    }
+  }
+
+  async cancelFriendRequest(requestId, userId) {
+    try {
+      const { Friendship } = require('../server/models/index');
+      const friendship = await Friendship.findOne({
+        where: {
+          id: requestId,
+          userId: userId,
+          status: 'pending'
+        }
+      });
+
+      if (friendship) {
+        await friendship.destroy();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error canceling friend request:', error);
       throw error;
     }
   }

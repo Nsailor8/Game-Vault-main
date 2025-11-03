@@ -29,12 +29,26 @@
         </div>
 
         <div class="wishlists-content">
+          <!-- Wishlists List -->
           <div id="wishlistContainer" class="list-container">
             <!-- Wishlist items will be populated here by JavaScript -->
             <div class="empty-state">
               <i class="fas fa-heart"></i>
               <h3>Loading...</h3>
               <p>Please wait while we load your wishlist.</p>
+            </div>
+          </div>
+          
+          <!-- Selected Wishlist Games -->
+          <div id="selectedWishlistSection" style="display: none; margin-top: 2rem;">
+            <div class="section-header">
+              <h3 id="selectedWishlistTitle">Wishlist Games</h3>
+              <button class="btn btn-secondary" onclick="if(window.app) window.app.backToWishlists();">
+                <i class="fas fa-arrow-left"></i> Back to Wishlists
+              </button>
+            </div>
+            <div id="wishlistGames" class="list-container">
+              <!-- Games will be populated here when a wishlist is selected -->
             </div>
           </div>
         </div>
@@ -47,8 +61,29 @@
   <script src="/app.js"></script>
   <script>
     // Initialize the app when the page loads
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
       console.log('Wishlist page - DOM Content Loaded');
+      
+      // Wait for app to initialize
+      if (window.app) {
+        // Check auth status first
+        await window.app.checkAuthStatus();
+        
+        // If user is logged in, update wishlists
+        if (window.app.currentUser) {
+          window.app.updateWishlists();
+        }
+      } else {
+        // Wait a bit for app to initialize
+        setTimeout(async () => {
+          if (window.app) {
+            await window.app.checkAuthStatus();
+            if (window.app.currentUser) {
+              window.app.updateWishlists();
+            }
+          }
+        }, 500);
+      }
       
       // Add event listener for Steam ownership check button
       const checkSteamOwnershipBtn = document.getElementById('checkSteamOwnershipBtn');
@@ -60,15 +95,36 @@
               if (result) {
                 displaySteamOwnershipStatus(result);
               } else {
-                alert('Failed to check Steam ownership. Make sure you have a Steam account linked.');
+                if (window.app) {
+                  window.app.showAlert('Failed to check Steam ownership. Make sure you have a Steam account linked.', 'Error', 'error');
+                } else {
+                  alert('Failed to check Steam ownership. Make sure you have a Steam account linked.');
+                }
               }
             } catch (error) {
               console.error('Error checking Steam ownership:', error);
-              alert('Error checking Steam ownership');
+              if (window.app) {
+                window.app.showAlert('Error checking Steam ownership', 'Error', 'error');
+              } else {
+                alert('Error checking Steam ownership');
+              }
             }
           } else {
-            alert('Please log in to check Steam ownership');
+            if (window.app) {
+              window.app.showAlert('Please log in to check Steam ownership', 'Login Required', 'warning');
+            } else {
+              alert('Please log in to check Steam ownership');
+            }
           }
+        });
+      }
+      
+      // Add event listener for Add Game button
+      const addWishlistBtn = document.getElementById('addWishlistBtn');
+      if (addWishlistBtn) {
+        addWishlistBtn.addEventListener('click', () => {
+          // Redirect to search page to find games to add
+          window.location.href = '/search';
         });
       }
     });

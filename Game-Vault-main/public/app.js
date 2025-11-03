@@ -5,7 +5,11 @@ window.performSearch = function() {
     console.log('Search query from global function:', query);
     
     if (!query) {
-        alert('Please enter a search term');
+        if (window.app) {
+            window.app.showAlert('Please enter a search term', 'Search Required', 'warning');
+        } else {
+            alert('Please enter a search term');
+        }
         return;
     }
     
@@ -364,7 +368,7 @@ class GameVaultApp {
         const password = document.getElementById('loginPassword').value;
 
         if (!username || !password) {
-            alert('Please fill in all fields');
+            this.showAlert('Please fill in all fields', 'Login Required', 'warning');
             return;
         }
 
@@ -388,12 +392,12 @@ class GameVaultApp {
                 this.updateUI();
                 console.log('User logged in successfully:', data.user.username);
             } else {
-                alert(data.error || 'Invalid credentials');
+                this.showAlert(data.error || 'Invalid credentials', 'Login Failed', 'error');
             }
         })
         .catch(error => {
             console.error('Error logging in:', error);
-            alert('Error logging in. Please try again.');
+            this.showAlert('Error logging in. Please try again.', 'Error', 'error');
         });
     }
 
@@ -406,7 +410,7 @@ class GameVaultApp {
         const preferredPlatforms = document.getElementById('preferredPlatforms').value.split(',').map(p => p.trim()).filter(p => p);
 
         if (!username || !email || !password) {
-            alert('Please fill in all required fields');
+            this.showAlert('Please fill in all required fields', 'Signup Required', 'warning');
             return;
         }
 
@@ -439,12 +443,12 @@ class GameVaultApp {
                 this.updateUI();
                 console.log('User created successfully on server:', data.user.username);
             } else {
-                alert(data.error || 'Failed to create account');
+                this.showAlert(data.error || 'Failed to create account', 'Signup Failed', 'error');
             }
         })
         .catch(error => {
             console.error('Error creating account:', error);
-            alert('Error creating account. Please try again.');
+            this.showAlert('Error creating account. Please try again.', 'Error', 'error');
         });
     }
 
@@ -870,37 +874,52 @@ class GameVaultApp {
         }
 
         // Call the server API to get wishlists
-        fetch(`/api/wishlists/${this.currentUser.username}`)
+        fetch(`/api/wishlists/${this.currentUser.username}`, {
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
         .then(response => response.json())
         .then(data => {
             const container = document.getElementById('wishlistContainer');
             if (!container) {
                 return; // Element not found, skip update
             }
-            const wishlists = data.wishlists || [];
             
-            container.innerHTML = '';
+            if (data.success && data.wishlists) {
+                const wishlists = data.wishlists || [];
+                
+                container.innerHTML = '';
 
-            if (wishlists.length === 0) {
-                container.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>No Wishlists</h3><p>Create your first wishlist!</p></div>';
+                if (wishlists.length === 0) {
+                    container.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>No Wishlists</h3><p>Create your first wishlist!</p></div>';
+                } else {
+                    wishlists.forEach(wishlist => {
+                        const wishlistItem = document.createElement('div');
+                        wishlistItem.className = 'wishlist-item';
+                        wishlistItem.innerHTML = `
+                            <div>
+                                <strong>${wishlist.name}</strong>
+                                <br>
+                                <small>${wishlist.gameCount || 0} games • Created: ${new Date(wishlist.createdDate).toLocaleDateString()}</small>
+                                ${wishlist.description ? `<br><small style="color: #888;">${wishlist.description}</small>` : ''}
+                            </div>
+                            <button class="btn btn-primary" onclick="app.selectWishlist(${wishlist.id})">View</button>
+                        `;
+                        container.appendChild(wishlistItem);
+                    });
+                }
             } else {
-                wishlists.forEach(wishlist => {
-                    const wishlistItem = document.createElement('div');
-                    wishlistItem.className = 'wishlist-item';
-                    wishlistItem.innerHTML = `
-                        <div>
-                            <strong>${wishlist.name}</strong>
-                            <br>
-                            <small>${wishlist.gameCount || 0} games • Created: ${new Date(wishlist.createdDate).toLocaleDateString()}</small>
-                        </div>
-                        <button class="btn btn-primary" onclick="app.selectWishlist(${wishlist.id})">View</button>
-                    `;
-                    container.appendChild(wishlistItem);
-                });
+                container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load wishlists. Please try again.</p></div>';
             }
         })
         .catch(error => {
             console.error('Error fetching wishlists:', error);
+            const container = document.getElementById('wishlistContainer');
+            if (container) {
+                container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load wishlists. Please try again.</p></div>';
+            }
         });
     }
 
@@ -1059,12 +1078,12 @@ class GameVaultApp {
                 this.closeModal(document.getElementById('editProfileModal'));
                 this.updateUI();
             } else {
-                alert(data.error || 'Failed to update profile');
+                this.showAlert(data.error || 'Failed to update profile', 'Update Failed', 'error');
             }
         })
         .catch(error => {
             console.error('Error updating profile:', error);
-            alert('Error updating profile. Please try again.');
+            this.showAlert('Error updating profile. Please try again.', 'Error', 'error');
         });
     }
 
@@ -1078,7 +1097,7 @@ class GameVaultApp {
     sendFriendRequest() {
         const username = document.getElementById('friendUsername').value;
         if (!username) {
-            alert('Please enter a username');
+            this.showAlert('Please enter a username', 'Username Required', 'warning');
             return;
         }
 
@@ -1113,61 +1132,163 @@ class GameVaultApp {
         }
     }
 
-    createWishlist() {
+    async createWishlist() {
         const name = document.getElementById('wishlistName').value;
         const description = document.getElementById('wishlistDescription').value;
 
         if (!name) {
-            alert('Please enter a wishlist name');
+            this.showAlert('Please enter a wishlist name', 'Wishlist Name Required', 'warning');
             return;
         }
 
-        const wishlistManager = this.profileManager.getWishlistManager();
-        if (wishlistManager) {
-            wishlistManager.createWishlist(name, description);
-            this.closeModal(document.getElementById('createWishlistModal'));
-            this.updateWishlists();
+        if (!this.currentUser) {
+            this.showAlert('Please log in to create a wishlist', 'Login Required', 'warning');
+            return;
         }
-    }
 
-    selectWishlist(wishlistId) {
-        const wishlistManager = this.profileManager.getWishlistManager();
-        if (wishlistManager) {
-            const games = wishlistManager.getWishlistGames(wishlistId);
-            const container = document.getElementById('wishlistGames');
-            const title = document.getElementById('selectedWishlistTitle');
-            
-            const wishlist = wishlistManager.wishlists.find(w => w.id === wishlistId);
-            title.textContent = wishlist ? wishlist.name : 'Select a Wishlist';
-
-            container.innerHTML = '';
-
-            if (games.length === 0) {
-                container.innerHTML = '<div class="empty-state"><i class="fas fa-gamepad"></i><h3>No Games</h3><p>Add some games to this wishlist!</p></div>';
-                return;
-            }
-
-            games.forEach(game => {
-                const gameItem = document.createElement('div');
-                gameItem.className = 'friend-item';
-                gameItem.innerHTML = `
-                    <div>
-                        <strong>${game.title}</strong>
-                        <br>
-                        <small>${game.platform} • Added: ${new Date(game.addedDate).toLocaleDateString()}</small>
-                    </div>
-                    <button class="btn btn-danger" onclick="app.removeFromWishlist(${wishlistId}, ${game.id})">Remove</button>
-                `;
-                container.appendChild(gameItem);
+        try {
+            const response = await fetch(`/api/wishlists/${this.currentUser.username}/create`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: name,
+                    description: description || '',
+                    isPublic: false,
+                    priority: 'medium'
+                })
             });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                this.closeModal(document.getElementById('createWishlistModal'));
+                // Clear form
+                document.getElementById('wishlistName').value = '';
+                document.getElementById('wishlistDescription').value = '';
+                this.updateWishlists();
+                this.showNotification('Wishlist created successfully!', 'success');
+            } else {
+                this.showAlert(data.error || 'Failed to create wishlist', 'Error', 'error');
+            }
+        } catch (error) {
+            console.error('Error creating wishlist:', error);
+            this.showAlert('Error creating wishlist. Please try again.', 'Error', 'error');
         }
     }
 
-    removeFromWishlist(wishlistId, gameId) {
-        const wishlistManager = this.profileManager.getWishlistManager();
-        if (wishlistManager) {
-            wishlistManager.removeGameFromWishlist(wishlistId, gameId);
-            this.selectWishlist(wishlistId);
+    async selectWishlist(wishlistId) {
+        if (!this.currentUser) {
+            this.showAlert('Please log in to view wishlists', 'Login Required', 'warning');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${wishlistId}`, {
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                const container = document.getElementById('wishlistGames');
+                const title = document.getElementById('selectedWishlistTitle');
+                const selectedSection = document.getElementById('selectedWishlistSection');
+                const wishlistContainer = document.getElementById('wishlistContainer');
+                
+                // Show selected wishlist section, hide wishlists list
+                if (selectedSection) {
+                    selectedSection.style.display = 'block';
+                }
+                if (wishlistContainer && wishlistContainer.parentElement) {
+                    wishlistContainer.parentElement.style.display = 'none';
+                }
+                
+                if (title) {
+                    title.textContent = data.wishlist.name;
+                }
+
+                if (container) {
+                    container.innerHTML = '';
+
+                    if (!data.games || data.games.length === 0) {
+                        container.innerHTML = '<div class="empty-state"><i class="fas fa-gamepad"></i><h3>No Games</h3><p>Add some games to this wishlist!</p></div>';
+                        return;
+                    }
+
+                    data.games.forEach(game => {
+                        const gameItem = document.createElement('div');
+                        gameItem.className = 'friend-item';
+                        gameItem.innerHTML = `
+                            <div>
+                                <strong>${game.title}</strong>
+                                <br>
+                                <small>${game.platform || 'PC'} • Added: ${new Date(game.addedDate).toLocaleDateString()}</small>
+                            </div>
+                            <button class="btn btn-danger" onclick="app.removeFromWishlist(${wishlistId}, ${game.gameId})">Remove</button>
+                        `;
+                        container.appendChild(gameItem);
+                    });
+                }
+            } else {
+                this.showAlert(data.error || 'Failed to load wishlist', 'Error', 'error');
+            }
+        } catch (error) {
+            console.error('Error loading wishlist:', error);
+            this.showAlert('Error loading wishlist. Please try again.', 'Error', 'error');
+        }
+    }
+
+    async removeFromWishlist(wishlistId, gameId) {
+        if (!this.currentUser) {
+            this.showAlert('Please log in to manage wishlists', 'Login Required', 'warning');
+            return;
+        }
+
+        // Use a custom confirm dialog - for now we'll use browser confirm but could enhance this later
+        if (!confirm('Are you sure you want to remove this game from the wishlist?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${wishlistId}/games/${gameId}`, {
+                method: 'DELETE',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                this.showNotification(data.message || 'Game removed from wishlist', 'success');
+                this.selectWishlist(wishlistId); // Refresh the wishlist view
+                this.updateWishlists(); // Update the wishlists list
+            } else {
+                this.showAlert(data.error || 'Failed to remove game from wishlist', 'Error', 'error');
+            }
+        } catch (error) {
+            console.error('Error removing game from wishlist:', error);
+            this.showAlert('Error removing game from wishlist. Please try again.', 'Error', 'error');
+        }
+    }
+    
+    // Helper function to go back to wishlists view
+    backToWishlists() {
+        const selectedSection = document.getElementById('selectedWishlistSection');
+        const wishlistContainer = document.getElementById('wishlistContainer');
+        
+        if (selectedSection) {
+            selectedSection.style.display = 'none';
+        }
+        if (wishlistContainer && wishlistContainer.parentElement) {
+            wishlistContainer.parentElement.style.display = 'block';
         }
     }
 
@@ -1186,17 +1307,17 @@ class GameVaultApp {
         const isPublic = document.getElementById('reviewPublic').checked;
 
         if (!gameTitle || !reviewText || !rating) {
-            alert('Please fill in all required fields');
+            this.showAlert('Please fill in all required fields', 'Validation Error', 'warning');
             return;
         }
 
         if (reviewText.length < 10) {
-            alert('Review text must be at least 10 characters long');
+            this.showAlert('Review text must be at least 10 characters long', 'Validation Error', 'warning');
             return;
         }
 
         if (reviewText.length > 5000) {
-            alert('Review text must be less than 5000 characters');
+            this.showAlert('Review text must be less than 5000 characters', 'Validation Error', 'warning');
             return;
         }
 
@@ -1221,12 +1342,12 @@ class GameVaultApp {
             this.updateReviews();
                 this.showNotification('Review added successfully!', 'success');
             } else {
-                alert(data.error || 'Failed to add review');
+                this.showAlert(data.error || 'Failed to add review', 'Error', 'error');
             }
         })
         .catch(error => {
             console.error('Error adding review:', error);
-            alert('Failed to add review. Please try again.');
+            this.showAlert('Failed to add review. Please try again.', 'Error', 'error');
         });
     }
 
@@ -1266,7 +1387,7 @@ class GameVaultApp {
         })
         .catch(error => {
             console.error('Error fetching review:', error);
-            alert('Failed to load review for editing');
+            this.showAlert('Failed to load review for editing', 'Error', 'error');
         });
     }
 
@@ -1279,17 +1400,17 @@ class GameVaultApp {
         const isPublic = document.getElementById('editReviewPublic').checked;
 
         if (!gameTitle || !reviewText || !rating) {
-            alert('Please fill in all required fields');
+            this.showAlert('Please fill in all required fields', 'Validation Error', 'warning');
             return;
         }
 
         if (reviewText.length < 10) {
-            alert('Review text must be at least 10 characters long');
+            this.showAlert('Review text must be at least 10 characters long', 'Validation Error', 'warning');
             return;
         }
 
         if (reviewText.length > 5000) {
-            alert('Review text must be less than 5000 characters');
+            this.showAlert('Review text must be less than 5000 characters', 'Validation Error', 'warning');
             return;
         }
 
@@ -1314,12 +1435,12 @@ class GameVaultApp {
                 this.updateReviews();
                 this.showNotification('Review updated successfully!', 'success');
             } else {
-                alert(data.error || 'Failed to update review');
+                this.showAlert(data.error || 'Failed to update review', 'Error', 'error');
             }
         })
         .catch(error => {
             console.error('Error updating review:', error);
-            alert('Failed to update review. Please try again.');
+            this.showAlert('Failed to update review. Please try again.', 'Error', 'error');
         });
     }
 
@@ -1341,12 +1462,12 @@ class GameVaultApp {
             this.updateReviews();
                 this.showNotification('Review deleted successfully!', 'success');
             } else {
-                alert(data.error || 'Failed to delete review');
+                this.showAlert(data.error || 'Failed to delete review', 'Error', 'error');
         }
         })
         .catch(error => {
             console.error('Error deleting review:', error);
-            alert('Failed to delete review. Please try again.');
+            this.showAlert('Failed to delete review. Please try again.', 'Error', 'error');
         });
     }
 
@@ -1362,7 +1483,7 @@ class GameVaultApp {
         const password = document.getElementById('adminPassword').value;
 
         if (!username || !password) {
-            alert('Please fill in all fields');
+            this.showAlert('Please fill in all fields', 'Admin Login Required', 'warning');
             return;
         }
 
@@ -1383,12 +1504,12 @@ class GameVaultApp {
                 this.closeModal(document.getElementById('adminLoginModal'));
                 this.updateAdminPanel();
             } else {
-                alert(data.error || 'Invalid admin credentials');
+                this.showAlert(data.error || 'Invalid admin credentials', 'Admin Login Failed', 'error');
             }
         })
         .catch(error => {
             console.error('Error logging in as admin:', error);
-            alert('Error logging in as admin. Please try again.');
+            this.showAlert('Error logging in as admin. Please try again.', 'Error', 'error');
         });
     }
 
@@ -1446,7 +1567,7 @@ class GameVaultApp {
         
         if (!searchInput) {
             console.error('Search input not found in performGameSearch!');
-            alert('Search input not found');
+            this.showAlert('Search input not found', 'Error', 'error');
             return;
         }
         
@@ -1454,7 +1575,7 @@ class GameVaultApp {
         console.log('Search query:', query);
         
         if (!query) {
-            alert('Please enter a search term');
+            this.showAlert('Please enter a search term', 'Search Required', 'warning');
             return;
         }
 
@@ -1595,8 +1716,7 @@ class GameVaultApp {
         mockDataNotice.innerHTML = `
             <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 15px; margin-bottom: 20px; color: #856404;">
                 <i class="fas fa-info-circle"></i>
-                <strong>Demo Mode:</strong> This is sample data. To search real games, configure your RAWG.io API key in the .env file.
-                <a href="https://rawg.io/apidocs" target="_blank" style="color: #007bff; text-decoration: underline;">Get API Key</a>
+                <strong>Loading:</strong> The Steam game database is being loaded. If you see sample data, the Steam app list is still loading (this may take a moment on first use).
             </div>
         `;
         resultsContainer.appendChild(mockDataNotice);
@@ -1698,16 +1818,187 @@ class GameVaultApp {
         paginationContainer.appendChild(pagination);
     }
 
-    viewGameDetails(gameId) {
-        // This would open a detailed view of the game
-        // For now, we'll just show an alert with the game ID
-        alert(`Viewing details for game ID: ${gameId}`);
-        // You can implement a detailed game view modal here
+    async viewGameDetails(gameId) {
+        try {
+            // Show loading state
+            this.showGameDetailsLoading();
+            
+            // Fetch game details from API
+            const response = await fetch(`/api/games/${gameId}`, {
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.success && data.game) {
+                this.showGameDetailsModal(data.game);
+            } else {
+                this.showAlert(data.error || 'Failed to load game details', 'Error', 'error');
+            }
+        } catch (error) {
+            console.error('Error fetching game details:', error);
+            this.showAlert('Error loading game details. Please try again.', 'Error', 'error');
+        }
+    }
+
+    showGameDetailsLoading() {
+        // Create or show loading modal
+        let loadingModal = document.getElementById('gameDetailsLoading');
+        if (!loadingModal) {
+            loadingModal = document.createElement('div');
+            loadingModal.id = 'gameDetailsLoading';
+            loadingModal.className = 'modal';
+            loadingModal.innerHTML = `
+                <div class="modal-content">
+                    <div class="loading-spinner">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>Loading game details...</p>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(loadingModal);
+        }
+        loadingModal.style.display = 'block';
+    }
+
+    showGameDetailsModal(gameData) {
+        // Hide loading
+        const loadingModal = document.getElementById('gameDetailsLoading');
+        if (loadingModal) {
+            loadingModal.style.display = 'none';
+        }
+
+        // Create or update game details modal
+        let gameModal = document.getElementById('gameDetailsModal');
+        if (!gameModal) {
+            gameModal = document.createElement('div');
+            gameModal.id = 'gameDetailsModal';
+            gameModal.className = 'modal game-details-modal';
+            document.body.appendChild(gameModal);
+        }
+
+        // Format game data for display
+        const platforms = gameData.platforms && gameData.platforms.length > 0 
+            ? gameData.platforms.map(p => p.name).join(', ')
+            : 'Not specified';
+        
+        const genres = gameData.genres && gameData.genres.length > 0
+            ? gameData.genres.map(g => g.name).join(', ')
+            : 'Not specified';
+        
+        const developers = gameData.developers && gameData.developers.length > 0
+            ? gameData.developers.map(d => d.name).join(', ')
+            : 'Not specified';
+        
+        const publishers = gameData.publishers && gameData.publishers.length > 0
+            ? gameData.publishers.map(p => p.name).join(', ')
+            : 'Not specified';
+
+        const releaseDate = gameData.released 
+            ? new Date(gameData.released).toLocaleDateString()
+            : 'TBA';
+
+        const rating = gameData.rating 
+            ? `${gameData.rating.toFixed(1)}/5`
+            : 'N/A';
+
+        const description = gameData.description || gameData.description_raw || 'No description available';
+
+        // Build modal HTML
+        gameModal.innerHTML = `
+            <div class="modal-content game-details-content">
+                <span class="close" onclick="app.closeGameDetailsModal()">&times;</span>
+                <div class="game-details-header">
+                    ${gameData.backgroundImage 
+                        ? `<img src="${gameData.backgroundImage}" alt="${gameData.name}" class="game-details-image">`
+                        : '<div class="game-details-image-placeholder"><i class="fas fa-gamepad"></i></div>'
+                    }
+                    <div class="game-details-title-section">
+                        <h2>${gameData.name || 'Unknown Game'}</h2>
+                        <div class="game-details-meta">
+                            ${rating !== 'N/A' ? `<span class="game-rating"><i class="fas fa-star"></i> ${rating}</span>` : ''}
+                            ${gameData.metacritic ? `<span class="game-metacritic">Metacritic: ${gameData.metacritic}</span>` : ''}
+                            ${releaseDate !== 'TBA' ? `<span class="game-release-date"><i class="fas fa-calendar"></i> ${releaseDate}</span>` : ''}
+                        </div>
+                    </div>
+                </div>
+                <div class="game-details-body">
+                    <div class="game-details-description">
+                        <h3>Description</h3>
+                        <p>${description}</p>
+                    </div>
+                    <div class="game-details-info">
+                        <div class="info-row">
+                            <strong>Platforms:</strong> ${platforms}
+                        </div>
+                        <div class="info-row">
+                            <strong>Genres:</strong> ${genres}
+                        </div>
+                        ${developers !== 'Not specified' ? `
+                        <div class="info-row">
+                            <strong>Developers:</strong> ${developers}
+                        </div>
+                        ` : ''}
+                        ${publishers !== 'Not specified' ? `
+                        <div class="info-row">
+                            <strong>Publishers:</strong> ${publishers}
+                        </div>
+                        ` : ''}
+                    </div>
+                    ${gameData.screenshots && gameData.screenshots.length > 0 ? `
+                    <div class="game-details-screenshots">
+                        <h3>Screenshots</h3>
+                        <div class="screenshots-grid">
+                            ${gameData.screenshots.slice(0, 4).map(screenshot => `
+                                <img src="${screenshot.image || screenshot}" alt="Screenshot" class="screenshot-thumbnail">
+                            `).join('')}
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+                <div class="game-details-actions">
+                    ${this.currentUser ? `
+                        <button class="btn btn-primary" onclick="app.handleAddToWishlist(${gameData.id}, '${gameData.name.replace(/'/g, "\\'")}')">
+                            <i class="fas fa-heart"></i> Add to Wishlist
+                        </button>
+                    ` : `
+                        <button class="btn btn-secondary" onclick="app.showLoginModal()">
+                            <i class="fas fa-sign-in-alt"></i> Login to Add to Wishlist
+                        </button>
+                    `}
+                    ${gameData.website ? `
+                        <a href="${gameData.website}" target="_blank" class="btn btn-secondary">
+                            <i class="fas fa-external-link-alt"></i> Visit Website
+                        </a>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+
+        gameModal.style.display = 'block';
+    }
+
+    closeGameDetailsModal() {
+        const gameModal = document.getElementById('gameDetailsModal');
+        const loadingModal = document.getElementById('gameDetailsLoading');
+        if (gameModal) {
+            gameModal.style.display = 'none';
+        }
+        if (loadingModal) {
+            loadingModal.style.display = 'none';
+        }
     }
 
     async addToWishlist(gameId, gameName) {
         if (!this.currentUser) {
-            alert('Please log in to add games to your wishlist');
+            this.showAlert('Please log in to add games to your wishlist', 'Login Required', 'warning');
             return;
         }
 
@@ -1729,13 +2020,131 @@ class GameVaultApp {
             const result = await response.json();
 
             if (result.success) {
-                alert(`Added "${gameName}" to wishlist!`);
+                this.showAlert(`Added "${gameName}" to wishlist!`, 'Success', 'success');
             } else {
-                alert('Failed to add game to wishlist: ' + result.error);
+                this.showAlert('Failed to add game to wishlist: ' + result.error, 'Error', 'error');
             }
         } catch (error) {
             console.error('Error adding game to wishlist:', error);
-            alert('Error adding game to wishlist');
+            this.showAlert('Error adding game to wishlist', 'Error', 'error');
+        }
+    }
+
+    async addToWishlistWithId(gameId, gameName, wishlistId) {
+        if (!this.currentUser) {
+            this.showAlert('Please log in to add games to your wishlist', 'Login Required', 'warning');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/wishlists/${this.currentUser.username}/add-game`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    gameId: gameId,
+                    gameName: gameName,
+                    wishlistId: wishlistId,
+                    gameData: {
+                        addedDate: new Date().toISOString()
+                    }
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showAlert(`Added "${gameName}" to wishlist!`, 'Success', 'success');
+                // Close wishlist selection modal if open
+                const selectionModal = document.getElementById('wishlistSelectionModal');
+                if (selectionModal) {
+                    selectionModal.style.display = 'none';
+                }
+            } else {
+                this.showAlert('Failed to add game to wishlist: ' + result.error, 'Error', 'error');
+            }
+        } catch (error) {
+            console.error('Error adding game to wishlist:', error);
+            this.showAlert('Error adding game to wishlist', 'Error', 'error');
+        }
+    }
+
+    showWishlistSelectionModal(gameId, gameName, wishlists) {
+        // Create or update wishlist selection modal
+        let selectionModal = document.getElementById('wishlistSelectionModal');
+        if (!selectionModal) {
+            selectionModal = document.createElement('div');
+            selectionModal.id = 'wishlistSelectionModal';
+            selectionModal.className = 'modal';
+            document.body.appendChild(selectionModal);
+        }
+
+        selectionModal.innerHTML = `
+            <div class="modal-content wishlist-selection-content">
+                <span class="close" onclick="app.closeWishlistSelectionModal()">&times;</span>
+                <h2>Add "${gameName}" to Wishlist</h2>
+                <p class="wishlist-selection-subtitle">Choose which wishlist to add this game to:</p>
+                <div class="wishlist-list">
+                    ${wishlists.map(wishlist => `
+                        <div class="wishlist-item" onclick="app.addToWishlistWithId(${gameId}, '${gameName.replace(/'/g, "\\'")}', ${wishlist.id})">
+                            <div class="wishlist-item-info">
+                                <h3>${wishlist.name}</h3>
+                                ${wishlist.description ? `<p>${wishlist.description}</p>` : ''}
+                                <span class="wishlist-item-meta">
+                                    ${wishlist.gameCount || 0} ${wishlist.gameCount === 1 ? 'game' : 'games'}
+                                    ${wishlist.isPublic ? '<i class="fas fa-globe" title="Public"></i>' : '<i class="fas fa-lock" title="Private"></i>'}
+                                </span>
+                            </div>
+                            <i class="fas fa-chevron-right"></i>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="wishlist-selection-actions">
+                    <button class="btn btn-secondary" onclick="app.closeWishlistSelectionModal()">Cancel</button>
+                </div>
+            </div>
+        `;
+
+        selectionModal.style.display = 'block';
+    }
+
+    closeWishlistSelectionModal() {
+        const selectionModal = document.getElementById('wishlistSelectionModal');
+        if (selectionModal) {
+            selectionModal.style.display = 'none';
+        }
+    }
+
+    async handleAddToWishlist(gameId, gameName) {
+        if (!this.currentUser) {
+            this.showAlert('Please log in to add games to your wishlist', 'Login Required', 'warning');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/wishlists/${this.currentUser.username}`, {
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            const data = await response.json();
+            const wishlists = data.success ? (data.wishlists || []) : [];
+
+            if (wishlists.length === 0) {
+                // No wishlists, create default and add
+                await this.addToWishlist(gameId, gameName);
+            } else if (wishlists.length === 1) {
+                // Only one wishlist, add directly
+                await this.addToWishlistWithId(gameId, gameName, wishlists[0].id);
+            } else {
+                // Multiple wishlists, show selection modal
+                this.showWishlistSelectionModal(gameId, gameName, wishlists);
+            }
+        } catch (error) {
+            console.error('Error handling add to wishlist:', error);
+            // Fallback to default behavior
+            await this.addToWishlist(gameId, gameName);
         }
     }
 
@@ -1906,7 +2315,7 @@ class GameVaultApp {
 
         const friendUsername = usernameInput.value.trim();
         if (!friendUsername) {
-            alert('Please enter a username');
+            this.showAlert('Please enter a username', 'Username Required', 'warning');
             return;
         }
 
@@ -1923,15 +2332,15 @@ class GameVaultApp {
             const data = await response.json();
             
             if (response.ok) {
-                alert(data.message);
+                this.showAlert(data.message, 'Success', 'success');
                 usernameInput.value = '';
                 this.updateFriends();
             } else {
-                alert(data.error || 'Failed to send friend request');
+                this.showAlert(data.error || 'Failed to send friend request', 'Error', 'error');
             }
         } catch (error) {
             console.error('Error sending friend request:', error);
-            alert('Failed to send friend request');
+            this.showAlert('Failed to send friend request', 'Error', 'error');
         }
     }
 
@@ -1948,14 +2357,14 @@ class GameVaultApp {
             const data = await response.json();
             
             if (response.ok) {
-                alert(data.message);
+                this.showAlert(data.message, 'Success', 'success');
                 this.updateFriends();
             } else {
-                alert(data.error || 'Failed to accept friend request');
+                this.showAlert(data.error || 'Failed to accept friend request', 'Error', 'error');
             }
         } catch (error) {
             console.error('Error accepting friend request:', error);
-            alert('Failed to accept friend request');
+            this.showAlert('Failed to accept friend request', 'Error', 'error');
         }
     }
 
@@ -1972,14 +2381,14 @@ class GameVaultApp {
             const data = await response.json();
             
             if (response.ok) {
-                alert(data.message);
+                this.showAlert(data.message, 'Success', 'success');
                 this.updateFriends();
             } else {
-                alert(data.error || 'Failed to decline friend request');
+                this.showAlert(data.error || 'Failed to decline friend request', 'Error', 'error');
             }
         } catch (error) {
             console.error('Error declining friend request:', error);
-            alert('Failed to decline friend request');
+            this.showAlert('Failed to decline friend request', 'Error', 'error');
         }
     }
 
@@ -2000,14 +2409,38 @@ class GameVaultApp {
             const data = await response.json();
             
             if (response.ok) {
-                alert(data.message);
+                this.showAlert(data.message, 'Success', 'success');
                 this.updateFriends();
             } else {
-                alert(data.error || 'Failed to remove friend');
+                this.showAlert(data.error || 'Failed to remove friend', 'Error', 'error');
             }
         } catch (error) {
             console.error('Error removing friend:', error);
-            alert('Failed to remove friend');
+            this.showAlert('Failed to remove friend', 'Error', 'error');
+        }
+    }
+
+    async cancelFriendRequest(requestId) {
+        try {
+            const response = await fetch(`/api/friends/${this.currentUser.username}/cancel/${requestId}`, {
+                method: 'DELETE',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+            
+            if (response.ok) {
+                this.showNotification(data.message || 'Friend request canceled', 'success');
+                this.updateFriends();
+            } else {
+                this.showAlert(data.error || 'Failed to cancel friend request', 'Error', 'error');
+            }
+        } catch (error) {
+            console.error('Error canceling friend request:', error);
+            this.showAlert('Failed to cancel friend request', 'Error', 'error');
         }
     }
 
@@ -2059,6 +2492,87 @@ class GameVaultApp {
                 }
             }, 300);
         }, 3000);
+    }
+
+    showAlert(message, title = 'Alert', type = 'info') {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('customAlertModal');
+            const alertIcon = document.getElementById('alertIcon');
+            const alertTitle = document.getElementById('alertTitle');
+            const alertMessage = document.getElementById('alertMessage');
+            const alertOkBtn = document.getElementById('alertOkBtn');
+            const alertHeader = alertIcon.parentElement;
+
+            if (!modal || !alertIcon || !alertTitle || !alertMessage || !alertOkBtn) {
+                // Fallback to browser alert if modal elements don't exist
+                // This should rarely happen, but provides a fallback
+                if (typeof alert !== 'undefined') {
+                    alert(message);
+                }
+                resolve();
+                return;
+            }
+
+            // Set icon and type styling
+            let iconClass = 'fa-info-circle';
+            let headerClass = 'info';
+            
+            if (type === 'success') {
+                iconClass = 'fa-check-circle';
+                headerClass = 'success';
+            } else if (type === 'error') {
+                iconClass = 'fa-exclamation-circle';
+                headerClass = 'error';
+            } else if (type === 'warning') {
+                iconClass = 'fa-exclamation-triangle';
+                headerClass = 'warning';
+            }
+
+            alertIcon.className = `fas ${iconClass}`;
+            alertHeader.className = `alert-modal-header ${headerClass}`;
+            alertTitle.textContent = title;
+            alertMessage.textContent = message;
+
+            // Show modal
+            modal.style.display = 'block';
+
+            // Define event handlers
+            let handleEscape, handleOutsideClick, handleOk;
+
+            // Handle Escape key
+            handleEscape = (e) => {
+                if (e.key === 'Escape' && modal.style.display === 'block') {
+                    modal.style.display = 'none';
+                    document.removeEventListener('keydown', handleEscape);
+                    if (handleOutsideClick) modal.removeEventListener('click', handleOutsideClick);
+                    resolve();
+                }
+            };
+
+            // Handle clicking outside modal
+            handleOutsideClick = (e) => {
+                if (e.target === modal) {
+                    modal.style.display = 'none';
+                    modal.removeEventListener('click', handleOutsideClick);
+                    document.removeEventListener('keydown', handleEscape);
+                    resolve();
+                }
+            };
+
+            // Handle OK button click
+            handleOk = () => {
+                modal.style.display = 'none';
+                document.removeEventListener('keydown', handleEscape);
+                modal.removeEventListener('click', handleOutsideClick);
+                resolve();
+            };
+
+            // Add event listeners
+            alertOkBtn.onclick = null;
+            alertOkBtn.addEventListener('click', handleOk);
+            modal.addEventListener('click', handleOutsideClick);
+            document.addEventListener('keydown', handleEscape);
+        });
     }
 
     setupStarRating(containerId, inputId, textId) {
@@ -2311,7 +2825,11 @@ class SteamIntegration {
             // Get username from URL
             const username = this.getUsernameFromUrl();
             if (!username) {
-                alert('Username not found in URL');
+                if (window.app) {
+                    window.app.showAlert('Username not found in URL', 'Error', 'error');
+                } else {
+                    alert('Username not found in URL');
+                }
                 return;
             }
             
@@ -2335,11 +2853,19 @@ class SteamIntegration {
                 // Redirect to Steam OAuth
                 window.location.href = result.redirectUrl;
             } else {
-                alert('Failed to connect Steam account: ' + result.error);
+                if (window.app) {
+                    window.app.showAlert('Failed to connect Steam account: ' + result.error, 'Error', 'error');
+                } else {
+                    alert('Failed to connect Steam account: ' + result.error);
+                }
             }
         } catch (error) {
             console.error('Error connecting Steam:', error);
-            alert('Error connecting Steam account');
+            if (window.app) {
+                window.app.showAlert('Error connecting Steam account', 'Error', 'error');
+            } else {
+                alert('Error connecting Steam account');
+            }
         }
     }
 
@@ -2352,7 +2878,11 @@ class SteamIntegration {
             // Get username from URL
             const username = this.getUsernameFromUrl();
             if (!username) {
-                alert('Username not found in URL');
+                if (window.app) {
+                    window.app.showAlert('Username not found in URL', 'Error', 'error');
+                } else {
+                    alert('Username not found in URL');
+                }
                 return;
             }
             
@@ -2369,13 +2899,25 @@ class SteamIntegration {
                 this.steamLinked = false;
                 this.steamProfile = null;
                 this.showSteamConnect();
-                alert('Steam account disconnected successfully');
+                if (window.app) {
+                    window.app.showAlert('Steam account disconnected successfully', 'Success', 'success');
+                } else {
+                    alert('Steam account disconnected successfully');
+                }
             } else {
-                alert('Failed to disconnect Steam account: ' + result.error);
+                if (window.app) {
+                    window.app.showAlert('Failed to disconnect Steam account: ' + result.error, 'Error', 'error');
+                } else {
+                    alert('Failed to disconnect Steam account: ' + result.error);
+                }
             }
         } catch (error) {
             console.error('Error disconnecting Steam:', error);
-            alert('Error disconnecting Steam account');
+            if (window.app) {
+                window.app.showAlert('Error disconnecting Steam account', 'Error', 'error');
+            } else {
+                alert('Error disconnecting Steam account');
+            }
         }
     }
 
@@ -2386,7 +2928,11 @@ class SteamIntegration {
             // Get username from URL
             const username = this.getUsernameFromUrl();
             if (!username) {
-                alert('Username not found in URL');
+                if (window.app) {
+                    window.app.showAlert('Username not found in URL', 'Error', 'error');
+                } else {
+                    alert('Username not found in URL');
+                }
                 return;
             }
             
@@ -2403,16 +2949,28 @@ class SteamIntegration {
             
             if (result.success) {
                 const gamesCount = result.gamesCount || 0;
-                alert(`Successfully imported ${gamesCount} games from Steam!`);
+                if (window.app) {
+                    window.app.showAlert(`Successfully imported ${gamesCount} games from Steam!`, 'Success', 'success');
+                } else {
+                    alert(`Successfully imported ${gamesCount} games from Steam!`);
+                }
                 // Stay on the profile page and reload to show updated stats
                 const currentUrl = window.location.href;
                 window.location.href = currentUrl;
             } else {
-                alert('Failed to import Steam library: ' + result.error);
+                if (window.app) {
+                    window.app.showAlert('Failed to import Steam library: ' + result.error, 'Error', 'error');
+                } else {
+                    alert('Failed to import Steam library: ' + result.error);
+                }
             }
         } catch (error) {
             console.error('Error importing Steam library:', error);
-            alert('Error importing Steam library: ' + error.message);
+            if (window.app) {
+                window.app.showAlert('Error importing Steam library: ' + error.message, 'Error', 'error');
+            } else {
+                alert('Error importing Steam library: ' + error.message);
+            }
         }
     }
 
