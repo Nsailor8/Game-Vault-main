@@ -5,30 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Search Results - Game Vault</title>
     <link rel="stylesheet" href="/styles.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="app-container">
+    <div class="container">
         <!-- Header -->
         <%- include('partials/header', { activePage: 'search', homeLink: '/' }) %>
 
         <!-- Main Content -->
         <main class="main-content">
-            <div class="search-results-page">
-                <div class="search-header">
-                    <div class="search-info">
-                        <h1 id="searchTitle">Search Results</h1>
-                        <p id="searchSubtitle">Loading search results...</p>
-                    </div>
-                    <div class="search-actions">
-                        <button class="btn btn-secondary" onclick="goBack()">
+            <!-- Search Results Section -->
+            <section class="section">
+                <div class="section-header">
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <div>
+                            <h2 id="searchTitle">🔍 Search Results</h2>
+                            <p id="searchSubtitle">Loading search results...</p>
+                        </div>
+                        <button class="btn btn-secondary" onclick="goBack()" style="margin-left: auto;">
                             <i class="fas fa-arrow-left"></i> Back to Home
                         </button>
                     </div>
                 </div>
 
                 <!-- Loading State -->
-                <div id="searchLoading" class="search-loading">
+                <div id="searchLoading" class="search-loading" style="display: block;">
                     <i class="fas fa-spinner fa-spin"></i>
                     <p>Searching games...</p>
                 </div>
@@ -44,34 +45,34 @@
                 <!-- Mock Data Notice -->
                 <div id="mockDataNotice" class="mock-data-notice" style="display: none;">
                     <i class="fas fa-info-circle"></i>
-                    <strong>Demo Mode:</strong> This is sample data. To search real games, configure your RAWG.io API key.
-                    <a href="https://rawg.io/apidocs" target="_blank">Get API Key</a>
+                    <strong>Loading:</strong> The Steam game database is being loaded. If you see sample data, the Steam app list is still loading (this may take a moment on first use).
                 </div>
 
                 <!-- Search Results -->
-                <div id="searchResults" class="search-results-grid" style="display: none;">
+                <div id="searchResults" class="games-grid" style="display: none;">
                     <!-- Game cards will be populated here -->
                 </div>
 
                 <!-- Pagination -->
-                <div id="searchPagination" class="search-pagination" style="display: none;">
+                <div id="searchPagination" class="search-pagination" style="display: none; margin-top: 30px; text-align: center;">
                     <!-- Pagination will be populated here -->
                 </div>
 
                 <!-- No Results -->
-                <div id="noResults" class="no-results" style="display: none;">
+                <div id="noResults" class="empty-state" style="display: none;">
                     <i class="fas fa-search"></i>
                     <h3>No Games Found</h3>
                     <p>Try a different search term</p>
-                    <button class="btn btn-primary" onclick="goBack()">Back to Home</button>
+                    <button class="btn btn-primary" onclick="goBack()" style="margin-top: 20px;">Back to Home</button>
                 </div>
-            </div>
+            </section>
         </main>
 
         <!-- Footer -->
         <%- include('partials/footer') %>
     </div>
 
+    <script src="/app.js"></script>
     <script>
         // Get search parameters from URL
         const urlParams = new URLSearchParams(window.location.search);
@@ -79,7 +80,18 @@
         const page = parseInt(urlParams.get('page')) || 1;
 
         // Initialize search when page loads
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Wait for app to initialize
+            if (window.app) {
+                await window.app.checkAuthStatus();
+            } else {
+                setTimeout(async () => {
+                    if (window.app) {
+                        await window.app.checkAuthStatus();
+                    }
+                }, 500);
+            }
+
             if (query) {
                 performSearch(query, page);
             } else {
@@ -161,55 +173,41 @@
                 return;
             }
 
-            games.forEach(game => {
+            games.forEach((game, index) => {
                 const gameCard = document.createElement('div');
-                gameCard.className = 'game-card-large';
+                gameCard.className = 'game-card-simple';
+                gameCard.onclick = () => viewGameDetails(game.id);
+                gameCard.style.cursor = 'pointer';
+                
+                // Escape game name for HTML
+                const escapedName = game.name.replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+                
+                // Use backgroundImage or try alternative property names
+                const imageUrl = game.backgroundImage || game.background_image || game.image || null;
+                
+                // Build rating HTML if available
+                let ratingHTML = '';
+                if (game.rating || game.metacritic) {
+                    ratingHTML = '<div class="game-card-rating">';
+                    if (game.rating) {
+                        ratingHTML += `<span class="rating-badge"><i class="fas fa-star"></i> ${game.rating.toFixed(1)}</span>`;
+                    }
+                    if (game.metacritic) {
+                        ratingHTML += `<span class="metacritic-badge">M: ${game.metacritic}</span>`;
+                    }
+                    ratingHTML += '</div>';
+                }
+                
                 gameCard.innerHTML = `
-                    <div class="game-image-large">
-                        ${game.backgroundImage ? 
-                            `<img src="${game.backgroundImage}" alt="${game.name}" onerror="this.style.display='none'">` : 
-                            '<div class="no-image-large"><i class="fas fa-gamepad"></i></div>'
+                    <div class="game-image-simple">
+                        ${imageUrl ? 
+                            `<img src="${imageUrl}" alt="${escapedName}" class="game-image" loading="lazy" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\\'no-image\\'><i class=\\'fas fa-gamepad\\'></i></div>'">` : 
+                            '<div class="no-image"><i class="fas fa-gamepad"></i></div>'
                         }
-                        <div class="game-overlay">
-                            <div class="game-rating">
-                                ${game.rating ? `
-                                    <div class="star-rating-display">
-                                        ${generateStarRating(game.rating)}
-                                    </div>
-                                    <span class="rating-value">${game.rating.toFixed(1)}/5</span>
-                                ` : '<span class="no-rating">No rating</span>'}
-                                ${game.metacritic ? `<span class="metacritic-score">${game.metacritic}</span>` : ''}
-                            </div>
-                        </div>
+                        ${ratingHTML}
                     </div>
-                    <div class="game-info-large">
-                        <h3 class="game-title-large">${game.name}</h3>
-                        <div class="game-meta-large">
-                            ${game.released ? `<span class="release-date"><i class="fas fa-calendar"></i> ${new Date(game.released).getFullYear()}</span>` : ''}
-                            ${game.playtime ? `<span class="playtime"><i class="fas fa-clock"></i> ${game.playtime}h</span>` : ''}
-                        </div>
-                        <div class="game-platforms-large">
-                            ${game.platforms.slice(0, 4).map(platform => 
-                                `<span class="platform-tag-large">${platform.name}</span>`
-                            ).join('')}
-                            ${game.platforms.length > 4 ? `<span class="platform-tag-large">+${game.platforms.length - 4} more</span>` : ''}
-                        </div>
-                        <div class="game-genres-large">
-                            ${game.genres.slice(0, 3).map(genre => 
-                                `<span class="genre-tag-large">${genre.name}</span>`
-                            ).join('')}
-                        </div>
-                        <div class="game-description">
-                            ${game.description ? game.description.substring(0, 200) + '...' : 'No description available'}
-                        </div>
-                        <div class="game-actions-large">
-                            <button class="btn btn-primary" onclick="viewGameDetails(${game.id})">
-                                <i class="fas fa-info-circle"></i> View Details
-                            </button>
-                            <button class="btn btn-secondary" onclick="addToWishlist(${game.id}, '${game.name}')">
-                                <i class="fas fa-heart"></i> Add to Wishlist
-                            </button>
-                        </div>
+                    <div class="game-name-simple">
+                        <h3 class="game-title-simple">${escapedName}</h3>
                     </div>
                 `;
                 resultsContainer.appendChild(gameCard);
@@ -262,13 +260,75 @@
         }
 
         function viewGameDetails(gameId) {
-            alert(`Viewing details for game ID: ${gameId}`);
-            // You can implement a detailed game view modal here
+            // Use the app's game details function if available
+            if (window.app && window.app.viewGameDetails) {
+                window.app.viewGameDetails(gameId);
+            } else {
+                // Fallback: wait for app to initialize
+                setTimeout(() => {
+                    if (window.app && window.app.viewGameDetails) {
+                        window.app.viewGameDetails(gameId);
+                    } else {
+                        if (window.app) {
+                            window.app.showAlert('Game details feature is loading. Please try again in a moment.', 'Loading', 'info');
+                        } else {
+                            alert('Please wait for the page to load completely.');
+                        }
+                    }
+                }, 500);
+            }
         }
 
-        function addToWishlist(gameId, gameName) {
-            alert(`Added "${gameName}" to wishlist!`);
-            // You can implement the actual wishlist addition here
+        async function addToWishlist(gameId, gameName) {
+            // Check if user is logged in
+            if (!window.app || !window.app.currentUser) {
+                if (window.app) {
+                    await window.app.showAlert('Please log in to add games to your wishlist', 'Login Required', 'warning');
+                } else {
+                    alert('Please log in to add games to your wishlist');
+                }
+                return;
+            }
+
+            // Get user's wishlists
+            try {
+                const response = await fetch(`/api/wishlists/${window.app.currentUser.username}`, {
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+                const wishlists = data.success ? (data.wishlists || []) : [];
+
+                if (wishlists.length === 0) {
+                    // No wishlists, create default and add
+                    if (window.app) {
+                        await window.app.addToWishlist(gameId, gameName);
+                    }
+                } else if (wishlists.length === 1) {
+                    // Only one wishlist, add directly
+                    if (window.app) {
+                        await window.app.addToWishlistWithId(gameId, gameName, wishlists[0].id);
+                    }
+                } else {
+                    // Multiple wishlists, show selection modal
+                    if (window.app && window.app.showWishlistSelectionModal) {
+                        window.app.showWishlistSelectionModal(gameId, gameName, wishlists);
+                    } else {
+                        // Fallback: add to first wishlist
+                        if (window.app) {
+                            await window.app.addToWishlistWithId(gameId, gameName, wishlists[0].id);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error adding to wishlist:', error);
+                if (window.app) {
+                    window.app.showAlert('Error adding game to wishlist', 'Error', 'error');
+                } else {
+                    alert('Error adding game to wishlist');
+                }
+            }
         }
 
         function retrySearch() {

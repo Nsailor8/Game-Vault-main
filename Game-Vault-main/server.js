@@ -42,7 +42,16 @@ app.use((req, res, next) => {
 });
 
 // Serve static assets (CSS, JS, images) from 'public' folder
-app.use(express.static(path.join(__dirname, 'public')));
+// Disable caching in development to see changes immediately
+app.use(express.static(path.join(__dirname, 'public'), {
+    setHeaders: (res, path) => {
+        if (path.endsWith('.css') || path.endsWith('.js') || path.endsWith('.ejs')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
+    }
+}));
 
 // ===== EJS Setup =====
 app.set('view engine', 'ejs');
@@ -64,6 +73,22 @@ const profileManager = new ProfileManager();
 const adminManager = new AdminManager();
 const gameSearchService = new GameSearchService();
 const steamService = new SteamService();
+
+// Preload Steam app list in background (non-blocking)
+(async () => {
+    try {
+        console.log('🚀 Preloading Steam game database...');
+        const appList = await gameSearchService.getSteamAppList();
+        if (appList && appList.length > 0) {
+            console.log(`✅ Steam game database ready! (${appList.length} games loaded)`);
+        } else {
+            console.warn('⚠️ Steam app list preload returned empty - will load on first search');
+        }
+    } catch (error) {
+        console.error('❌ Error preloading Steam app list:', error.message);
+        console.log('ℹ️ Steam app list will be loaded on first search');
+    }
+})();
 
 // ===== Passport Configuration =====
 app.use(passport.initialize());
@@ -124,9 +149,9 @@ app.use((req, res, next) => {
 // ===== Render EJS Views =====
 app.get('/', async (req, res) => {
     try {
-        // Fetch trending games from IGDB API
-        const trendingGames = await gameSearchService.getTrendingGames();
-        const recentGames = await gameSearchService.getRecentGames();
+        // Fetch trending games and recent games from Steam API
+        const trendingGames = await gameSearchService.getTrendingGames(8);
+        const recentGames = await gameSearchService.getRecentGames(8);
         
         res.render('index', { 
             trendingGames: trendingGames.games || [], 
@@ -1281,33 +1306,158 @@ app.delete('/api/friends/:username/remove/:friendId', async (req, res) => {
     }
 });
 
-// Wishlist routes
-app.get('/api/wishlists/:username', (req, res) => {
-    const { username } = req.params;
-    profileManager.loadProfile(username);
-    const wishlistManager = profileManager.getWishlistManager();
+app.delete('/api/friends/:username/cancel/:requestId', async (req, res) => {
+    try {
+        const { username, requestId } = req.params;
+        
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
 
-    if (wishlistManager) {
-        res.json({
-            wishlists: wishlistManager.getWishlists()
-        });
-    } else {
-        res.status(404).json({ error: 'Wishlist manager not found' });
+        const success = await profileManager.cancelFriendRequest(parseInt(requestId), user.id);
+        
+        if (success) {
+            res.json({
+                success: true,
+                message: 'Friend request canceled successfully'
+            });
+        } else {
+            res.status(400).json({ error: 'Friend request not found or already processed' });
+        }
+    } catch (error) {
+        console.error('Error canceling friend request:', error);
+        res.status(500).json({ error: 'Failed to cancel friend request' });
     }
 });
 
-app.post('/api/wishlists/:username/create', (req, res) => {
-    const { username } = req.params;
-    const { name, description } = req.body;
+// Wishlist routes - Database integrated
+app.get('/api/wishlists/:username', async (req, res) => {
+    try {
+        const { username } = req.params;
+        
+        // Get user from database
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
 
-    profileManager.loadProfile(username);
-    const wishlistManager = profileManager.getWishlistManager();
+        // Get wishlists from database
+        const wishlists = await profileManager.databaseManager.getUserWishlists(user.id);
+        
+        // Format wishlists with game counts
+        const formattedWishlists = await Promise.all(wishlists.map(async (wishlist) => {
+            const games = await profileManager.databaseManager.getWishlistGames(wishlist.id);
+            return {
+                id: wishlist.id,
+                name: wishlist.name,
+                description: wishlist.description,
+                gameCount: games.length,
+                createdDate: wishlist.createdAt,
+                isPublic: wishlist.isPublic,
+                priority: wishlist.priority
+            };
+        }));
 
-    if (wishlistManager) {
-        const wishlist = wishlistManager.createWishlist(name, description);
-        res.json({ success: true, wishlist });
-    } else {
-        res.status(404).json({ error: 'Wishlist manager not found' });
+        res.json({
+            success: true,
+            wishlists: formattedWishlists
+        });
+    } catch (error) {
+        console.error('Error getting wishlists:', error);
+        res.status(500).json({ error: 'Failed to get wishlists' });
+    }
+});
+
+app.post('/api/wishlists/:username/create', async (req, res) => {
+    try {
+        const { username } = req.params;
+        const { name, description, isPublic, priority } = req.body;
+
+        if (!name) {
+            return res.status(400).json({ error: 'Wishlist name is required' });
+        }
+
+        // Get user from database
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Create wishlist in database
+        const wishlist = await profileManager.databaseManager.createWishlist({
+            userId: user.id,
+            name: name,
+            description: description || '',
+            isPublic: isPublic || false,
+            priority: priority || 'medium'
+        });
+
+        res.json({
+            success: true,
+            wishlist: {
+                id: wishlist.id,
+                name: wishlist.name,
+                description: wishlist.description,
+                gameCount: 0,
+                createdDate: wishlist.createdAt,
+                isPublic: wishlist.isPublic,
+                priority: wishlist.priority
+            }
+        });
+    } catch (error) {
+        console.error('Error creating wishlist:', error);
+        res.status(500).json({ error: 'Failed to create wishlist' });
+    }
+});
+
+// Get individual wishlist with games
+app.get('/api/wishlists/:username/:wishlistId', async (req, res) => {
+    try {
+        const { username, wishlistId } = req.params;
+        
+        // Get user from database
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Get wishlist from database
+        const { Wishlist } = require('./server/models/index');
+        const wishlist = await Wishlist.findOne({
+            where: { id: wishlistId, userId: user.id }
+        });
+
+        if (!wishlist) {
+            return res.status(404).json({ error: 'Wishlist not found' });
+        }
+
+        // Get games in wishlist
+        const games = await profileManager.databaseManager.getWishlistGames(wishlistId);
+
+        res.json({
+            success: true,
+            wishlist: {
+                id: wishlist.id,
+                name: wishlist.name,
+                description: wishlist.description,
+                createdDate: wishlist.createdAt,
+                isPublic: wishlist.isPublic,
+                priority: wishlist.priority
+            },
+            games: games.map(game => ({
+                id: game.id,
+                gameId: game.gameId,
+                title: game.gameTitle,
+                platform: game.platform,
+                priority: game.priority,
+                notes: game.notes,
+                addedDate: game.createdAt
+            }))
+        });
+    } catch (error) {
+        console.error('Error getting wishlist:', error);
+        res.status(500).json({ error: 'Failed to get wishlist' });
     }
 });
 
@@ -1315,41 +1465,116 @@ app.post('/api/wishlists/:username/create', (req, res) => {
 app.post('/api/wishlists/:username/add-game', async (req, res) => {
     try {
         const { username } = req.params;
-        const { gameId, gameName, gameData } = req.body;
+        const { gameId, gameName, wishlistId, gameData } = req.body;
 
         if (!gameId || !gameName) {
             return res.status(400).json({ error: 'Game ID and name are required' });
         }
 
-        profileManager.loadProfile(username);
-        const wishlistManager = profileManager.getWishlistManager();
-
-        if (!wishlistManager) {
-            return res.status(404).json({ error: 'Wishlist manager not found' });
+        // Get user from database
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
         }
 
-        // Add game to default wishlist
-        const defaultWishlist = wishlistManager.getWishlists().find(w => w.name === 'Default') || 
-                               wishlistManager.createWishlist('Default', 'Default wishlist');
-        
-        const gameAdded = wishlistManager.addGameToWishlist(defaultWishlist.id, {
-            id: gameId,
-            name: gameName,
-            ...gameData
+        let targetWishlistId = wishlistId;
+
+        // If no wishlistId provided, get or create default wishlist
+        if (!targetWishlistId) {
+            const { Wishlist } = require('./server/models/index');
+            let defaultWishlist = await Wishlist.findOne({
+                where: { userId: user.id, name: 'Default' }
+            });
+
+            if (!defaultWishlist) {
+                defaultWishlist = await profileManager.databaseManager.createWishlist({
+                    userId: user.id,
+                    name: 'Default',
+                    description: 'Default wishlist',
+                    isPublic: false,
+                    priority: 'medium'
+                });
+            }
+            targetWishlistId = defaultWishlist.id;
+        } else {
+            // Verify wishlist belongs to user
+            const { Wishlist } = require('./server/models/index');
+            const wishlist = await Wishlist.findOne({
+                where: { id: targetWishlistId, userId: user.id }
+            });
+            if (!wishlist) {
+                return res.status(404).json({ error: 'Wishlist not found' });
+            }
+        }
+
+        // Check if game already exists in wishlist
+        const { WishlistGame } = require('./server/models/index');
+        const existingGame = await WishlistGame.findOne({
+            where: { wishlistId: targetWishlistId, gameId: gameId }
         });
 
-        if (gameAdded) {
-            res.json({ 
-                success: true, 
-                message: 'Game added to wishlist',
-                game: { id: gameId, name: gameName }
-            });
-        } else {
-            res.status(400).json({ error: 'Failed to add game to wishlist' });
+        if (existingGame) {
+            return res.status(400).json({ error: 'Game already in wishlist' });
         }
+
+        // Add game to wishlist in database
+        await profileManager.databaseManager.addGameToWishlist(targetWishlistId, {
+            gameId: gameId,
+            title: gameName,
+            platform: gameData?.platform || 'PC',
+            priority: gameData?.priority || 'medium',
+            notes: gameData?.notes || ''
+        });
+
+        res.json({ 
+            success: true, 
+            message: 'Game added to wishlist',
+            game: { id: gameId, name: gameName }
+        });
     } catch (error) {
         console.error('Error adding game to wishlist:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Remove game from wishlist
+app.delete('/api/wishlists/:username/:wishlistId/games/:gameId', async (req, res) => {
+    try {
+        const { username, wishlistId, gameId } = req.params;
+
+        // Get user from database
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Verify wishlist belongs to user
+        const { Wishlist } = require('./server/models/index');
+        const wishlist = await Wishlist.findOne({
+            where: { id: wishlistId, userId: user.id }
+        });
+        if (!wishlist) {
+            return res.status(404).json({ error: 'Wishlist not found' });
+        }
+
+        // Remove game from wishlist
+        const { WishlistGame } = require('./server/models/index');
+        const wishlistGame = await WishlistGame.findOne({
+            where: { wishlistId: wishlistId, gameId: gameId }
+        });
+
+        if (wishlistGame) {
+            await wishlistGame.destroy();
+            res.json({ 
+                success: true, 
+                message: 'Game removed from wishlist' 
+            });
+        } else {
+            res.status(404).json({ error: 'Game not found in wishlist' });
+        }
+    } catch (error) {
+        console.error('Error removing game from wishlist:', error);
+        res.status(500).json({ error: 'Failed to remove game from wishlist' });
     }
 });
 
@@ -1605,6 +1830,57 @@ app.get('/api/admin/stats', (req, res) => {
     });
 });
 
+// Test Steam API endpoint
+app.get('/api/games/test-steam', async (req, res) => {
+    try {
+        console.log('[Test] Checking Steam API...');
+        const appList = await gameSearchService.getSteamAppList();
+        res.json({
+            success: true,
+            cached: gameSearchService.appListCache !== null,
+            appCount: appList ? appList.length : 0,
+            cacheSize: gameSearchService.appListCache ? gameSearchService.appListCache.length : 0,
+            cacheTime: gameSearchService.appListCacheTime ? new Date(gameSearchService.appListCacheTime).toISOString() : null,
+            message: appList && appList.length > 0 
+                ? `Steam API is working! Loaded ${appList.length} games.`
+                : 'Steam API returned no games. Check server logs for details.'
+        });
+    } catch (error) {
+        console.error('[Test] Steam API error:', error);
+        res.json({
+            success: false,
+            error: error.message,
+            stack: error.stack
+        });
+    }
+});
+
+// Force reload Steam app list
+app.post('/api/games/reload-steam', async (req, res) => {
+    try {
+        console.log('[Reload] Forcing Steam app list reload...');
+        // Clear cache
+        gameSearchService.appListCache = null;
+        gameSearchService.appListCacheTime = null;
+        
+        // Fetch fresh data
+        const appList = await gameSearchService.getSteamAppList();
+        res.json({
+            success: true,
+            appCount: appList ? appList.length : 0,
+            message: appList && appList.length > 0 
+                ? `Successfully reloaded ${appList.length} games from Steam API.`
+                : 'Failed to reload games. Check server logs for details.'
+        });
+    } catch (error) {
+        console.error('[Reload] Steam API error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Game search routes
 app.get('/api/games/search', async (req, res) => {
     const { q: query, page = 1, pageSize = 20 } = req.query;
@@ -1617,7 +1893,9 @@ app.get('/api/games/search', async (req, res) => {
     }
 
     try {
+        console.log(`[Search API] Query: "${query}", Page: ${page}, PageSize: ${pageSize}`);
         const result = await gameSearchService.searchGames(query.trim(), parseInt(page), parseInt(pageSize));
+        console.log(`[Search API] Result: ${result.success}, Games: ${result.games?.length || 0}, isMockData: ${result.isMockData || false}`);
         
         // Add Steam ownership information if user is logged in and has Steam linked
         if (req.session.user && req.session.user.steam_id) {
@@ -1630,9 +1908,13 @@ app.get('/api/games/search', async (req, res) => {
         res.json(result);
     } catch (error) {
         console.error('Error in game search:', error);
+        console.error('Error stack:', error.stack);
         res.status(500).json({ 
-            success: false, 
-            error: 'Internal server error during game search' 
+            success: false,
+            error: 'Failed to search games',
+            games: [],
+            totalResults: 0,
+            isMockData: true
         });
     }
 });
@@ -1691,18 +1973,23 @@ app.get('/api/games/:gameId', async (req, res) => {
     if (!gameId) {
         return res.status(400).json({ 
             success: false, 
-            error: 'Game ID is required' 
+            error: 'Game ID is required',
+            game: null
         });
     }
 
     try {
+        console.log(`[Game Details API] Request for game ID: ${gameId}`);
         const result = await gameSearchService.getGameDetails(gameId);
+        console.log(`[Game Details API] Result: success=${result.success}, game=${result.game ? result.game.name : 'null'}`);
         res.json(result);
     } catch (error) {
-        console.error('Error fetching game details:', error);
+        console.error('[Game Details API] Error:', error);
+        console.error('[Game Details API] Error stack:', error.stack);
         res.status(500).json({ 
-            success: false, 
-            error: 'Internal server error while fetching game details' 
+            success: false,
+            error: `Failed to fetch game details: ${error.message}`,
+            game: null
         });
     }
 });

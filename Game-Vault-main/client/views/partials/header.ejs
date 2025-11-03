@@ -9,7 +9,7 @@
   <div class="search-bar">
     <div class="search-wrapper">
       <input type="text" id="gameSearchInput" placeholder="Search games..." autocomplete="off" onkeypress="if(event.key==='Enter') { const query = this.value.trim(); if(query) window.location.href = '/search?q=' + encodeURIComponent(query); }">
-      <button id="gameSearchBtn" onclick="const query = document.getElementById('gameSearchInput').value.trim(); if(query) window.location.href = '/search?q=' + encodeURIComponent(query); else alert('Please enter a search term');"><i class="fas fa-search"></i></button>
+      <button id="gameSearchBtn" onclick="const query = document.getElementById('gameSearchInput').value.trim(); if(query) window.location.href = '/search?q=' + encodeURIComponent(query); else if(window.app) window.app.showAlert('Please enter a search term', 'Search Required', 'warning'); else alert('Please enter a search term');"><i class="fas fa-search"></i></button>
       <div id="searchSuggestions" class="search-suggestions" style="display: none;">
         <!-- Autocomplete suggestions will appear here -->
       </div>
@@ -38,3 +38,19 @@
     </div>
   </div>
 </header>
+
+<!-- Custom Alert Modal -->
+<div id="customAlertModal" class="modal" style="display: none;">
+  <div class="modal-content alert-modal-content">
+    <div class="alert-modal-header">
+      <i id="alertIcon" class="fas fa-info-circle"></i>
+      <h3 id="alertTitle">Alert</h3>
+    </div>
+    <div class="alert-modal-body">
+      <p id="alertMessage">Message goes here</p>
+    </div>
+    <div class="alert-modal-footer">
+      <button id="alertOkBtn" class="btn btn-primary">OK</button>
+    </div>
+  </div>
+</div>
