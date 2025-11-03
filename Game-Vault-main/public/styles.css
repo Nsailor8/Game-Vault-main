@@ -2667,3 +2667,123 @@ textarea {
         font-size: 1rem;
     }
 }
+/* ===== SEARCH ENHANCEMENTS ===== */
+
+/* Filter Select Styling */
+.filter-select {
+    width: 100%;
+    padding: 10px 15px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    background: white;
+    color: #333;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.filter-select:hover {
+    border-color: #667eea;
+}
+
+.filter-select:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* Filter Group */
+.filter-group {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Active Filter Tags */
+.filter-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.filter-tag i.fa-times {
+    cursor: pointer;
+    font-size: 0.8rem;
+    opacity: 0.9;
+    transition: opacity 0.2s ease;
+}
+
+.filter-tag i.fa-times:hover {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+/* History Item Styling */
+.history-item {
+    padding: 10px 15px;
+    border-radius: 20px;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.history-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
+.search-history-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+/* Advanced Search Panel Animation */
+.advanced-search-panel {
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Filter Grid Responsive */
+@media (max-width: 768px) {
+    .filter-grid {
+        grid-template-columns: 1fr !important;
+    }
+    
+    .advanced-search-panel {
+        padding: 15px !important;
+    }
+    
+    .filter-group {
+        margin-bottom: 10px;
+    }
+}
+
+/* Button Small Variant */
+.btn-sm {
+    padding: 8px 16px;
+    font-size: 0.9rem;
+}
+
+/* Small Pagination Button Fix */
+.pagination-large button {
+    min-width: auto;
+    padding: 8px 16px;
+}
