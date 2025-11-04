@@ -147,6 +147,96 @@ class DatabaseManager {
     }
   }
 
+  // Admin operations
+  async createAdmin(username, email, password) {
+    try {
+      const bcrypt = require('bcrypt');
+      const password_hash = await bcrypt.hash(password, 10);
+      
+      const [user, created] = await User.upsert({
+        username: username,
+        email: email,
+        password_hash: password_hash,
+        is_admin: true,
+        is_active: true,
+        join_date: new Date()
+      });
+      
+      if (created) {
+        console.log(`Admin ${username} created in database.`);
+      } else {
+        // Update existing user to be admin
+        await User.update({ is_admin: true }, { where: { username } });
+        console.log(`User ${username} promoted to admin in database.`);
+      }
+      
+      return user;
+    } catch (error) {
+      console.error('Error creating admin:', error);
+      throw error;
+    }
+  }
+
+  async getAdmins() {
+    try {
+      const admins = await User.findAll({
+        where: { is_admin: true, is_active: true },
+        attributes: ['user_id', 'username', 'email', 'join_date', 'is_admin'],
+        order: [['join_date', 'DESC']]
+      });
+      return admins;
+    } catch (error) {
+      console.error('Error getting admins:', error);
+      return [];
+    }
+  }
+
+  async isAdmin(username) {
+    try {
+      const user = await User.findOne({
+        where: { username, is_admin: true, is_active: true }
+      });
+      return user !== null;
+    } catch (error) {
+      console.error('Error checking admin status:', error);
+      return false;
+    }
+  }
+
+  async promoteToAdmin(username) {
+    try {
+      const [updatedRowsCount] = await User.update(
+        { is_admin: true },
+        { where: { username, is_active: true } }
+      );
+      if (updatedRowsCount > 0) {
+        console.log(`User ${username} promoted to admin.`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error promoting user to admin:', error);
+      return false;
+    }
+  }
+
+  async demoteFromAdmin(username) {
+    try {
+      const [updatedRowsCount] = await User.update(
+        { is_admin: false },
+        { where: { username } }
+      );
+      if (updatedRowsCount > 0) {
+        console.log(`User ${username} demoted from admin.`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error demoting user from admin:', error);
+      return false;
+    }
+  }
+
   // Game operations
   async saveGame(gameData) {
     try {

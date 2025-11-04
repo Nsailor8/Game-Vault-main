@@ -366,9 +366,21 @@ class GameVaultApp {
     handleLogin() {
         const username = document.getElementById('loginUsername').value;
         const password = document.getElementById('loginPassword').value;
+        const loginError = document.getElementById('loginError');
+
+        // Hide previous errors
+        if (loginError) {
+            loginError.style.display = 'none';
+            loginError.textContent = '';
+        }
 
         if (!username || !password) {
-            this.showAlert('Please fill in all fields', 'Login Required', 'warning');
+            if (loginError) {
+                loginError.textContent = 'Please fill in all fields';
+                loginError.style.display = 'block';
+            } else {
+                this.showAlert('Please fill in all fields', 'Login Required', 'warning');
+            }
             return;
         }
 
@@ -387,17 +399,34 @@ class GameVaultApp {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
+                // Hide error on success
+                if (loginError) {
+                    loginError.style.display = 'none';
+                }
                 this.currentUser = data.user;
                 this.loginScreen.hide();
                 this.updateUI();
                 console.log('User logged in successfully:', data.user.username);
             } else {
-                this.showAlert(data.error || 'Invalid credentials', 'Login Failed', 'error');
+                // Show error inline
+                const errorMessage = data.error || 'Invalid credentials';
+                if (loginError) {
+                    loginError.textContent = errorMessage;
+                    loginError.style.display = 'block';
+                } else {
+                    this.showAlert(errorMessage, 'Login Failed', 'error');
+                }
             }
         })
         .catch(error => {
             console.error('Error logging in:', error);
-            this.showAlert('Error logging in. Please try again.', 'Error', 'error');
+            const errorMessage = 'Error logging in. Please try again.';
+            if (loginError) {
+                loginError.textContent = errorMessage;
+                loginError.style.display = 'block';
+            } else {
+                this.showAlert(errorMessage, 'Error', 'error');
+            }
         });
     }
 
@@ -408,9 +437,22 @@ class GameVaultApp {
         const playStyle = document.getElementById('playStyle').value;
         const favoriteGenres = document.getElementById('favoriteGenres').value.split(',').map(g => g.trim()).filter(g => g);
         const preferredPlatforms = document.getElementById('preferredPlatforms').value.split(',').map(p => p.trim()).filter(p => p);
+        const signupError = document.getElementById('signupError');
+
+        // Hide previous errors
+        if (signupError) {
+            signupError.style.display = 'none';
+            signupError.textContent = '';
+        }
 
         if (!username || !email || !password) {
-            this.showAlert('Please fill in all required fields', 'Signup Required', 'warning');
+            const errorMessage = 'Please fill in all required fields';
+            if (signupError) {
+                signupError.textContent = errorMessage;
+                signupError.style.display = 'block';
+            } else {
+                this.showAlert(errorMessage, 'Signup Required', 'warning');
+            }
             return;
         }
 
@@ -438,17 +480,34 @@ class GameVaultApp {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
+                // Hide error on success
+                if (signupError) {
+                    signupError.style.display = 'none';
+                }
                 this.currentUser = data.user;
                 this.loginScreen.hide();
                 this.updateUI();
                 console.log('User created successfully on server:', data.user.username);
             } else {
-                this.showAlert(data.error || 'Failed to create account', 'Signup Failed', 'error');
+                // Show error inline
+                const errorMessage = data.error || 'Failed to create account';
+                if (signupError) {
+                    signupError.textContent = errorMessage;
+                    signupError.style.display = 'block';
+                } else {
+                    this.showAlert(errorMessage, 'Signup Failed', 'error');
+                }
             }
         })
         .catch(error => {
             console.error('Error creating account:', error);
-            this.showAlert('Error creating account. Please try again.', 'Error', 'error');
+            const errorMessage = 'Error creating account. Please try again.';
+            if (signupError) {
+                signupError.textContent = errorMessage;
+                signupError.style.display = 'block';
+            } else {
+                this.showAlert(errorMessage, 'Error', 'error');
+            }
         });
     }
 
@@ -1513,50 +1572,456 @@ class GameVaultApp {
         });
     }
 
-    updateAdminPanel() {
-        // Call the server API to get admin statistics
-        fetch('/api/admin/stats')
+    // Admin Panel Methods
+    checkAdminStatus() {
+        fetch('/api/admin/check', {
+            credentials: 'include'
+        })
         .then(response => response.json())
         .then(data => {
-            const stats = data.userStats;
-            const container = document.getElementById('adminStats');
-            
-            container.innerHTML = `
-                <div class="stat-card">
-                    <i class="fas fa-users"></i>
-                    <h3>${stats.totalUsers || 0}</h3>
-                    <p>Total Users</p>
-                </div>
-                <div class="stat-card">
-                    <i class="fas fa-user-check"></i>
-                    <h3>${stats.activeUsers || 0}</h3>
-                    <p>Active Users</p>
-                </div>
-                <div class="stat-card">
-                    <i class="fas fa-user-plus"></i>
-                    <h3>${stats.newUsersThisMonth || 0}</h3>
-                    <p>New This Month</p>
-                </div>
-            `;
+            const adminStatus = document.getElementById('adminStatus');
+            if (data.isAdmin) {
+                if (adminStatus) {
+                    adminStatus.innerHTML = '<span class="badge badge-success">Admin</span>';
+                }
+                this.loadAdminPanel();
+            } else {
+                if (adminStatus) {
+                    adminStatus.innerHTML = '<span class="badge badge-warning">Not Admin</span>';
+                }
+                this.showAlert('You must be an admin to access this panel', 'Access Denied', 'warning');
+            }
+        })
+        .catch(error => {
+            console.error('Error checking admin status:', error);
+        });
+    }
 
-            const logs = data.systemLogs || [];
-            const logsContainer = document.getElementById('systemLogs');
-            
-            logsContainer.innerHTML = '';
-            logs.slice(-10).reverse().forEach(log => {
-                const logItem = document.createElement('div');
-                logItem.className = 'log-item';
-                logItem.innerHTML = `
-                    <strong>${log.action}</strong>: ${log.details}
-                    <br>
-                    <small>${new Date(log.timestamp).toLocaleString()}</small>
-                `;
-                logsContainer.appendChild(logItem);
+    setupAdminTabs() {
+        const tabs = document.querySelectorAll('.admin-tab');
+        const tabContents = document.querySelectorAll('.admin-tab-content');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const targetTab = tab.getAttribute('data-tab');
+                
+                // Remove active class from all tabs and contents
+                tabs.forEach(t => t.classList.remove('active'));
+                tabContents.forEach(tc => tc.classList.remove('active'));
+                
+                // Add active class to clicked tab and corresponding content
+                tab.classList.add('active');
+                const targetContent = document.getElementById(targetTab + 'Tab');
+                if (targetContent) {
+                    targetContent.classList.add('active');
+                }
+
+                // Load data for the active tab
+                if (targetTab === 'users') {
+                    this.loadUsers();
+                } else if (targetTab === 'admins') {
+                    this.loadAdmins();
+                } else if (targetTab === 'logs') {
+                    this.loadLogs();
+                }
             });
+        });
+
+        // Setup admin panel buttons
+        const refreshUsersBtn = document.getElementById('refreshUsersBtn');
+        if (refreshUsersBtn) {
+            refreshUsersBtn.addEventListener('click', () => this.loadUsers());
+        }
+
+        const refreshLogsBtn = document.getElementById('refreshLogsBtn');
+        if (refreshLogsBtn) {
+            refreshLogsBtn.addEventListener('click', () => this.loadLogs());
+        }
+
+        const createAdminBtn = document.getElementById('createAdminBtn');
+        if (createAdminBtn) {
+            createAdminBtn.addEventListener('click', () => {
+                const modal = document.getElementById('createAdminModal');
+                if (modal) modal.style.display = 'block';
+            });
+        }
+
+        // Setup create admin form
+        const createAdminForm = document.getElementById('createAdminForm');
+        if (createAdminForm) {
+            createAdminForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.createAdmin();
+            });
+        }
+
+        const cancelCreateAdmin = document.getElementById('cancelCreateAdmin');
+        if (cancelCreateAdmin) {
+            cancelCreateAdmin.addEventListener('click', () => {
+                const modal = document.getElementById('createAdminModal');
+                if (modal) modal.style.display = 'none';
+                createAdminForm.reset();
+            });
+        }
+
+        // Close modal on X click
+        const createAdminModal = document.getElementById('createAdminModal');
+        if (createAdminModal) {
+            const closeBtn = createAdminModal.querySelector('.close');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', () => {
+                    createAdminModal.style.display = 'none';
+                    createAdminForm.reset();
+                });
+            }
+        }
+    }
+
+    loadAdminPanel() {
+        this.loadStats();
+        this.loadUsers();
+        this.loadAdmins();
+        this.loadLogs();
+    }
+
+    loadStats() {
+        fetch('/api/admin/stats', {
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.userStats) {
+                const stats = data.userStats;
+                const container = document.getElementById('adminStats');
+                if (container) {
+                    container.innerHTML = `
+                        <div class="stat-card">
+                            <i class="fas fa-users"></i>
+                            <h3>${stats.totalUsers || 0}</h3>
+                            <p>Total Users</p>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fas fa-user-check"></i>
+                            <h3>${stats.activeUsers || 0}</h3>
+                            <p>Active Users</p>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fas fa-user-plus"></i>
+                            <h3>${stats.newUsersThisMonth || 0}</h3>
+                            <p>New This Month</p>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fas fa-shield-alt"></i>
+                            <h3>${stats.totalAdmins || 0}</h3>
+                            <p>Admins</p>
+                        </div>
+                    `;
+                }
+            }
         })
         .catch(error => {
             console.error('Error fetching admin stats:', error);
         });
+    }
+
+    loadUsers() {
+        const tbody = document.getElementById('usersTableBody');
+        if (!tbody) return;
+
+        tbody.innerHTML = '<tr><td colspan="7" class="loading">Loading users...</td></tr>';
+
+        fetch('/api/admin/users', {
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.users) {
+                if (data.users.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="empty">No users found</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = '';
+                data.users.forEach(user => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${user.id}</td>
+                        <td>${user.username}</td>
+                        <td>${user.email}</td>
+                        <td>${new Date(user.joinDate).toLocaleDateString()}</td>
+                        <td>
+                            <span class="badge ${user.isActive ? 'badge-success' : 'badge-danger'}">
+                                ${user.isActive ? 'Active' : 'Inactive'}
+                            </span>
+                        </td>
+                        <td>
+                            ${user.isAdmin ? '<span class="badge badge-info">Admin</span>' : '<span class="badge badge-secondary">User</span>'}
+                        </td>
+                        <td>
+                            <div class="action-buttons">
+                                ${!user.isAdmin ? `
+                                    <button class="btn-sm btn-primary" onclick="window.app.toggleUserStatus(${user.id}, ${user.isActive})" title="${user.isActive ? 'Deactivate' : 'Activate'}">
+                                        <i class="fas fa-${user.isActive ? 'ban' : 'check'}"></i>
+                                    </button>
+                                    <button class="btn-sm ${user.isAdmin ? 'btn-info' : 'btn-success'}" onclick="window.app.promoteUser('${user.username}')" title="Promote to Admin">
+                                        <i class="fas fa-user-shield"></i>
+                                    </button>
+                                    <button class="btn-sm btn-danger" onclick="window.app.deleteUser(${user.id}, '${user.username}')" title="Delete User">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                ` : `
+                                    <button class="btn-sm btn-warning" onclick="window.app.demoteAdmin('${user.username}')" title="Demote from Admin">
+                                        <i class="fas fa-user-minus"></i>
+                                    </button>
+                                `}
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } else {
+                tbody.innerHTML = '<tr><td colspan="7" class="error">Failed to load users</td></tr>';
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching users:', error);
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="7" class="error">Error loading users</td></tr>';
+            }
+        });
+    }
+
+    loadAdmins() {
+        const tbody = document.getElementById('adminsTableBody');
+        if (!tbody) return;
+
+        tbody.innerHTML = '<tr><td colspan="5" class="loading">Loading admins...</td></tr>';
+
+        fetch('/api/admin/list', {
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.admins) {
+                if (data.admins.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="empty">No admins found</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = '';
+                data.admins.forEach(admin => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${admin.id}</td>
+                        <td>${admin.username}</td>
+                        <td>${admin.email}</td>
+                        <td>${new Date(admin.joinDate).toLocaleDateString()}</td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="btn-sm btn-warning" onclick="window.app.demoteAdmin('${admin.username}')" title="Demote from Admin">
+                                    <i class="fas fa-user-minus"></i> Demote
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } else {
+                tbody.innerHTML = '<tr><td colspan="5" class="error">Failed to load admins</td></tr>';
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching admins:', error);
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="5" class="error">Error loading admins</td></tr>';
+            }
+        });
+    }
+
+    loadLogs() {
+        const container = document.getElementById('systemLogs');
+        if (!container) return;
+
+        container.innerHTML = '<div class="loading">Loading system logs...</div>';
+
+        fetch('/api/admin/logs', {
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.logs) {
+                if (data.logs.length === 0) {
+                    container.innerHTML = '<div class="empty">No system logs available</div>';
+                    return;
+                }
+
+                container.innerHTML = '';
+                data.logs.slice(-50).reverse().forEach(log => {
+                    const logItem = document.createElement('div');
+                    logItem.className = 'log-item';
+                    logItem.innerHTML = `
+                        <strong>${log.action}</strong>: ${log.details}
+                        <br>
+                        <small>${new Date(log.timestamp).toLocaleString()}</small>
+                    `;
+                    container.appendChild(logItem);
+                });
+            } else {
+                container.innerHTML = '<div class="error">Failed to load system logs</div>';
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching logs:', error);
+            container.innerHTML = '<div class="error">Error loading system logs</div>';
+        });
+    }
+
+    createAdmin() {
+        const username = document.getElementById('newAdminUsername').value;
+        const email = document.getElementById('newAdminEmail').value;
+        const password = document.getElementById('newAdminPassword').value;
+
+        if (!username || !email || !password) {
+            this.showAlert('Please fill in all fields', 'Validation Error', 'warning');
+            return;
+        }
+
+        fetch('/api/admin/create', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username, email, password })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`Admin ${username} created successfully!`, 'Success', 'success');
+                const modal = document.getElementById('createAdminModal');
+                if (modal) modal.style.display = 'none';
+                document.getElementById('createAdminForm').reset();
+                this.loadAdmins();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to create admin', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error creating admin:', error);
+            this.showAlert('Error creating admin. Please try again.', 'Error', 'error');
+        });
+    }
+
+    toggleUserStatus(userId, currentStatus) {
+        if (!confirm(`Are you sure you want to ${currentStatus ? 'deactivate' : 'activate'} this user?`)) {
+            return;
+        }
+
+        fetch(`/api/admin/users/${userId}/status`, {
+            method: 'PUT',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ isActive: !currentStatus })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`User ${currentStatus ? 'deactivated' : 'activated'} successfully`, 'Success', 'success');
+                this.loadUsers();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to update user status', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error updating user status:', error);
+            this.showAlert('Error updating user status. Please try again.', 'Error', 'error');
+        });
+    }
+
+    deleteUser(userId, username) {
+        if (!confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) {
+            return;
+        }
+
+        fetch(`/api/admin/users/${userId}`, {
+            method: 'DELETE',
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`User ${username} deleted successfully`, 'Success', 'success');
+                this.loadUsers();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to delete user', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error deleting user:', error);
+            this.showAlert('Error deleting user. Please try again.', 'Error', 'error');
+        });
+    }
+
+    promoteUser(username) {
+        if (!confirm(`Are you sure you want to promote "${username}" to admin?`)) {
+            return;
+        }
+
+        fetch(`/api/admin/promote/${username}`, {
+            method: 'POST',
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`User ${username} promoted to admin successfully`, 'Success', 'success');
+                this.loadUsers();
+                this.loadAdmins();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to promote user', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error promoting user:', error);
+            this.showAlert('Error promoting user. Please try again.', 'Error', 'error');
+        });
+    }
+
+    demoteAdmin(username) {
+        if (!confirm(`Are you sure you want to demote "${username}" from admin?`)) {
+            return;
+        }
+
+        fetch(`/api/admin/demote/${username}`, {
+            method: 'POST',
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`User ${username} demoted from admin successfully`, 'Success', 'success');
+                this.loadUsers();
+                this.loadAdmins();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to demote admin', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error demoting admin:', error);
+            this.showAlert('Error demoting admin. Please try again.', 'Error', 'error');
+        });
+    }
+
+    updateAdminPanel() {
+        // Legacy method for backward compatibility
+        this.loadAdminPanel();
     }
 
     // Game Search Methods
@@ -3090,6 +3555,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM Content Loaded - Initializing GameVaultApp');
     app = new GameVaultApp();
     window.app = app; // Make app available globally
+    window.gameVaultApp = app; // Also make available as gameVaultApp for backward compatibility
     
     // Initialize Steam integration
     steamIntegration = new SteamIntegration();
