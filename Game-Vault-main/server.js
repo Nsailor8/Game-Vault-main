@@ -2342,13 +2342,15 @@ app.get('/api/games/suggestions', async (req, res) => {
 // Trending games endpoint
 app.get('/api/games/trending', async (req, res) => {
     try {
-        const result = await gameSearchService.getTrendingGames();
+        const limit = parseInt(req.query.limit) || 8;
+        const result = await gameSearchService.getTrendingGames(limit);
         res.json(result);
     } catch (error) {
         console.error('Error getting trending games:', error);
         res.status(500).json({ 
             success: false, 
-            error: 'Failed to fetch trending games' 
+            error: 'Failed to fetch trending games',
+            games: []
         });
     }
 });
@@ -2356,13 +2358,15 @@ app.get('/api/games/trending', async (req, res) => {
 // Recent games endpoint
 app.get('/api/games/recent', async (req, res) => {
     try {
-        const result = await gameSearchService.getRecentGames();
+        const limit = parseInt(req.query.limit) || 8;
+        const result = await gameSearchService.getRecentGames(limit);
         res.json(result);
     } catch (error) {
         console.error('Error getting recent games:', error);
         res.status(500).json({ 
             success: false, 
-            error: 'Failed to fetch recent games' 
+            error: 'Failed to fetch recent games',
+            games: []
         });
     }
 });
