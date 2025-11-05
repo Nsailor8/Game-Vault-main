@@ -366,9 +366,21 @@ class GameVaultApp {
     handleLogin() {
         const username = document.getElementById('loginUsername').value;
         const password = document.getElementById('loginPassword').value;
+        const loginError = document.getElementById('loginError');
+
+        // Hide previous errors
+        if (loginError) {
+            loginError.style.display = 'none';
+            loginError.textContent = '';
+        }
 
         if (!username || !password) {
-            this.showAlert('Please fill in all fields', 'Login Required', 'warning');
+            if (loginError) {
+                loginError.textContent = 'Please fill in all fields';
+                loginError.style.display = 'block';
+            } else {
+                this.showAlert('Please fill in all fields', 'Login Required', 'warning');
+            }
             return;
         }
 
@@ -387,17 +399,34 @@ class GameVaultApp {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
+                // Hide error on success
+                if (loginError) {
+                    loginError.style.display = 'none';
+                }
                 this.currentUser = data.user;
                 this.loginScreen.hide();
                 this.updateUI();
                 console.log('User logged in successfully:', data.user.username);
             } else {
-                this.showAlert(data.error || 'Invalid credentials', 'Login Failed', 'error');
+                // Show error inline
+                const errorMessage = data.error || 'Invalid credentials';
+                if (loginError) {
+                    loginError.textContent = errorMessage;
+                    loginError.style.display = 'block';
+                } else {
+                    this.showAlert(errorMessage, 'Login Failed', 'error');
+                }
             }
         })
         .catch(error => {
             console.error('Error logging in:', error);
-            this.showAlert('Error logging in. Please try again.', 'Error', 'error');
+            const errorMessage = 'Error logging in. Please try again.';
+            if (loginError) {
+                loginError.textContent = errorMessage;
+                loginError.style.display = 'block';
+            } else {
+                this.showAlert(errorMessage, 'Error', 'error');
+            }
         });
     }
 
@@ -408,9 +437,22 @@ class GameVaultApp {
         const playStyle = document.getElementById('playStyle').value;
         const favoriteGenres = document.getElementById('favoriteGenres').value.split(',').map(g => g.trim()).filter(g => g);
         const preferredPlatforms = document.getElementById('preferredPlatforms').value.split(',').map(p => p.trim()).filter(p => p);
+        const signupError = document.getElementById('signupError');
+
+        // Hide previous errors
+        if (signupError) {
+            signupError.style.display = 'none';
+            signupError.textContent = '';
+        }
 
         if (!username || !email || !password) {
-            this.showAlert('Please fill in all required fields', 'Signup Required', 'warning');
+            const errorMessage = 'Please fill in all required fields';
+            if (signupError) {
+                signupError.textContent = errorMessage;
+                signupError.style.display = 'block';
+            } else {
+                this.showAlert(errorMessage, 'Signup Required', 'warning');
+            }
             return;
         }
 
@@ -438,17 +480,34 @@ class GameVaultApp {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
+                // Hide error on success
+                if (signupError) {
+                    signupError.style.display = 'none';
+                }
                 this.currentUser = data.user;
                 this.loginScreen.hide();
                 this.updateUI();
                 console.log('User created successfully on server:', data.user.username);
             } else {
-                this.showAlert(data.error || 'Failed to create account', 'Signup Failed', 'error');
+                // Show error inline
+                const errorMessage = data.error || 'Failed to create account';
+                if (signupError) {
+                    signupError.textContent = errorMessage;
+                    signupError.style.display = 'block';
+                } else {
+                    this.showAlert(errorMessage, 'Signup Failed', 'error');
+                }
             }
         })
         .catch(error => {
             console.error('Error creating account:', error);
-            this.showAlert('Error creating account. Please try again.', 'Error', 'error');
+            const errorMessage = 'Error creating account. Please try again.';
+            if (signupError) {
+                signupError.textContent = errorMessage;
+                signupError.style.display = 'block';
+            } else {
+                this.showAlert(errorMessage, 'Error', 'error');
+            }
         });
     }
 
@@ -585,6 +644,15 @@ class GameVaultApp {
         // Update UI but don't show logout button for guests
         this.updateUI();
         
+        // Explicitly ensure Sign In button is visible for guests
+        setTimeout(() => {
+            const signInBtnGuest = document.getElementById('signInBtnGuest');
+            if (signInBtnGuest && this.currentUser && this.currentUser.isGuest) {
+                signInBtnGuest.style.display = 'inline-block';
+                signInBtnGuest.style.visibility = 'visible';
+            }
+        }, 100);
+        
         console.log('Guest user logged in successfully');
     }
 
@@ -626,15 +694,22 @@ class GameVaultApp {
         // Show appropriate buttons based on user type
         const logoutBtn = document.getElementById('logoutBtn');
         const loginBtnProfile = document.getElementById('loginBtnProfile');
+        const adminMenuLink = document.getElementById('adminMenuLink');
         
         if (this.currentUser.isGuest) {
             // Guest user - show login button, hide logout
             if (logoutBtn) logoutBtn.style.display = 'none';
             if (loginBtnProfile) loginBtnProfile.style.display = 'inline-block';
+            if (adminMenuLink) adminMenuLink.style.display = 'none';
         } else {
             // Registered user - show logout button, hide login
             if (logoutBtn) logoutBtn.style.display = 'inline-block';
             if (loginBtnProfile) loginBtnProfile.style.display = 'none';
+            
+            // Show admin menu link if user is admin
+            if (adminMenuLink) {
+                adminMenuLink.style.display = (this.currentUser.isAdmin || this.currentUser.is_admin) ? 'flex' : 'none';
+            }
         }
 
         // Update profile section
@@ -739,6 +814,13 @@ class GameVaultApp {
         if (userSection) {
             userSection.style.display = 'none';
         }
+        
+        // Show nav buttons when user logs out
+        const nav = document.querySelector('.nav');
+        if (nav) {
+            nav.classList.remove('user-hidden');
+            nav.style.display = 'flex'; // Restore display
+        }
     }
 
     hideSignInButton() {
@@ -758,6 +840,8 @@ class GameVaultApp {
         const authSection = document.getElementById('authSection');
         const userSection = document.getElementById('userSection');
         const userDisplayName = document.getElementById('userDisplayName');
+        const signInBtnGuest = document.getElementById('signInBtnGuest');
+        const nav = document.querySelector('.nav');
         
         if (authSection) {
             authSection.style.display = 'none';
@@ -767,9 +851,61 @@ class GameVaultApp {
             userSection.style.display = 'block';
         }
         
+        // Show Sign In button for guests, hide for registered users
+        if (signInBtnGuest) {
+            // Check if user is a guest - check both isGuest flag and username
+            const isGuest = this.currentUser && (this.currentUser.isGuest === true || this.currentUser.username === 'Guest');
+            if (isGuest) {
+                signInBtnGuest.style.display = 'inline-block';
+                signInBtnGuest.style.visibility = 'visible';
+                // Add click handler to open login modal (same as regular signInBtn)
+                signInBtnGuest.onclick = () => {
+                    if (this.loginScreen) {
+                        this.loginScreen.show();
+                        this.loginScreen.resetToInitialState();
+                    } else if (this.showLoginModal) {
+                        this.showLoginModal();
+                    } else {
+                        const loginModal = document.getElementById('loginModal');
+                        if (loginModal) {
+                            loginModal.style.display = 'block';
+                        }
+                    }
+                };
+            } else {
+                signInBtnGuest.style.display = 'none';
+            }
+        } else {
+            console.warn('signInBtnGuest element not found in header');
+        }
+        
+        // Hide nav buttons when user is logged in (they're in the dropdown)
+        // Do this immediately to prevent flicker
+        if (nav) {
+            nav.classList.add('user-hidden');
+            nav.style.display = 'none'; // Also set inline style for immediate effect
+        }
+        
         if (userDisplayName && this.currentUser) {
             userDisplayName.textContent = this.currentUser.username;
         }
+        
+        // Ensure nav stays hidden and button visibility after a short delay
+        setTimeout(() => {
+            if (nav && this.currentUser) {
+                nav.classList.add('user-hidden');
+                nav.style.display = 'none';
+            }
+            if (signInBtnGuest && this.currentUser) {
+                const isGuest = this.currentUser && (this.currentUser.isGuest === true || this.currentUser.username === 'Guest');
+                if (isGuest) {
+                    signInBtnGuest.style.display = 'inline-block';
+                    signInBtnGuest.style.visibility = 'visible';
+                } else {
+                    signInBtnGuest.style.display = 'none';
+                }
+            }
+        }, 100);
     }
 
     updateAchievements() {
@@ -846,18 +982,18 @@ async viewFriendProfile(friend) {
 }
 
 
-    updateWishlists() {
-        const container = document.getElementById('wishlistContainer');
+    updateLibraries() {
+        const container = document.getElementById('libraryContainer');
         if (!container) {
             return; // Element not found, skip update
         }
         
         if (!this.currentUser) {
-            container.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>Login Required</h3><p>Please log in to view your wishlist!</p></div>';
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-book"></i><h3>Login Required</h3><p>Please log in to view your libraries!</p></div>';
             return;
         }
 
-        // Call the server API to get wishlists
+        // Call the server API to get libraries
         fetch(`/api/wishlists/${this.currentUser.username}`, {
             credentials: 'include',
             headers: {
@@ -866,45 +1002,59 @@ async viewFriendProfile(friend) {
         })
         .then(response => response.json())
         .then(data => {
-            const container = document.getElementById('wishlistContainer');
+            const container = document.getElementById('libraryContainer');
             if (!container) {
                 return; // Element not found, skip update
             }
             
             if (data.success && data.wishlists) {
-                const wishlists = data.wishlists || [];
+                const libraries = data.wishlists || [];
                 
                 container.innerHTML = '';
 
-                if (wishlists.length === 0) {
-                    container.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>No Wishlists</h3><p>Create your first wishlist!</p></div>';
+                if (libraries.length === 0) {
+                    container.innerHTML = '<div class="empty-state"><i class="fas fa-book"></i><h3>No Libraries</h3><p>Create your first library!</p></div>';
                 } else {
-                    wishlists.forEach(wishlist => {
-                        const wishlistItem = document.createElement('div');
-                        wishlistItem.className = 'wishlist-item';
-                        wishlistItem.innerHTML = `
+                    libraries.forEach(library => {
+                        const libraryItem = document.createElement('div');
+                        libraryItem.className = 'library-item';
+                        const typeBadge = library.type === 'automatic' ? '<span class="badge badge-primary">Default</span>' :
+                                         library.type === 'wishlist' ? '<span class="badge badge-warning">Wishlist</span>' : '';
+                        const canEdit = library.type === 'custom';
+                        libraryItem.innerHTML = `
                             <div>
-                                <strong>${wishlist.name}</strong>
+                                <strong>${library.name}</strong> ${typeBadge}
                                 <br>
-                                <small>${wishlist.gameCount || 0} games • Created: ${new Date(wishlist.createdDate).toLocaleDateString()}</small>
-                                ${wishlist.description ? `<br><small style="color: #888;">${wishlist.description}</small>` : ''}
+                                <small>${library.gameCount || 0} games • Created: ${new Date(library.createdDate).toLocaleDateString()}</small>
+                                ${library.description ? `<br><small style="color: #888;">${library.description}</small>` : ''}
                             </div>
-                            <button class="btn btn-primary" onclick="app.selectWishlist(${wishlist.id})">View</button>
+                            <div class="library-actions">
+                                <button class="btn btn-primary" onclick="app.selectLibrary(${library.id})">View</button>
+                                ${canEdit ? `
+                                    <button class="btn btn-secondary btn-sm" onclick="app.editLibrary(${library.id}, '${library.name.replace(/'/g, "\\'")}', '${(library.description || '').replace(/'/g, "\\'")}')">Edit</button>
+                                    <button class="btn btn-danger btn-sm" onclick="app.deleteLibrary(${library.id})">Delete</button>
+                                ` : ''}
+                            </div>
                         `;
-                        container.appendChild(wishlistItem);
+                        container.appendChild(libraryItem);
                     });
                 }
             } else {
-                container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load wishlists. Please try again.</p></div>';
+                container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load libraries. Please try again.</p></div>';
             }
         })
         .catch(error => {
-            console.error('Error fetching wishlists:', error);
-            const container = document.getElementById('wishlistContainer');
+            console.error('Error fetching libraries:', error);
+            const container = document.getElementById('libraryContainer');
             if (container) {
-                container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load wishlists. Please try again.</p></div>';
+                container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load libraries. Please try again.</p></div>';
             }
         });
+    }
+
+    // Alias for backward compatibility
+    updateWishlists() {
+        this.updateLibraries();
     }
 
     updateReviews() {
@@ -1116,18 +1266,15 @@ async viewFriendProfile(friend) {
         }
     }
 
-    async createWishlist() {
-        const name = document.getElementById('wishlistName').value;
-        const description = document.getElementById('wishlistDescription').value;
-
+    async createLibrary(name, description) {
         if (!name) {
-            this.showAlert('Please enter a wishlist name', 'Wishlist Name Required', 'warning');
-            return;
+            this.showAlert('Please enter a library name', 'Library Name Required', 'warning');
+            return false;
         }
 
         if (!this.currentUser) {
-            this.showAlert('Please log in to create a wishlist', 'Login Required', 'warning');
-            return;
+            this.showAlert('Please log in to create a library', 'Login Required', 'warning');
+            return false;
         }
 
         try {
@@ -1148,29 +1295,74 @@ async viewFriendProfile(friend) {
             const data = await response.json();
 
             if (response.ok && data.success) {
-                this.closeModal(document.getElementById('createWishlistModal'));
-                // Clear form
-                document.getElementById('wishlistName').value = '';
-                document.getElementById('wishlistDescription').value = '';
-                this.updateWishlists();
-                this.showNotification('Wishlist created successfully!', 'success');
+                this.updateLibraries();
+                this.showNotification('Library created successfully!', 'success');
+                return true;
             } else {
-                this.showAlert(data.error || 'Failed to create wishlist', 'Error', 'error');
+                this.showAlert(data.error || 'Failed to create library', 'Error', 'error');
+                return false;
             }
         } catch (error) {
-            console.error('Error creating wishlist:', error);
-            this.showAlert('Error creating wishlist. Please try again.', 'Error', 'error');
+            console.error('Error creating library:', error);
+            this.showAlert('Error creating library. Please try again.', 'Error', 'error');
+            return false;
         }
     }
 
-    async selectWishlist(wishlistId) {
+    async updateLibrary(libraryId, name, description) {
+        if (!name) {
+            this.showAlert('Please enter a library name', 'Library Name Required', 'warning');
+            return false;
+        }
+
         if (!this.currentUser) {
-            this.showAlert('Please log in to view wishlists', 'Login Required', 'warning');
+            this.showAlert('Please log in to update a library', 'Login Required', 'warning');
+            return false;
+        }
+
+        try {
+            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${libraryId}`, {
+                method: 'PUT',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: name,
+                    description: description || ''
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                this.updateLibraries();
+                this.showNotification('Library updated successfully!', 'success');
+                return true;
+            } else {
+                this.showAlert(data.error || 'Failed to update library', 'Error', 'error');
+                return false;
+            }
+        } catch (error) {
+            console.error('Error updating library:', error);
+            this.showAlert('Error updating library. Please try again.', 'Error', 'error');
+            return false;
+        }
+    }
+
+    async deleteLibrary(libraryId) {
+        if (!this.currentUser) {
+            this.showAlert('Please log in to delete a library', 'Login Required', 'warning');
+            return;
+        }
+
+        if (!confirm('Are you sure you want to delete this library? All games in it will be removed.')) {
             return;
         }
 
         try {
-            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${wishlistId}`, {
+            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${libraryId}`, {
+                method: 'DELETE',
                 credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json'
@@ -1180,28 +1372,75 @@ async viewFriendProfile(friend) {
             const data = await response.json();
 
             if (response.ok && data.success) {
-                const container = document.getElementById('wishlistGames');
-                const title = document.getElementById('selectedWishlistTitle');
-                const selectedSection = document.getElementById('selectedWishlistSection');
-                const wishlistContainer = document.getElementById('wishlistContainer');
+                this.updateLibraries();
+                this.showNotification('Library deleted successfully!', 'success');
+            } else {
+                this.showAlert(data.error || 'Failed to delete library', 'Error', 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting library:', error);
+            this.showAlert('Error deleting library. Please try again.', 'Error', 'error');
+        }
+    }
+
+    editLibrary(libraryId, name, description) {
+        if (typeof openEditLibraryModal === 'function') {
+            openEditLibraryModal(libraryId, name, description);
+        } else {
+            // Fallback if modal functions aren't available
+            const newName = prompt('Enter new library name:', name);
+            if (newName && newName !== name) {
+                this.updateLibrary(libraryId, newName, description);
+            }
+        }
+    }
+
+    // Backward compatibility
+    async createWishlist() {
+        const name = document.getElementById('wishlistName')?.value || document.getElementById('libraryName')?.value;
+        const description = document.getElementById('wishlistDescription')?.value || document.getElementById('libraryDescription')?.value;
+        return await this.createLibrary(name, description);
+    }
+
+    async selectLibrary(libraryId) {
+        if (!this.currentUser) {
+            this.showAlert('Please log in to view libraries', 'Login Required', 'warning');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${libraryId}`, {
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                const container = document.getElementById('libraryGames');
+                const title = document.getElementById('selectedLibraryTitle');
+                const selectedSection = document.getElementById('selectedLibrarySection');
+                const libraryContainer = document.getElementById('libraryContainer');
                 
-                // Show selected wishlist section, hide wishlists list
+                // Show selected library section, hide libraries list
                 if (selectedSection) {
                     selectedSection.style.display = 'block';
                 }
-                if (wishlistContainer && wishlistContainer.parentElement) {
-                    wishlistContainer.parentElement.style.display = 'none';
+                if (libraryContainer && libraryContainer.parentElement) {
+                    libraryContainer.parentElement.style.display = 'none';
                 }
                 
                 if (title) {
-                    title.textContent = data.wishlist.name;
+                    title.textContent = `${data.wishlist.name} Games`;
                 }
 
                 if (container) {
                     container.innerHTML = '';
 
                     if (!data.games || data.games.length === 0) {
-                        container.innerHTML = '<div class="empty-state"><i class="fas fa-gamepad"></i><h3>No Games</h3><p>Add some games to this wishlist!</p></div>';
+                        container.innerHTML = '<div class="empty-state"><i class="fas fa-gamepad"></i><h3>No Games</h3><p>Add some games to this library!</p></div>';
                         return;
                     }
 
@@ -1214,33 +1453,45 @@ async viewFriendProfile(friend) {
                                 <br>
                                 <small>${game.platform || 'PC'} • Added: ${new Date(game.addedDate).toLocaleDateString()}</small>
                             </div>
-                            <button class="btn btn-danger" onclick="app.removeFromWishlist(${wishlistId}, ${game.gameId})">Remove</button>
+                            <button class="btn btn-danger" onclick="app.removeFromLibrary(${libraryId}, ${game.gameId})">Remove</button>
                         `;
                         container.appendChild(gameItem);
                     });
                 }
             } else {
-                this.showAlert(data.error || 'Failed to load wishlist', 'Error', 'error');
+                this.showAlert(data.error || 'Failed to load library', 'Error', 'error');
             }
         } catch (error) {
-            console.error('Error loading wishlist:', error);
-            this.showAlert('Error loading wishlist. Please try again.', 'Error', 'error');
+            console.error('Error loading library:', error);
+            this.showAlert('Error loading library. Please try again.', 'Error', 'error');
         }
     }
 
-    async removeFromWishlist(wishlistId, gameId) {
+    backToLibraries() {
+        const selectedSection = document.getElementById('selectedLibrarySection');
+        const libraryContainer = document.getElementById('libraryContainer');
+        
+        if (selectedSection) {
+            selectedSection.style.display = 'none';
+        }
+        if (libraryContainer && libraryContainer.parentElement) {
+            libraryContainer.parentElement.style.display = 'block';
+        }
+        this.updateLibraries();
+    }
+
+    async removeFromLibrary(libraryId, gameId) {
         if (!this.currentUser) {
-            this.showAlert('Please log in to manage wishlists', 'Login Required', 'warning');
+            this.showAlert('Please log in to manage libraries', 'Login Required', 'warning');
             return;
         }
 
-        // Use a custom confirm dialog - for now we'll use browser confirm but could enhance this later
-        if (!confirm('Are you sure you want to remove this game from the wishlist?')) {
+        if (!confirm('Are you sure you want to remove this game from the library?')) {
             return;
         }
 
         try {
-            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${wishlistId}/games/${gameId}`, {
+            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${libraryId}/games/${gameId}`, {
                 method: 'DELETE',
                 credentials: 'include',
                 headers: {
@@ -1251,16 +1502,27 @@ async viewFriendProfile(friend) {
             const data = await response.json();
 
             if (response.ok && data.success) {
-                this.showNotification(data.message || 'Game removed from wishlist', 'success');
-                this.selectWishlist(wishlistId); // Refresh the wishlist view
-                this.updateWishlists(); // Update the wishlists list
+                this.showNotification(data.message || 'Game removed from library', 'success');
+                this.selectLibrary(libraryId); // Refresh the library view
+                this.updateLibraries(); // Update the libraries list
             } else {
-                this.showAlert(data.error || 'Failed to remove game from wishlist', 'Error', 'error');
+                this.showAlert(data.error || 'Failed to remove game from library', 'Error', 'error');
             }
         } catch (error) {
-            console.error('Error removing game from wishlist:', error);
-            this.showAlert('Error removing game from wishlist. Please try again.', 'Error', 'error');
+            console.error('Error removing game from library:', error);
+            this.showAlert('Error removing game from library. Please try again.', 'Error', 'error');
         }
+    }
+
+    // Backward compatibility
+    async selectWishlist(wishlistId) {
+        return await this.selectLibrary(wishlistId);
+    }
+
+
+    // Backward compatibility
+    async removeFromWishlist(wishlistId, gameId) {
+        return await this.removeFromLibrary(wishlistId, gameId);
     }
     
     // Helper function to go back to wishlists view
@@ -1497,50 +1759,456 @@ async viewFriendProfile(friend) {
         });
     }
 
-    updateAdminPanel() {
-        // Call the server API to get admin statistics
-        fetch('/api/admin/stats')
+    // Admin Panel Methods
+    checkAdminStatus() {
+        fetch('/api/admin/check', {
+            credentials: 'include'
+        })
         .then(response => response.json())
         .then(data => {
-            const stats = data.userStats;
-            const container = document.getElementById('adminStats');
-            
-            container.innerHTML = `
-                <div class="stat-card">
-                    <i class="fas fa-users"></i>
-                    <h3>${stats.totalUsers || 0}</h3>
-                    <p>Total Users</p>
-                </div>
-                <div class="stat-card">
-                    <i class="fas fa-user-check"></i>
-                    <h3>${stats.activeUsers || 0}</h3>
-                    <p>Active Users</p>
-                </div>
-                <div class="stat-card">
-                    <i class="fas fa-user-plus"></i>
-                    <h3>${stats.newUsersThisMonth || 0}</h3>
-                    <p>New This Month</p>
-                </div>
-            `;
+            const adminStatus = document.getElementById('adminStatus');
+            if (data.isAdmin) {
+                if (adminStatus) {
+                    adminStatus.innerHTML = '<span class="badge badge-success">Admin</span>';
+                }
+                this.loadAdminPanel();
+            } else {
+                if (adminStatus) {
+                    adminStatus.innerHTML = '<span class="badge badge-warning">Not Admin</span>';
+                }
+                this.showAlert('You must be an admin to access this panel', 'Access Denied', 'warning');
+            }
+        })
+        .catch(error => {
+            console.error('Error checking admin status:', error);
+        });
+    }
 
-            const logs = data.systemLogs || [];
-            const logsContainer = document.getElementById('systemLogs');
-            
-            logsContainer.innerHTML = '';
-            logs.slice(-10).reverse().forEach(log => {
-                const logItem = document.createElement('div');
-                logItem.className = 'log-item';
-                logItem.innerHTML = `
-                    <strong>${log.action}</strong>: ${log.details}
-                    <br>
-                    <small>${new Date(log.timestamp).toLocaleString()}</small>
-                `;
-                logsContainer.appendChild(logItem);
+    setupAdminTabs() {
+        const tabs = document.querySelectorAll('.admin-tab');
+        const tabContents = document.querySelectorAll('.admin-tab-content');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const targetTab = tab.getAttribute('data-tab');
+                
+                // Remove active class from all tabs and contents
+                tabs.forEach(t => t.classList.remove('active'));
+                tabContents.forEach(tc => tc.classList.remove('active'));
+                
+                // Add active class to clicked tab and corresponding content
+                tab.classList.add('active');
+                const targetContent = document.getElementById(targetTab + 'Tab');
+                if (targetContent) {
+                    targetContent.classList.add('active');
+                }
+
+                // Load data for the active tab
+                if (targetTab === 'users') {
+                    this.loadUsers();
+                } else if (targetTab === 'admins') {
+                    this.loadAdmins();
+                } else if (targetTab === 'logs') {
+                    this.loadLogs();
+                }
             });
+        });
+
+        // Setup admin panel buttons
+        const refreshUsersBtn = document.getElementById('refreshUsersBtn');
+        if (refreshUsersBtn) {
+            refreshUsersBtn.addEventListener('click', () => this.loadUsers());
+        }
+
+        const refreshLogsBtn = document.getElementById('refreshLogsBtn');
+        if (refreshLogsBtn) {
+            refreshLogsBtn.addEventListener('click', () => this.loadLogs());
+        }
+
+        const createAdminBtn = document.getElementById('createAdminBtn');
+        if (createAdminBtn) {
+            createAdminBtn.addEventListener('click', () => {
+                const modal = document.getElementById('createAdminModal');
+                if (modal) modal.style.display = 'block';
+            });
+        }
+
+        // Setup create admin form
+        const createAdminForm = document.getElementById('createAdminForm');
+        if (createAdminForm) {
+            createAdminForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.createAdmin();
+            });
+        }
+
+        const cancelCreateAdmin = document.getElementById('cancelCreateAdmin');
+        if (cancelCreateAdmin) {
+            cancelCreateAdmin.addEventListener('click', () => {
+                const modal = document.getElementById('createAdminModal');
+                if (modal) modal.style.display = 'none';
+                createAdminForm.reset();
+            });
+        }
+
+        // Close modal on X click
+        const createAdminModal = document.getElementById('createAdminModal');
+        if (createAdminModal) {
+            const closeBtn = createAdminModal.querySelector('.close');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', () => {
+                    createAdminModal.style.display = 'none';
+                    createAdminForm.reset();
+                });
+            }
+        }
+    }
+
+    loadAdminPanel() {
+        this.loadStats();
+        this.loadUsers();
+        this.loadAdmins();
+        this.loadLogs();
+    }
+
+    loadStats() {
+        fetch('/api/admin/stats', {
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.userStats) {
+                const stats = data.userStats;
+                const container = document.getElementById('adminStats');
+                if (container) {
+                    container.innerHTML = `
+                        <div class="stat-card">
+                            <i class="fas fa-users"></i>
+                            <h3>${stats.totalUsers || 0}</h3>
+                            <p>Total Users</p>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fas fa-user-check"></i>
+                            <h3>${stats.activeUsers || 0}</h3>
+                            <p>Active Users</p>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fas fa-user-plus"></i>
+                            <h3>${stats.newUsersThisMonth || 0}</h3>
+                            <p>New This Month</p>
+                        </div>
+                        <div class="stat-card">
+                            <i class="fas fa-shield-alt"></i>
+                            <h3>${stats.totalAdmins || 0}</h3>
+                            <p>Admins</p>
+                        </div>
+                    `;
+                }
+            }
         })
         .catch(error => {
             console.error('Error fetching admin stats:', error);
         });
+    }
+
+    loadUsers() {
+        const tbody = document.getElementById('usersTableBody');
+        if (!tbody) return;
+
+        tbody.innerHTML = '<tr><td colspan="7" class="loading">Loading users...</td></tr>';
+
+        fetch('/api/admin/users', {
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.users) {
+                if (data.users.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="empty">No users found</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = '';
+                data.users.forEach(user => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${user.id}</td>
+                        <td>${user.username}</td>
+                        <td>${user.email}</td>
+                        <td>${new Date(user.joinDate).toLocaleDateString()}</td>
+                        <td>
+                            <span class="badge ${user.isActive ? 'badge-success' : 'badge-danger'}">
+                                ${user.isActive ? 'Active' : 'Inactive'}
+                            </span>
+                        </td>
+                        <td>
+                            ${user.isAdmin ? '<span class="badge badge-info">Admin</span>' : '<span class="badge badge-secondary">User</span>'}
+                        </td>
+                        <td>
+                            <div class="action-buttons">
+                                ${!user.isAdmin ? `
+                                    <button class="btn-sm btn-primary" onclick="window.app.toggleUserStatus(${user.id}, ${user.isActive})" title="${user.isActive ? 'Deactivate' : 'Activate'}">
+                                        <i class="fas fa-${user.isActive ? 'ban' : 'check'}"></i>
+                                    </button>
+                                    <button class="btn-sm ${user.isAdmin ? 'btn-info' : 'btn-success'}" onclick="window.app.promoteUser('${user.username}')" title="Promote to Admin">
+                                        <i class="fas fa-user-shield"></i>
+                                    </button>
+                                    <button class="btn-sm btn-danger" onclick="window.app.deleteUser(${user.id}, '${user.username}')" title="Delete User">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                ` : `
+                                    <button class="btn-sm btn-warning" onclick="window.app.demoteAdmin('${user.username}')" title="Demote from Admin">
+                                        <i class="fas fa-user-minus"></i>
+                                    </button>
+                                `}
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } else {
+                tbody.innerHTML = '<tr><td colspan="7" class="error">Failed to load users</td></tr>';
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching users:', error);
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="7" class="error">Error loading users</td></tr>';
+            }
+        });
+    }
+
+    loadAdmins() {
+        const tbody = document.getElementById('adminsTableBody');
+        if (!tbody) return;
+
+        tbody.innerHTML = '<tr><td colspan="5" class="loading">Loading admins...</td></tr>';
+
+        fetch('/api/admin/list', {
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.admins) {
+                if (data.admins.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="empty">No admins found</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = '';
+                data.admins.forEach(admin => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${admin.id}</td>
+                        <td>${admin.username}</td>
+                        <td>${admin.email}</td>
+                        <td>${new Date(admin.joinDate).toLocaleDateString()}</td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="btn-sm btn-warning" onclick="window.app.demoteAdmin('${admin.username}')" title="Demote from Admin">
+                                    <i class="fas fa-user-minus"></i> Demote
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } else {
+                tbody.innerHTML = '<tr><td colspan="5" class="error">Failed to load admins</td></tr>';
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching admins:', error);
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="5" class="error">Error loading admins</td></tr>';
+            }
+        });
+    }
+
+    loadLogs() {
+        const container = document.getElementById('systemLogs');
+        if (!container) return;
+
+        container.innerHTML = '<div class="loading">Loading system logs...</div>';
+
+        fetch('/api/admin/logs', {
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.logs) {
+                if (data.logs.length === 0) {
+                    container.innerHTML = '<div class="empty">No system logs available</div>';
+                    return;
+                }
+
+                container.innerHTML = '';
+                data.logs.slice(-50).reverse().forEach(log => {
+                    const logItem = document.createElement('div');
+                    logItem.className = 'log-item';
+                    logItem.innerHTML = `
+                        <strong>${log.action}</strong>: ${log.details}
+                        <br>
+                        <small>${new Date(log.timestamp).toLocaleString()}</small>
+                    `;
+                    container.appendChild(logItem);
+                });
+            } else {
+                container.innerHTML = '<div class="error">Failed to load system logs</div>';
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching logs:', error);
+            container.innerHTML = '<div class="error">Error loading system logs</div>';
+        });
+    }
+
+    createAdmin() {
+        const username = document.getElementById('newAdminUsername').value;
+        const email = document.getElementById('newAdminEmail').value;
+        const password = document.getElementById('newAdminPassword').value;
+
+        if (!username || !email || !password) {
+            this.showAlert('Please fill in all fields', 'Validation Error', 'warning');
+            return;
+        }
+
+        fetch('/api/admin/create', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username, email, password })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`Admin ${username} created successfully!`, 'Success', 'success');
+                const modal = document.getElementById('createAdminModal');
+                if (modal) modal.style.display = 'none';
+                document.getElementById('createAdminForm').reset();
+                this.loadAdmins();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to create admin', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error creating admin:', error);
+            this.showAlert('Error creating admin. Please try again.', 'Error', 'error');
+        });
+    }
+
+    toggleUserStatus(userId, currentStatus) {
+        if (!confirm(`Are you sure you want to ${currentStatus ? 'deactivate' : 'activate'} this user?`)) {
+            return;
+        }
+
+        fetch(`/api/admin/users/${userId}/status`, {
+            method: 'PUT',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ isActive: !currentStatus })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`User ${currentStatus ? 'deactivated' : 'activated'} successfully`, 'Success', 'success');
+                this.loadUsers();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to update user status', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error updating user status:', error);
+            this.showAlert('Error updating user status. Please try again.', 'Error', 'error');
+        });
+    }
+
+    deleteUser(userId, username) {
+        if (!confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) {
+            return;
+        }
+
+        fetch(`/api/admin/users/${userId}`, {
+            method: 'DELETE',
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`User ${username} deleted successfully`, 'Success', 'success');
+                this.loadUsers();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to delete user', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error deleting user:', error);
+            this.showAlert('Error deleting user. Please try again.', 'Error', 'error');
+        });
+    }
+
+    promoteUser(username) {
+        if (!confirm(`Are you sure you want to promote "${username}" to admin?`)) {
+            return;
+        }
+
+        fetch(`/api/admin/promote/${username}`, {
+            method: 'POST',
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`User ${username} promoted to admin successfully`, 'Success', 'success');
+                this.loadUsers();
+                this.loadAdmins();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to promote user', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error promoting user:', error);
+            this.showAlert('Error promoting user. Please try again.', 'Error', 'error');
+        });
+    }
+
+    demoteAdmin(username) {
+        if (!confirm(`Are you sure you want to demote "${username}" from admin?`)) {
+            return;
+        }
+
+        fetch(`/api/admin/demote/${username}`, {
+            method: 'POST',
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`User ${username} demoted from admin successfully`, 'Success', 'success');
+                this.loadUsers();
+                this.loadAdmins();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to demote admin', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error demoting admin:', error);
+            this.showAlert('Error demoting admin. Please try again.', 'Error', 'error');
+        });
+    }
+
+    updateAdminPanel() {
+        // Legacy method for backward compatibility
+        this.loadAdminPanel();
     }
 
     // Game Search Methods
@@ -1746,8 +2414,8 @@ async viewFriendProfile(friend) {
                             `<a href="steam://run/${game.id}" class="btn btn-steam">
                                 <i class="fab fa-steam"></i> Play on Steam
                             </a>` : 
-                            `<button class="btn btn-secondary" onclick="app.addToWishlist(${game.id}, '${game.name}')">
-                                <i class="fas fa-heart"></i> Add to Wishlist
+                            `                            <button class="btn btn-secondary" onclick="app.handleAddToLibrary(${game.id}, '${game.name}')">
+                                <i class="fas fa-book"></i> Add to Library
                             </button>`
                         }
                     </div>
@@ -1949,12 +2617,12 @@ async viewFriendProfile(friend) {
                 </div>
                 <div class="game-details-actions">
                     ${this.currentUser ? `
-                        <button class="btn btn-primary" onclick="app.handleAddToWishlist(${gameData.id}, '${gameData.name.replace(/'/g, "\\'")}')">
-                            <i class="fas fa-heart"></i> Add to Wishlist
+                        <button class="btn btn-primary" onclick="app.handleAddToLibrary(${gameData.id}, '${gameData.name.replace(/'/g, "\\'")}')">
+                            <i class="fas fa-book"></i> Add to Library
                         </button>
                     ` : `
                         <button class="btn btn-secondary" onclick="app.showLoginModal()">
-                            <i class="fas fa-sign-in-alt"></i> Login to Add to Wishlist
+                            <i class="fas fa-sign-in-alt"></i> Login to Add to Library
                         </button>
                     `}
                     ${gameData.website ? `
@@ -1980,9 +2648,9 @@ async viewFriendProfile(friend) {
         }
     }
 
-    async addToWishlist(gameId, gameName) {
+    async addToLibrary(gameId, gameName) {
         if (!this.currentUser) {
-            this.showAlert('Please log in to add games to your wishlist', 'Login Required', 'warning');
+            this.showAlert('Please log in to add games to your library', 'Login Required', 'warning');
             return;
         }
 
@@ -2004,19 +2672,19 @@ async viewFriendProfile(friend) {
             const result = await response.json();
 
             if (result.success) {
-                this.showAlert(`Added "${gameName}" to wishlist!`, 'Success', 'success');
+                this.showAlert(`Added "${gameName}" to library!`, 'Success', 'success');
             } else {
-                this.showAlert('Failed to add game to wishlist: ' + result.error, 'Error', 'error');
+                this.showAlert('Failed to add game to library: ' + result.error, 'Error', 'error');
             }
         } catch (error) {
-            console.error('Error adding game to wishlist:', error);
-            this.showAlert('Error adding game to wishlist', 'Error', 'error');
+            console.error('Error adding game to library:', error);
+            this.showAlert('Error adding game to library', 'Error', 'error');
         }
     }
 
-    async addToWishlistWithId(gameId, gameName, wishlistId) {
+    async addToLibraryWithId(gameId, gameName, libraryId) {
         if (!this.currentUser) {
-            this.showAlert('Please log in to add games to your wishlist', 'Login Required', 'warning');
+            this.showAlert('Please log in to add games to your library', 'Login Required', 'warning');
             return;
         }
 
@@ -2029,7 +2697,7 @@ async viewFriendProfile(friend) {
                 body: JSON.stringify({
                     gameId: gameId,
                     gameName: gameName,
-                    wishlistId: wishlistId,
+                    wishlistId: libraryId,
                     gameData: {
                         addedDate: new Date().toISOString()
                     }
@@ -2039,45 +2707,45 @@ async viewFriendProfile(friend) {
             const result = await response.json();
 
             if (result.success) {
-                this.showAlert(`Added "${gameName}" to wishlist!`, 'Success', 'success');
-                // Close wishlist selection modal if open
-                const selectionModal = document.getElementById('wishlistSelectionModal');
+                this.showAlert(`Added "${gameName}" to library!`, 'Success', 'success');
+                // Close library selection modal if open
+                const selectionModal = document.getElementById('librarySelectionModal');
                 if (selectionModal) {
                     selectionModal.style.display = 'none';
                 }
             } else {
-                this.showAlert('Failed to add game to wishlist: ' + result.error, 'Error', 'error');
+                this.showAlert('Failed to add game to library: ' + result.error, 'Error', 'error');
             }
         } catch (error) {
-            console.error('Error adding game to wishlist:', error);
-            this.showAlert('Error adding game to wishlist', 'Error', 'error');
+            console.error('Error adding game to library:', error);
+            this.showAlert('Error adding game to library', 'Error', 'error');
         }
     }
 
-    showWishlistSelectionModal(gameId, gameName, wishlists) {
-        // Create or update wishlist selection modal
-        let selectionModal = document.getElementById('wishlistSelectionModal');
+    showLibrarySelectionModal(gameId, gameName, libraries) {
+        // Create or update library selection modal
+        let selectionModal = document.getElementById('librarySelectionModal');
         if (!selectionModal) {
             selectionModal = document.createElement('div');
-            selectionModal.id = 'wishlistSelectionModal';
+            selectionModal.id = 'librarySelectionModal';
             selectionModal.className = 'modal';
             document.body.appendChild(selectionModal);
         }
 
         selectionModal.innerHTML = `
             <div class="modal-content wishlist-selection-content">
-                <span class="close" onclick="app.closeWishlistSelectionModal()">&times;</span>
-                <h2>Add "${gameName}" to Wishlist</h2>
-                <p class="wishlist-selection-subtitle">Choose which wishlist to add this game to:</p>
+                <span class="close" onclick="app.closeLibrarySelectionModal()">&times;</span>
+                <h2>Add "${gameName}" to Library</h2>
+                <p class="wishlist-selection-subtitle">Choose which library to add this game to:</p>
                 <div class="wishlist-list">
-                    ${wishlists.map(wishlist => `
-                        <div class="wishlist-item" onclick="app.addToWishlistWithId(${gameId}, '${gameName.replace(/'/g, "\\'")}', ${wishlist.id})">
+                    ${libraries.map(library => `
+                        <div class="wishlist-item" onclick="app.addToLibraryWithId(${gameId}, '${gameName.replace(/'/g, "\\'")}', ${library.id})">
                             <div class="wishlist-item-info">
-                                <h3>${wishlist.name}</h3>
-                                ${wishlist.description ? `<p>${wishlist.description}</p>` : ''}
+                                <h3>${library.name} ${library.type === 'automatic' ? '<span class="badge badge-primary">Default</span>' : library.type === 'wishlist' ? '<span class="badge badge-warning">Wishlist</span>' : ''}</h3>
+                                ${library.description ? `<p>${library.description}</p>` : ''}
                                 <span class="wishlist-item-meta">
-                                    ${wishlist.gameCount || 0} ${wishlist.gameCount === 1 ? 'game' : 'games'}
-                                    ${wishlist.isPublic ? '<i class="fas fa-globe" title="Public"></i>' : '<i class="fas fa-lock" title="Private"></i>'}
+                                    ${library.gameCount || 0} ${library.gameCount === 1 ? 'game' : 'games'}
+                                    ${library.isPublic ? '<i class="fas fa-globe" title="Public"></i>' : '<i class="fas fa-lock" title="Private"></i>'}
                                 </span>
                             </div>
                             <i class="fas fa-chevron-right"></i>
@@ -2085,7 +2753,7 @@ async viewFriendProfile(friend) {
                     `).join('')}
                 </div>
                 <div class="wishlist-selection-actions">
-                    <button class="btn btn-secondary" onclick="app.closeWishlistSelectionModal()">Cancel</button>
+                    <button class="btn btn-secondary" onclick="app.closeLibrarySelectionModal()">Cancel</button>
                 </div>
             </div>
         `;
@@ -2093,16 +2761,35 @@ async viewFriendProfile(friend) {
         selectionModal.style.display = 'block';
     }
 
-    closeWishlistSelectionModal() {
-        const selectionModal = document.getElementById('wishlistSelectionModal');
+    closeLibrarySelectionModal() {
+        const selectionModal = document.getElementById('librarySelectionModal');
         if (selectionModal) {
             selectionModal.style.display = 'none';
         }
     }
 
-    async handleAddToWishlist(gameId, gameName) {
+    // Backward compatibility
+    async addToWishlist(gameId, gameName) {
+        return await this.addToLibrary(gameId, gameName);
+    }
+
+    // Backward compatibility
+    async addToWishlistWithId(gameId, gameName, wishlistId) {
+        return await this.addToLibraryWithId(gameId, gameName, wishlistId);
+    }
+
+    // Backward compatibility
+    showWishlistSelectionModal(gameId, gameName, wishlists) {
+        return this.showLibrarySelectionModal(gameId, gameName, wishlists);
+    }
+
+    closeWishlistSelectionModal() {
+        return this.closeLibrarySelectionModal();
+    }
+
+    async handleAddToLibrary(gameId, gameName) {
         if (!this.currentUser) {
-            this.showAlert('Please log in to add games to your wishlist', 'Login Required', 'warning');
+            this.showAlert('Please log in to add games to your library', 'Login Required', 'warning');
             return;
         }
 
@@ -2113,23 +2800,28 @@ async viewFriendProfile(friend) {
             });
 
             const data = await response.json();
-            const wishlists = data.success ? (data.wishlists || []) : [];
+            const libraries = data.success ? (data.wishlists || []) : [];
 
-            if (wishlists.length === 0) {
-                // No wishlists, create default and add
-                await this.addToWishlist(gameId, gameName);
-            } else if (wishlists.length === 1) {
-                // Only one wishlist, add directly
-                await this.addToWishlistWithId(gameId, gameName, wishlists[0].id);
+            if (libraries.length === 0) {
+                // No libraries, create default and add
+                await this.addToLibrary(gameId, gameName);
+            } else if (libraries.length === 1) {
+                // Only one library, add directly
+                await this.addToLibraryWithId(gameId, gameName, libraries[0].id);
             } else {
-                // Multiple wishlists, show selection modal
-                this.showWishlistSelectionModal(gameId, gameName, wishlists);
+                // Multiple libraries, show selection modal
+                this.showLibrarySelectionModal(gameId, gameName, libraries);
             }
         } catch (error) {
-            console.error('Error handling add to wishlist:', error);
+            console.error('Error handling add to library:', error);
             // Fallback to default behavior
-            await this.addToWishlist(gameId, gameName);
+            await this.addToLibrary(gameId, gameName);
         }
+    }
+
+    // Backward compatibility
+    async handleAddToWishlist(gameId, gameName) {
+        return await this.handleAddToLibrary(gameId, gameName);
     }
 
     // Friend management methods
@@ -3095,6 +3787,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM Content Loaded - Initializing GameVaultApp');
     app = new GameVaultApp();
     window.app = app; // Make app available globally
+    window.gameVaultApp = app; // Also make available as gameVaultApp for backward compatibility
     
     // Initialize Steam integration
     steamIntegration = new SteamIntegration();
@@ -3146,3 +3839,4 @@ window.generateSteamWishlistLink = function(gameId) {
     }
     return `https://store.steampowered.com/app/${gameId}/`;
 };
+

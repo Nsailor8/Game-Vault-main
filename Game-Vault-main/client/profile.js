@@ -394,35 +394,103 @@ class ReviewManager {
 
 // Admin Manager Class
 class AdminManager {
-  constructor() {
-    this.admins = [];
-    this.systemLogs = [];
+  constructor(databaseManager = null) {
+    this.databaseManager = databaseManager || new RealDatabaseManager();
+    this.systemLogs = []; // Keep in-memory logs for now (could be moved to DB later)
   }
 
-  createAdmin(username, email, password) {
-    const admin = {
-      username: username,
-      email: email,
-      password: password,
-      permissions: ['user_management', 'system_logs'],
-      createdDate: new Date().toISOString(),
-      isActive: true
-    };
-    this.admins.push(admin);
-    this.logAction('admin_created', `Admin ${username} created`);
-    console.log(`Admin ${username} created successfully!`);
-    return admin;
+  async createAdmin(username, email, password) {
+    try {
+      const admin = await this.databaseManager.createAdmin(username, email, password);
+      this.logAction('admin_created', `Admin ${username} created`);
+      console.log(`Admin ${username} created successfully in database!`);
+      return {
+        username: admin.username,
+        email: admin.email,
+        permissions: ['user_management', 'system_logs'],
+        createdDate: admin.join_date,
+        isActive: admin.is_active
+      };
+    } catch (error) {
+      console.error('Error creating admin:', error);
+      throw error;
+    }
   }
 
-  adminLogin(username, password) {
-    const admin = this.admins.find(a => a.username === username && a.password === password && a.isActive);
-    if (admin) {
-      this.logAction('admin_login', `Admin ${username} logged in`);
-      console.log(`Admin ${username} logged in successfully!`);
-      return admin;
-    } else {
-      console.log('Invalid admin credentials.');
+  async adminLogin(username, password) {
+    try {
+      // Check if user exists and is admin in database
+      const user = await this.databaseManager.getUserByUsername(username);
+      if (!user || !user.is_admin || !user.is_active) {
+        console.log('Invalid admin credentials.');
+        return null;
+      }
+
+      // Verify password
+      const bcrypt = require('bcrypt');
+      const passwordMatch = await bcrypt.compare(password, user.password_hash);
+      
+      if (passwordMatch) {
+        this.logAction('admin_login', `Admin ${username} logged in`);
+        console.log(`Admin ${username} logged in successfully!`);
+        return {
+          username: user.username,
+          email: user.email,
+          permissions: ['user_management', 'system_logs'],
+          createdDate: user.join_date,
+          isActive: user.is_active
+        };
+      } else {
+        console.log('Invalid admin credentials.');
+        return null;
+      }
+    } catch (error) {
+      console.error('Error during admin login:', error);
       return null;
+    }
+  }
+
+  async getAdmins() {
+    try {
+      return await this.databaseManager.getAdmins();
+    } catch (error) {
+      console.error('Error getting admins:', error);
+      return [];
+    }
+  }
+
+  async isAdmin(username) {
+    try {
+      return await this.databaseManager.isAdmin(username);
+    } catch (error) {
+      console.error('Error checking admin status:', error);
+      return false;
+    }
+  }
+
+  async promoteToAdmin(username) {
+    try {
+      const result = await this.databaseManager.promoteToAdmin(username);
+      if (result) {
+        this.logAction('admin_promoted', `User ${username} promoted to admin`);
+      }
+      return result;
+    } catch (error) {
+      console.error('Error promoting user to admin:', error);
+      return false;
+    }
+  }
+
+  async demoteFromAdmin(username) {
+    try {
+      const result = await this.databaseManager.demoteFromAdmin(username);
+      if (result) {
+        this.logAction('admin_demoted', `User ${username} demoted from admin`);
+      }
+      return result;
+    } catch (error) {
+      console.error('Error demoting user from admin:', error);
+      return false;
     }
   }
 
@@ -432,6 +500,10 @@ class AdminManager {
       details: details,
       timestamp: new Date().toISOString()
     });
+    // Keep only last 100 logs in memory
+    if (this.systemLogs.length > 100) {
+      this.systemLogs.shift();
+    }
   }
 
   getSystemLogs() {
@@ -439,6 +511,8 @@ class AdminManager {
   }
 
   getUserStatistics(profileManager) {
+    // This method is now primarily used for backward compatibility
+    // The actual stats are fetched from database in server.js
     const profiles = profileManager.getAllProfiles();
     return {
       totalUsers: profiles.length,
@@ -619,7 +693,49 @@ class ProfileManager {
   }
 
   async login(username, password) {
-    const profile = this.profiles.find(p => p.username === username);
+    // First try to find in local profiles array
+    let profile = this.profiles.find(p => p.username === username);
+    
+    // If not found locally and database is initialized, try to load from database
+    if (!profile && this.isInitialized) {
+      try {
+        const userData = await this.databaseManager.getUserByUsername(username);
+        if (userData) {
+          // Convert database format to UserProfile format
+          profile = new UserProfile(
+            userData.username,
+            userData.email,
+            userData.password_hash,
+            userData.join_date,
+            userData.gaming_preferences || {}
+          );
+          
+          // Restore additional properties
+          profile.bio = userData.bio || '';
+          profile.statistics = userData.statistics || profile.statistics;
+          profile.achievements = [];
+          profile.isActive = userData.is_active !== undefined ? userData.is_active : true;
+          profile.lastLogin = userData.last_login || null;
+          profile.privacySettings = {
+            profileVisibility: 'public',
+            showEmail: false,
+            showStatistics: true,
+            showFriendsList: true
+          };
+          
+          // Add to local profiles array for future use
+          this.profiles.push(profile);
+          
+          // Initialize related managers
+          this.friendsLists.set(userData.username, new FriendsList(userData.username));
+          this.wishlistManagers.set(userData.username, new WishlistManager(userData.username));
+          this.reviewManagers.set(userData.username, new ReviewManager(userData.username));
+        }
+      } catch (error) {
+        console.error('Error loading user from database during login:', error);
+      }
+    }
+    
     if (profile) {
       if (await profile.login(password)) {
         this.currentProfile = profile;

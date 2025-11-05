@@ -11,6 +11,10 @@ class GameSearchService {
         this.appListCache = null;
         this.appListCacheTime = null;
         this.cacheExpiration = 24 * 60 * 60 * 1000; // 24 hours
+        // Circuit breaker for Steam API
+        this.consecutive403Errors = 0;
+        this.maxConsecutive403Errors = 5; // After 5 consecutive 403s, stop trying
+        this.steamApiBlocked = false;
     }
 
     async searchGames(query, page = 1, pageSize = 20) {
@@ -59,25 +63,57 @@ class GameSearchService {
             const maxGamesToFetch = Math.min(100, matchingGames.length);
             const gamesToFetch = matchingGames.slice(0, maxGamesToFetch);
 
-            // Get detailed information for games (in batches to avoid overwhelming the API)
-            const batchSize = 10;
+            // Get detailed information for games (with rate limiting and circuit breaker)
+            // Steam API has strict rate limits, so we make requests sequentially with delays
+            const batchSize = 2; // Reduced further to avoid overwhelming Steam
+            const delayBetweenRequests = 300; // Reduced delay for faster loading
+            const delayBetweenBatches = 1000; // Reduced from 2 seconds
             const gamesWithDetails = [];
+            const maxGamesToTry = 20; // Limit how many games we try to fetch details for
             
-            for (let i = 0; i < gamesToFetch.length; i += batchSize) {
+            // Check if Steam API is blocked
+            if (this.steamApiBlocked) {
+                console.log('⚠️ [Search] Steam API is currently blocked, using mock data');
+                return this.getMockSearchResults(query, page, pageSize);
+            }
+            
+            for (let i = 0; i < Math.min(gamesToFetch.length, maxGamesToTry); i += batchSize) {
+                // Check circuit breaker
+                if (this.steamApiBlocked) {
+                    console.log('⚠️ [Search] Steam API blocked during search, switching to mock data');
+                    break;
+                }
+                
                 const batch = gamesToFetch.slice(i, i + batchSize);
-                const batchResults = await Promise.all(
-                    batch.map(async (game) => {
-                        try {
-                            const details = await this.getSteamGameDetails(game.appid);
+                
+                // Process batch sequentially with delays to avoid rate limiting
+                for (const game of batch) {
+                    try {
+                        const details = await this.getSteamGameDetails(game.appid);
+                        if (details) {
                             const formattedGame = this.formatSteamGameData(game, details);
-                            return formattedGame;
-                        } catch (error) {
-                            console.error(`Error fetching details for app ${game.appid}:`, error);
-                            return null; // Skip games where we can't get details
+                            gamesWithDetails.push(formattedGame);
+                            // Reset error counter on success
+                            this.consecutive403Errors = 0;
                         }
-                    })
-                );
-                gamesWithDetails.push(...batchResults);
+                        // Delay between requests to respect rate limits
+                        await new Promise(resolve => setTimeout(resolve, delayBetweenRequests));
+                    } catch (error) {
+                        console.error(`Error fetching details for app ${game.appid}:`, error.message);
+                        // Continue even if one fails
+                    }
+                }
+                
+                // Delay between batches to avoid overwhelming Steam
+                if (i + batchSize < Math.min(gamesToFetch.length, maxGamesToTry)) {
+                    await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+                }
+            }
+            
+            // If we got very few results and Steam API is blocked, use mock data
+            if (gamesWithDetails.length < 3 && this.steamApiBlocked) {
+                console.log('⚠️ [Search] Too few results due to Steam API blocking, using mock data');
+                return this.getMockSearchResults(query, page, pageSize);
             }
 
             // Filter out null games, games without ratings, DLCs, videos, and non-games
@@ -329,110 +365,161 @@ class GameSearchService {
         }
     }
 
-    async getSteamGameDetails(appId) {
-        try {
-            console.log(`Fetching Steam game details for app ID: ${appId}`);
-            const response = await axios.get(`${this.steamStoreBase}/appdetails`, {
-                params: {
-                    appids: appId,
-                    l: 'english'
-                },
-                timeout: 15000
-            });
+    async getSteamGameDetails(appId, retries = 0) {
+        // Don't retry if Steam API is blocked
+        if (this.steamApiBlocked) {
+            return null;
+        }
+        
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                if (attempt > 0) {
+                    // Exponential backoff: wait longer on each retry
+                    const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+                    console.log(`Retrying Steam API request for app ID ${appId} (attempt ${attempt + 1}/${retries + 1}) after ${delay}ms delay...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+                
+                console.log(`Fetching Steam game details for app ID: ${appId}`);
+                const response = await axios.get(`${this.steamStoreBase}/appdetails`, {
+                    params: {
+                        appids: appId,
+                        l: 'english'
+                    },
+                    timeout: 15000,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
+                });
 
-            if (!response.data || !response.data[appId]) {
-                console.log(`No data found for app ID ${appId} in Steam response`);
-                return null;
-            }
+                if (!response.data || !response.data[appId]) {
+                    console.log(`No data found for app ID ${appId} in Steam response`);
+                    return null;
+                }
 
-            const appData = response.data[appId];
-            if (appData && appData.success && appData.data) {
-                const gameData = appData.data;
-                
-                // Filter out non-games (DLCs, videos, tools, etc.) - check type field
-                const gameType = gameData.type ? gameData.type.toLowerCase() : '';
-                const isGame = gameType === 'game';
-                const isDLC = gameType === 'dlc' || gameData.type === 'DLC';
-                const isVideo = gameType === 'video' || gameData.type === 'Video' || gameData.type === 'movie' || gameType === 'movie';
-                const isHardware = gameData.type === 'Hardware' || gameType === 'hardware';
-                const isSoftware = gameData.type === 'Software' && !isGame; // Some software are games, some aren't
-                
-                // Also check name for additional filtering - but be careful not to exclude game editions
-                const gameName = gameData.name ? gameData.name.toLowerCase() : '';
-                
-                // Only flag as DLC if it's clearly an expansion/add-on, not a game edition
-                const nameIsDLC = (gameName.includes('dlc') && !gameName.match(/^\w+\s+dlc$/)) || // Exclude "Game DLC" pattern
-                                 (gameName.includes('pack') && (
-                                    gameName.includes('graphic assets') ||
-                                    gameName.includes('texture pack') ||
-                                    gameName.includes('asset pack') ||
-                                    gameName.includes('content pack')
-                                 )) || 
-                                 (gameName.includes('expansion') && (
-                                    gameName.includes('expansion pack') ||
-                                    gameName.includes('expansion:')
-                                 )) ||
-                                 (gameName.includes('add-on') && !gameName.includes('game'));
-                
-                const nameIsDemo = gameName.includes('demo') && (
-                                    gameName.includes(' demo') ||
-                                    gameName.includes('demo ') ||
-                                    gameName.endsWith(' demo')
-                                 );
-                const nameIsVideo = gameName.includes('trailer') || 
-                                  (gameName.includes('video') && !gameName.includes('game')) || 
-                                  gameName.includes('movie') ||
-                                  gameName.includes('film');
-                const nameIsAsset = (gameName.includes('assets') && gameName.includes('pack')) ||
-                                   gameName.includes('graphic assets') ||
-                                   gameName.includes('texture pack');
-                
-                // Check if it's actually a game - but allow game editions
-                // Only exclude if Steam explicitly says it's not a game AND has clear non-game indicators
-                // OR if it's clearly DLC/video/demo/asset
-                const shouldExclude = (!isGame && (isDLC || isVideo || isHardware)) || 
-                                     nameIsDLC || 
-                                     nameIsDemo || 
-                                     nameIsVideo || 
-                                     nameIsAsset;
-                
-                if (shouldExclude) {
-                    console.log(`🚫 [Details] Skipping non-game: ${gameData.name} (type: ${gameData.type || 'unknown'}, indicators: DLC=${nameIsDLC}, Demo=${nameIsDemo}, Video=${nameIsVideo}, Asset=${nameIsAsset})`);
+                const appData = response.data[appId];
+                if (appData && appData.success && appData.data) {
+                    const gameData = appData.data;
+                    
+                    // Filter out non-games (DLCs, videos, tools, etc.) - check type field
+                    const gameType = gameData.type ? gameData.type.toLowerCase() : '';
+                    const isGame = gameType === 'game';
+                    const isDLC = gameType === 'dlc' || gameData.type === 'DLC';
+                    const isVideo = gameType === 'video' || gameData.type === 'Video' || gameData.type === 'movie' || gameType === 'movie';
+                    const isHardware = gameData.type === 'Hardware' || gameType === 'hardware';
+                    const isSoftware = gameData.type === 'Software' && !isGame; // Some software are games, some aren't
+                    
+                    // Also check name for additional filtering - but be careful not to exclude game editions
+                    const gameName = gameData.name ? gameData.name.toLowerCase() : '';
+                    
+                    // Only flag as DLC if it's clearly an expansion/add-on, not a game edition
+                    const nameIsDLC = (gameName.includes('dlc') && !gameName.match(/^\w+\s+dlc$/)) || // Exclude "Game DLC" pattern
+                                     (gameName.includes('pack') && (
+                                        gameName.includes('graphic assets') ||
+                                        gameName.includes('texture pack') ||
+                                        gameName.includes('asset pack') ||
+                                        gameName.includes('content pack')
+                                     )) || 
+                                     (gameName.includes('expansion') && (
+                                        gameName.includes('expansion pack') ||
+                                        gameName.includes('expansion:')
+                                     )) ||
+                                     (gameName.includes('add-on') && !gameName.includes('game'));
+                    
+                    const nameIsDemo = gameName.includes('demo') && (
+                                        gameName.includes(' demo') ||
+                                        gameName.includes('demo ') ||
+                                        gameName.endsWith(' demo')
+                                     );
+                    const nameIsVideo = gameName.includes('trailer') || 
+                                      (gameName.includes('video') && !gameName.includes('game')) || 
+                                      gameName.includes('movie') ||
+                                      gameName.includes('film');
+                    const nameIsAsset = (gameName.includes('assets') && gameName.includes('pack')) ||
+                                       gameName.includes('graphic assets') ||
+                                       gameName.includes('texture pack');
+                    
+                    // Check if it's actually a game - but allow game editions
+                    // Only exclude if Steam explicitly says it's not a game AND has clear non-game indicators
+                    // OR if it's clearly DLC/video/demo/asset
+                    const shouldExclude = (!isGame && (isDLC || isVideo || isHardware)) || 
+                                         nameIsDLC || 
+                                         nameIsDemo || 
+                                         nameIsVideo || 
+                                         nameIsAsset;
+                    
+                    if (shouldExclude) {
+                        console.log(`🚫 [Details] Skipping non-game: ${gameData.name} (type: ${gameData.type || 'unknown'}, indicators: DLC=${nameIsDLC}, Demo=${nameIsDemo}, Video=${nameIsVideo}, Asset=${nameIsAsset})`);
+                        return null;
+                    }
+                    
+                    // If Steam says it's a game type, trust it
+                    // Also allow if type is missing but has game-like properties (name, description, etc.)
+                    if (isGame || (!gameData.type && gameData.name && gameData.short_description)) {
+                        console.log(`✅ [Details] Including game: ${gameData.name} (type: ${gameData.type || 'unknown - but has game properties'})`);
+                    }
+                    
+                    console.log(`Successfully fetched details for ${gameData.name || appId}`);
+                    // Add type to the data so we can use it later
+                    gameData._steamType = gameData.type;
+                    return gameData;
+                } else {
+                    console.log(`Steam API returned success=false for app ID ${appId}`);
+                    if (appData && appData.data) {
+                        const gameData = appData.data;
+                        // Check type even if success is false
+                        const gameType = gameData.type ? gameData.type.toLowerCase() : '';
+                        if (gameType !== 'game' && gameType !== '') {
+                            return null; // Skip non-games
+                        }
+                        // Even if success is false, sometimes data is still available
+                        gameData._steamType = gameData.type;
+                        return gameData;
+                    }
+                    return null;
+                }
+            } catch (error) {
+                // Handle 403 errors with circuit breaker
+                if (error.response && error.response.status === 403) {
+                    this.consecutive403Errors++;
+                    
+                    // If too many 403s, block Steam API and stop retrying
+                    if (this.consecutive403Errors >= this.maxConsecutive403Errors) {
+                        this.steamApiBlocked = true;
+                        console.log(`🚫 [Steam API] Blocked after ${this.consecutive403Errors} consecutive 403 errors. Using mock data.`);
+                        // Reset after 5 minutes
+                        setTimeout(() => {
+                            this.steamApiBlocked = false;
+                            this.consecutive403Errors = 0;
+                            console.log('✅ [Steam API] Circuit breaker reset, will try Steam API again');
+                        }, 5 * 60 * 1000); // 5 minutes
+                        return null;
+                    }
+                    
+                    // Don't retry 403s - they're rate limiting us, retrying makes it worse
+                    console.log(`⚠️ Steam API returned 403 for app ID ${appId} (${this.consecutive403Errors}/${this.maxConsecutive403Errors} errors)`);
                     return null;
                 }
                 
-                // If Steam says it's a game type, trust it
-                // Also allow if type is missing but has game-like properties (name, description, etc.)
-                if (isGame || (!gameData.type && gameData.name && gameData.short_description)) {
-                    console.log(`✅ [Details] Including game: ${gameData.name} (type: ${gameData.type || 'unknown - but has game properties'})`);
+                // For other errors, retry if we have attempts left
+                if (attempt < retries) {
+                    continue; // Retry on next iteration
                 }
                 
-                console.log(`Successfully fetched details for ${gameData.name || appId}`);
-                // Add type to the data so we can use it later
-                gameData._steamType = gameData.type;
-                return gameData;
-            } else {
-                console.log(`Steam API returned success=false for app ID ${appId}`);
-                if (appData && appData.data) {
-                    const gameData = appData.data;
-                    // Check type even if success is false
-                    const gameType = gameData.type ? gameData.type.toLowerCase() : '';
-                    if (gameType !== 'game' && gameType !== '') {
-                        return null; // Skip non-games
+                // If it's the last attempt, handle the error
+                if (attempt === retries) {
+                    console.error(`Error fetching Steam game details for ${appId}:`, error.message);
+                    if (error.response) {
+                        console.error(`Response status: ${error.response.status}`);
                     }
-                    // Even if success is false, sometimes data is still available
-                    gameData._steamType = gameData.type;
-                    return gameData;
+                    return null;
                 }
-                return null;
             }
-        } catch (error) {
-            console.error(`Error fetching Steam game details for ${appId}:`, error.message);
-            if (error.response) {
-                console.error(`Response status: ${error.response.status}`);
-            }
-            return null;
         }
+        
+        // If we get here, all retries failed
+        console.error(`Error fetching Steam game details for ${appId}: All retries exhausted`);
+        return null;
     }
 
     formatSteamGameData(game, details) {
