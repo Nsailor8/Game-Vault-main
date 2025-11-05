@@ -363,7 +363,7 @@ class GameVaultApp {
                 loginError.textContent = 'Please fill in all fields';
                 loginError.style.display = 'block';
             } else {
-                this.showAlert('Please fill in all fields', 'Login Required', 'warning');
+            this.showAlert('Please fill in all fields', 'Login Required', 'warning');
             }
             return;
         }
@@ -533,6 +533,14 @@ class GameVaultApp {
             }
         } catch (error) {
             console.error('Error checking auth status:', error);
+            // Don't reset UI if there's an error - preserve existing state
+            // Only reset if we're on the home page and there's no existing user
+            if ((window.location.pathname === '/' || window.location.pathname === '/index.html') && !this.currentUser) {
+                this.loginScreen.show();
+                this.loginScreen.resetToInitialState();
+            }
+            // Only show sign-in button if we don't have a current user
+            if (!this.currentUser) {
 
             if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
                 this.loginScreen.show();
@@ -540,6 +548,7 @@ class GameVaultApp {
             }
 
             this.showSignInButton();
+            }
         }
     }
 
@@ -923,7 +932,7 @@ async updateFriends() {
         // Display friends using your existing displayFriends function
         if (friends && typeof this.displayFriends === 'function') {
             this.displayFriends(friends);
-        } else {
+            } else {
             console.warn('displayFriends function is not defined');
         }
     } catch (error) {
@@ -1010,25 +1019,41 @@ async viewFriendProfile(friend) {
                 if (libraries.length === 0) {
                     container.innerHTML = '<div class="empty-state"><i class="fas fa-book"></i><h3>No Libraries</h3><p>Create your first library!</p></div>';
                 } else {
+                    // Create a grid container for libraries if it doesn't exist
+                    if (!container.classList.contains('libraries-grid')) {
+                        container.classList.add('libraries-grid');
+                    }
+                    
                     libraries.forEach(library => {
                         const libraryItem = document.createElement('div');
-                        libraryItem.className = 'library-item';
+                        libraryItem.className = 'library-card';
                         const typeBadge = library.type === 'automatic' ? '<span class="badge badge-primary">Default</span>' :
                                          library.type === 'wishlist' ? '<span class="badge badge-warning">Wishlist</span>' : '';
                         const canEdit = library.type === 'custom';
                         libraryItem.innerHTML = `
-                            <div>
-                                <strong>${library.name}</strong> ${typeBadge}
-                                <br>
-                                <small>${library.gameCount || 0} games • Created: ${new Date(library.createdDate).toLocaleDateString()}</small>
-                                ${library.description ? `<br><small style="color: #888;">${library.description}</small>` : ''}
+                            <div class="library-card-header">
+                                <h3>${library.name}</h3>
+                                ${typeBadge}
                             </div>
-                            <div class="library-actions">
-                                <button class="btn btn-primary" onclick="app.selectLibrary(${library.id})">View</button>
-                                ${canEdit ? `
-                                    <button class="btn btn-secondary btn-sm" onclick="app.editLibrary(${library.id}, '${library.name.replace(/'/g, "\\'")}', '${(library.description || '').replace(/'/g, "\\'")}')">Edit</button>
-                                    <button class="btn btn-danger btn-sm" onclick="app.deleteLibrary(${library.id})">Delete</button>
-                                ` : ''}
+                            <div class="library-card-body">
+                                <div class="library-info">
+                                    <p class="library-game-count"><i class="fas fa-gamepad"></i> ${library.gameCount || 0} games</p>
+                                    ${library.description ? `<p class="library-description">${library.description}</p>` : ''}
+                                    <p class="library-date"><i class="fas fa-calendar"></i> Created: ${new Date(library.createdDate).toLocaleDateString()}</p>
+                                </div>
+                                <div class="library-card-actions">
+                                    <button class="btn btn-primary" onclick="app.selectLibrary(${library.id})">
+                                        <i class="fas fa-eye"></i> View
+                                    </button>
+                                    ${canEdit ? `
+                                        <button class="btn btn-secondary btn-sm" onclick="app.editLibrary(${library.id}, '${library.name.replace(/'/g, "\\'")}', '${(library.description || '').replace(/'/g, "\\'")}')">
+                                            <i class="fas fa-edit"></i> Edit
+                                        </button>
+                                        <button class="btn btn-danger btn-sm" onclick="app.deleteLibrary(${library.id})">
+                                            <i class="fas fa-trash"></i> Delete
+                                        </button>
+                                    ` : ''}
+                                </div>
                             </div>
                         `;
                         container.appendChild(libraryItem);
@@ -1285,9 +1310,23 @@ async viewFriendProfile(friend) {
                 })
             });
 
+            // Check if response is ok before trying to parse JSON
+            if (!response.ok) {
+                let errorMessage = 'Failed to create library';
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch (e) {
+                    // If response isn't valid JSON, use status text
+                    errorMessage = response.statusText || errorMessage;
+                }
+                this.showAlert(errorMessage, 'Error', 'error');
+                return false;
+            }
+
             const data = await response.json();
 
-            if (response.ok && data.success) {
+            if (data.success) {
                 this.updateLibraries();
                 this.showNotification('Library created successfully!', 'success');
                 return true;
@@ -1297,7 +1336,17 @@ async viewFriendProfile(friend) {
             }
         } catch (error) {
             console.error('Error creating library:', error);
-            this.showAlert('Error creating library. Please try again.', 'Error', 'error');
+            console.error('Error type:', error.constructor.name);
+            console.error('Error message:', error.message);
+            
+            // Handle network errors specifically
+            if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
+                this.showAlert('Failed to connect to server. Please check your internet connection and try again.', 'Connection Error', 'error');
+            } else if (error.message) {
+                this.showAlert('Error creating library: ' + error.message, 'Error', 'error');
+            } else {
+                this.showAlert('Error creating library. Please try again.', 'Error', 'error');
+            }
             return false;
         }
     }
@@ -1421,8 +1470,9 @@ async viewFriendProfile(friend) {
                 if (selectedSection) {
                     selectedSection.style.display = 'block';
                 }
-                if (libraryContainer && libraryContainer.parentElement) {
-                    libraryContainer.parentElement.style.display = 'none';
+                // Hide the libraries container
+                if (libraryContainer) {
+                    libraryContainer.style.display = 'none';
                 }
                 
                 if (title) {
@@ -1440,13 +1490,16 @@ async viewFriendProfile(friend) {
                     data.games.forEach(game => {
                         const gameItem = document.createElement('div');
                         gameItem.className = 'friend-item';
+                        // Use game.title (from API) or game.gameTitle as fallback
+                        const gameTitle = game.title || game.gameTitle || 'Unknown Game';
+                        const gameIdToRemove = game.gameId || game.steamId || game.id;
                         gameItem.innerHTML = `
                             <div>
-                                <strong>${game.title}</strong>
+                                <strong>${gameTitle}</strong>
                                 <br>
                                 <small>${game.platform || 'PC'} • Added: ${new Date(game.addedDate).toLocaleDateString()}</small>
                             </div>
-                            <button class="btn btn-danger" onclick="app.removeFromLibrary(${libraryId}, ${game.gameId})">Remove</button>
+                            <button class="btn btn-danger" onclick="app.removeFromLibrary(${libraryId}, ${gameIdToRemove})">Remove</button>
                         `;
                         container.appendChild(gameItem);
                     });
@@ -1467,8 +1520,9 @@ async viewFriendProfile(friend) {
         if (selectedSection) {
             selectedSection.style.display = 'none';
         }
-        if (libraryContainer && libraryContainer.parentElement) {
-            libraryContainer.parentElement.style.display = 'block';
+        // Show the libraries container
+        if (libraryContainer) {
+            libraryContainer.style.display = 'block';
         }
         this.updateLibraries();
     }
@@ -1774,6 +1828,434 @@ async viewFriendProfile(friend) {
         });
     }
 
+    setupAdminTabs() {
+        const tabs = document.querySelectorAll('.admin-tab');
+        const tabContents = document.querySelectorAll('.admin-tab-content');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const targetTab = tab.getAttribute('data-tab');
+                
+                // Remove active class from all tabs and contents
+                tabs.forEach(t => t.classList.remove('active'));
+                tabContents.forEach(tc => tc.classList.remove('active'));
+                
+                // Add active class to clicked tab and corresponding content
+                tab.classList.add('active');
+                const targetContent = document.getElementById(targetTab + 'Tab');
+                if (targetContent) {
+                    targetContent.classList.add('active');
+                }
+
+                // Load data for the active tab
+                if (targetTab === 'users') {
+                    this.loadUsers();
+                } else if (targetTab === 'admins') {
+                    this.loadAdmins();
+                } else if (targetTab === 'logs') {
+                    this.loadLogs();
+                }
+            });
+        });
+
+        // Setup admin panel buttons
+        const refreshUsersBtn = document.getElementById('refreshUsersBtn');
+        if (refreshUsersBtn) {
+            refreshUsersBtn.addEventListener('click', () => this.loadUsers());
+        }
+
+        const refreshLogsBtn = document.getElementById('refreshLogsBtn');
+        if (refreshLogsBtn) {
+            refreshLogsBtn.addEventListener('click', () => this.loadLogs());
+        }
+
+        const createAdminBtn = document.getElementById('createAdminBtn');
+        if (createAdminBtn) {
+            createAdminBtn.addEventListener('click', () => {
+                const modal = document.getElementById('createAdminModal');
+                if (modal) modal.style.display = 'block';
+            });
+        }
+
+        // Setup create admin form
+        const createAdminForm = document.getElementById('createAdminForm');
+        if (createAdminForm) {
+            createAdminForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.createAdmin();
+            });
+        }
+
+        const cancelCreateAdmin = document.getElementById('cancelCreateAdmin');
+        if (cancelCreateAdmin) {
+            cancelCreateAdmin.addEventListener('click', () => {
+                const modal = document.getElementById('createAdminModal');
+                if (modal) modal.style.display = 'none';
+                createAdminForm.reset();
+            });
+        }
+
+        // Close modal on X click
+        const createAdminModal = document.getElementById('createAdminModal');
+        if (createAdminModal) {
+            const closeBtn = createAdminModal.querySelector('.close');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', () => {
+                    createAdminModal.style.display = 'none';
+                    createAdminForm.reset();
+                });
+            }
+        }
+    }
+
+    loadAdminPanel() {
+        this.loadStats();
+        this.loadUsers();
+        this.loadAdmins();
+        this.loadLogs();
+    }
+
+    loadStats() {
+        fetch('/api/admin/stats', {
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.userStats) {
+            const stats = data.userStats;
+            const container = document.getElementById('adminStats');
+                if (container) {
+            container.innerHTML = `
+                <div class="stat-card">
+                    <i class="fas fa-users"></i>
+                    <h3>${stats.totalUsers || 0}</h3>
+                    <p>Total Users</p>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-user-check"></i>
+                    <h3>${stats.activeUsers || 0}</h3>
+                    <p>Active Users</p>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-user-plus"></i>
+                    <h3>${stats.newUsersThisMonth || 0}</h3>
+                    <p>New This Month</p>
+                </div>
+                        <div class="stat-card">
+                            <i class="fas fa-shield-alt"></i>
+                            <h3>${stats.totalAdmins || 0}</h3>
+                            <p>Admins</p>
+                </div>
+            `;
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching admin stats:', error);
+        });
+    }
+
+    loadUsers() {
+        const tbody = document.getElementById('usersTableBody');
+        if (!tbody) return;
+
+        tbody.innerHTML = '<tr><td colspan="7" class="loading">Loading users...</td></tr>';
+
+        fetch('/api/admin/users', {
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.users) {
+                if (data.users.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="empty">No users found</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = '';
+                data.users.forEach(user => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${user.id}</td>
+                        <td>${user.username}</td>
+                        <td>${user.email}</td>
+                        <td>${new Date(user.joinDate).toLocaleDateString()}</td>
+                        <td>
+                            <span class="badge ${user.isActive ? 'badge-success' : 'badge-danger'}">
+                                ${user.isActive ? 'Active' : 'Inactive'}
+                            </span>
+                        </td>
+                        <td>
+                            ${user.isAdmin ? '<span class="badge badge-info">Admin</span>' : '<span class="badge badge-secondary">User</span>'}
+                        </td>
+                        <td>
+                            <div class="action-buttons">
+                                ${!user.isAdmin ? `
+                                    <button class="btn-sm btn-primary" onclick="window.app.toggleUserStatus(${user.id}, ${user.isActive})" title="${user.isActive ? 'Deactivate' : 'Activate'}">
+                                        <i class="fas fa-${user.isActive ? 'ban' : 'check'}"></i>
+                                    </button>
+                                    <button class="btn-sm ${user.isAdmin ? 'btn-info' : 'btn-success'}" onclick="window.app.promoteUser('${user.username}')" title="Promote to Admin">
+                                        <i class="fas fa-user-shield"></i>
+                                    </button>
+                                    <button class="btn-sm btn-danger" onclick="window.app.deleteUser(${user.id}, '${user.username}')" title="Delete User">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                ` : `
+                                    <button class="btn-sm btn-warning" onclick="window.app.demoteAdmin('${user.username}')" title="Demote from Admin">
+                                        <i class="fas fa-user-minus"></i>
+                                    </button>
+                                `}
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } else {
+                tbody.innerHTML = '<tr><td colspan="7" class="error">Failed to load users</td></tr>';
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching users:', error);
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="7" class="error">Error loading users</td></tr>';
+            }
+        });
+    }
+
+    loadAdmins() {
+        const tbody = document.getElementById('adminsTableBody');
+        if (!tbody) return;
+
+        tbody.innerHTML = '<tr><td colspan="5" class="loading">Loading admins...</td></tr>';
+
+        fetch('/api/admin/list', {
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.admins) {
+                if (data.admins.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="empty">No admins found</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = '';
+                data.admins.forEach(admin => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${admin.id}</td>
+                        <td>${admin.username}</td>
+                        <td>${admin.email}</td>
+                        <td>${new Date(admin.joinDate).toLocaleDateString()}</td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="btn-sm btn-warning" onclick="window.app.demoteAdmin('${admin.username}')" title="Demote from Admin">
+                                    <i class="fas fa-user-minus"></i> Demote
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } else {
+                tbody.innerHTML = '<tr><td colspan="5" class="error">Failed to load admins</td></tr>';
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching admins:', error);
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="5" class="error">Error loading admins</td></tr>';
+            }
+        });
+    }
+
+    loadLogs() {
+        const container = document.getElementById('systemLogs');
+        if (!container) return;
+
+        container.innerHTML = '<div class="loading">Loading system logs...</div>';
+
+        fetch('/api/admin/logs', {
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.logs) {
+                if (data.logs.length === 0) {
+                    container.innerHTML = '<div class="empty">No system logs available</div>';
+                    return;
+                }
+
+                container.innerHTML = '';
+                data.logs.slice(-50).reverse().forEach(log => {
+                const logItem = document.createElement('div');
+                logItem.className = 'log-item';
+                logItem.innerHTML = `
+                    <strong>${log.action}</strong>: ${log.details}
+                    <br>
+                    <small>${new Date(log.timestamp).toLocaleString()}</small>
+                `;
+                    container.appendChild(logItem);
+            });
+            } else {
+                container.innerHTML = '<div class="error">Failed to load system logs</div>';
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching logs:', error);
+            container.innerHTML = '<div class="error">Error loading system logs</div>';
+        });
+    }
+
+    createAdmin() {
+        const username = document.getElementById('newAdminUsername').value;
+        const email = document.getElementById('newAdminEmail').value;
+        const password = document.getElementById('newAdminPassword').value;
+
+        if (!username || !email || !password) {
+            this.showAlert('Please fill in all fields', 'Validation Error', 'warning');
+            return;
+        }
+
+        fetch('/api/admin/create', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username, email, password })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`Admin ${username} created successfully!`, 'Success', 'success');
+                const modal = document.getElementById('createAdminModal');
+                if (modal) modal.style.display = 'none';
+                document.getElementById('createAdminForm').reset();
+                this.loadAdmins();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to create admin', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error creating admin:', error);
+            this.showAlert('Error creating admin. Please try again.', 'Error', 'error');
+        });
+    }
+
+    toggleUserStatus(userId, currentStatus) {
+        if (!confirm(`Are you sure you want to ${currentStatus ? 'deactivate' : 'activate'} this user?`)) {
+            return;
+        }
+
+        fetch(`/api/admin/users/${userId}/status`, {
+            method: 'PUT',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ isActive: !currentStatus })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`User ${currentStatus ? 'deactivated' : 'activated'} successfully`, 'Success', 'success');
+                this.loadUsers();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to update user status', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error updating user status:', error);
+            this.showAlert('Error updating user status. Please try again.', 'Error', 'error');
+        });
+    }
+
+    deleteUser(userId, username) {
+        if (!confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) {
+            return;
+        }
+
+        fetch(`/api/admin/users/${userId}`, {
+            method: 'DELETE',
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`User ${username} deleted successfully`, 'Success', 'success');
+                this.loadUsers();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to delete user', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error deleting user:', error);
+            this.showAlert('Error deleting user. Please try again.', 'Error', 'error');
+        });
+    }
+
+    promoteUser(username) {
+        if (!confirm(`Are you sure you want to promote "${username}" to admin?`)) {
+            return;
+        }
+
+        fetch(`/api/admin/promote/${username}`, {
+            method: 'POST',
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`User ${username} promoted to admin successfully`, 'Success', 'success');
+                this.loadUsers();
+                this.loadAdmins();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to promote user', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error promoting user:', error);
+            this.showAlert('Error promoting user. Please try again.', 'Error', 'error');
+        });
+    }
+
+    demoteAdmin(username) {
+        if (!confirm(`Are you sure you want to demote "${username}" from admin?`)) {
+            return;
+        }
+
+        fetch(`/api/admin/demote/${username}`, {
+            method: 'POST',
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                this.showAlert(`User ${username} demoted from admin successfully`, 'Success', 'success');
+                this.loadUsers();
+                this.loadAdmins();
+                this.loadStats();
+            } else {
+                this.showAlert(data.error || 'Failed to demote admin', 'Error', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error demoting admin:', error);
+            this.showAlert('Error demoting admin. Please try again.', 'Error', 'error');
+        });
+    }
+
+    updateAdminPanel() {
+        // Legacy method for backward compatibility
+        this.loadAdminPanel();
+    }
+
+    // Game Search Methods
     performGameSearch() {
         console.log('performGameSearch called');
         const searchInput = document.getElementById("gameSearchInput");
@@ -2167,6 +2649,7 @@ async viewFriendProfile(friend) {
         try {
             const response = await fetch(`/api/wishlists/${this.currentUser.username}/add-game`, {
                 method: 'POST',
+                credentials: 'include', // Important: include session cookies
                 headers: {
                     'Content-Type': 'application/json'
                 },
@@ -2201,6 +2684,7 @@ async viewFriendProfile(friend) {
         try {
             const response = await fetch(`/api/wishlists/${this.currentUser.username}/add-game`, {
                 method: 'POST',
+                credentials: 'include', // Important: include session cookies
                 headers: {
                     'Content-Type': 'application/json'
                 },
@@ -2214,6 +2698,18 @@ async viewFriendProfile(friend) {
                 })
             });
 
+            if (!response.ok) {
+                let errorMessage = 'Failed to add game to library';
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch (e) {
+                    errorMessage = response.statusText || errorMessage;
+                }
+                this.showAlert(errorMessage, 'Error', 'error');
+                return;
+            }
+
             const result = await response.json();
 
             if (result.success) {
@@ -2223,12 +2719,18 @@ async viewFriendProfile(friend) {
                 if (selectionModal) {
                     selectionModal.style.display = 'none';
                 }
+                // Refresh library view if on library page
+                if (window.location.pathname.includes('/library') || window.location.pathname.includes('/wishlist')) {
+                    if (this.updateLibraries) {
+                        this.updateLibraries();
+                    }
+                }
             } else {
-                this.showAlert('Failed to add game to library: ' + result.error, 'Error', 'error');
+                this.showAlert('Failed to add game to library: ' + (result.error || 'Unknown error'), 'Error', 'error');
             }
         } catch (error) {
             console.error('Error adding game to library:', error);
-            this.showAlert('Error adding game to library', 'Error', 'error');
+            this.showAlert('Error adding game to library: ' + (error.message || 'Please try again'), 'Error', 'error');
         }
     }
 
@@ -2362,56 +2864,56 @@ async viewFriendProfile(friend) {
         }
     }
 
-   displayFriends(friends) {
-    const container = document.getElementById('friendsList');
-    const countElement = document.getElementById('friendsCount');
-
-    if (!container) return;
+    displayFriends(friends) {
+        const container = document.getElementById('friendsList');
+        const countElement = document.getElementById('friendsCount');
+        
+        if (!container) return;
 
     // Update friend count
-    if (countElement) {
-        countElement.textContent = friends.length;
-    }
+        if (countElement) {
+            countElement.textContent = friends.length;
+        }
 
     // Handle empty list
-    if (friends.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <i class="fas fa-user-friends"></i>
-                <h3>No friends yet</h3>
-                <p>Send friend requests to start building your network!</p>
-            </div>
-        `;
-        return;
-    }
+        if (friends.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-user-friends"></i>
+                    <h3>No friends yet</h3>
+                    <p>Send friend requests to start building your network!</p>
+                </div>
+            `;
+            return;
+        }
 
-    container.innerHTML = '';
+        container.innerHTML = '';
 
-    friends.forEach(friend => {
+        friends.forEach(friend => {
         // Normalize date
         const date = friend.friendshipDate || friend.acceptedDate || friend.createdDate;
         const formattedDate = date ? new Date(date).toLocaleDateString() : 'N/A';
 
-        const friendItem = document.createElement('div');
-        friendItem.className = 'friend-item';
+            const friendItem = document.createElement('div');
+            friendItem.className = 'friend-item';
 
-        friendItem.innerHTML = `
-            <div class="friend-info">
-                <div class="friend-avatar">
-                    <i class="fas fa-user-circle"></i>
-                </div>
-                <div class="friend-details">
-                    <h4>${friend.username}</h4>
+            friendItem.innerHTML = `
+                <div class="friend-info">
+                    <div class="friend-avatar">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                    <div class="friend-details">
+                        <h4>${friend.username}</h4>
                     <p>Friends since: ${formattedDate}</p>
-                    ${friend.bio ? `<p class="friend-bio">${friend.bio}</p>` : ''}
+                        ${friend.bio ? `<p class="friend-bio">${friend.bio}</p>` : ''}
+                    </div>
                 </div>
-            </div>
-            <div class="friend-actions">
-                <button class="btn btn-danger" onclick="app.removeFriend(${friend.friendId})">Remove</button>
-            </div>
-        `;
+                <div class="friend-actions">
+                    <button class="btn btn-danger" onclick="app.removeFriend(${friend.friendId})">Remove</button>
+                </div>
+            `;
 
-        container.appendChild(friendItem);
+            container.appendChild(friendItem);
 
         // Add View Profile button dynamically before Remove button
         const actionsDiv = friendItem.querySelector('.friend-actions');
