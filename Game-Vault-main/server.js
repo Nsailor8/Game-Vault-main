@@ -12,6 +12,11 @@ const GameSearchService = require('./server/services/GameSearchService');
 const SteamService = require('./server/services/SteamService');
 const { Review } = require('./server/models/index');
 
+// Load database models once at startup
+const { User, Game, Review, Wishlist, WishlistGame, Friendship, Achievement } = require('./server/models/index');
+const { sequelize } = require('./server/config/database');
+const { Op } = require('sequelize');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -102,7 +107,8 @@ const {
 } = require('./client/profile.js');
 
 const profileManager = new ProfileManager();
-const adminManager = new AdminManager();
+// AdminManager will use the same databaseManager instance from ProfileManager
+const adminManager = new AdminManager(profileManager.databaseManager);
 const gameSearchService = new GameSearchService();
 const steamService = new SteamService();
 
@@ -150,6 +156,7 @@ app.use((req, res, next) => {
     const pathName = req.path;
     if (pathName.startsWith('/profile')) res.locals.activePage = 'profile';
     else if (pathName.startsWith('/friends')) res.locals.activePage = 'friends';
+    else if (pathName.startsWith('/library')) res.locals.activePage = 'library';
     else if (pathName.startsWith('/wishlist')) res.locals.activePage = 'wishlist';
     else if (pathName.startsWith('/reviews')) res.locals.activePage = 'reviews';
     else if (pathName.startsWith('/settings')) res.locals.activePage = 'settings';
@@ -161,19 +168,11 @@ app.use((req, res, next) => {
 
 // ===== Render EJS Views =====
 app.get('/', async (req, res) => {
-    try {
-        // Fetch trending games from IGDB API
-        const trendingGames = await gameSearchService.getTrendingGames();
-        const recentGames = await gameSearchService.getRecentGames();
-        
-        res.render('index', { 
-            trendingGames: trendingGames.games || [], 
-            recentGames: recentGames.games || [] 
-        });
-    } catch (error) {
-        console.error('Error fetching homepage games:', error);
-        res.render('index', { trendingGames: [], recentGames: [] });
-    }
+    // Render page immediately with empty arrays - games will load asynchronously via API
+    res.render('index', { 
+        trendingGames: [], 
+        recentGames: [] 
+    });
 });
 
 // Settings page
@@ -415,6 +414,7 @@ app.get('/search', (req, res) => {
     res.render('search');
 });
 app.get('/friends', (req, res) => res.render('friends'));
+app.get('/library', (req, res) => res.render('library'));
 app.get('/wishlist', (req, res) => res.render('wishlist'));
 app.get('/reviews', (req, res) => res.render('reviews'));
 app.get('/admin', (req, res) => res.render('admin'));
@@ -1522,44 +1522,152 @@ app.get('/api/wishlists/:username', (req, res) => {
     profileManager.loadProfile(username);
     const wishlistManager = profileManager.getWishlistManager();
 
-    if (wishlistManager) {
         res.json({
-            wishlists: wishlistManager.getWishlists()
+            success: true,
+            wishlists: formattedWishlists
         });
-    } else {
-        res.status(404).json({ error: 'Wishlist manager not found' });
+    } catch (error) {
+        console.error('Error getting libraries:', error);
+        res.status(500).json({ error: 'Failed to get libraries' });
     }
 });
 
-app.post('/api/wishlists/:username/create', (req, res) => {
-    const { username } = req.params;
-    const { name, description } = req.body;
+app.post('/api/wishlists/:username/create', async (req, res) => {
+    try {
+        const { username } = req.params;
+        const { name, description, isPublic, priority } = req.body;
 
-    profileManager.loadProfile(username);
-    const wishlistManager = profileManager.getWishlistManager();
+        if (!name) {
+            return res.status(400).json({ error: 'Library name is required' });
+        }
 
-    if (wishlistManager) {
-        const wishlist = wishlistManager.createWishlist(name, description);
-        res.json({ success: true, wishlist });
-    } else {
-        res.status(404).json({ error: 'Wishlist manager not found' });
+        // Get user from database
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Create library in database
+        const wishlist = await profileManager.databaseManager.createWishlist({
+            userId: user.id,
+            name: name,
+            description: description || '',
+            isPublic: isPublic || false,
+            priority: priority || 'medium',
+            type: 'custom'  // User-created libraries are always custom
+        });
+
+        res.json({
+            success: true,
+            wishlist: {
+                id: wishlist.id,
+                name: wishlist.name,
+                description: wishlist.description,
+                gameCount: 0,
+                createdDate: wishlist.createdAt,
+                isPublic: wishlist.isPublic,
+                priority: wishlist.priority,
+                type: wishlist.type || 'custom'
+            }
+        });
+    } catch (error) {
+        console.error('Error creating library:', error);
+        res.status(500).json({ error: 'Failed to create library' });
+    }
+});
+
+// Get individual wishlist with games
+app.get('/api/wishlists/:username/:wishlistId', async (req, res) => {
+    try {
+        const { username, wishlistId } = req.params;
+        
+        // Get user from database
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Get wishlist from database
+        const { Wishlist } = require('./server/models/index');
+        const wishlist = await Wishlist.findOne({
+            where: { id: wishlistId, userId: user.id }
+        });
+
+        if (!wishlist) {
+            return res.status(404).json({ error: 'Library not found' });
+        }
+
+        // Get games in library
+        const games = await profileManager.databaseManager.getWishlistGames(wishlistId);
+
+        res.json({
+            success: true,
+            wishlist: {
+                id: wishlist.id,
+                name: wishlist.name,
+                description: wishlist.description,
+                createdDate: wishlist.createdAt,
+                isPublic: wishlist.isPublic,
+                priority: wishlist.priority,
+                type: wishlist.type || 'custom'
+            },
+            games: games.map(game => ({
+                id: game.id,
+                gameId: game.gameId,
+                steamId: game.steamId,
+                title: game.gameTitle,
+                platform: game.platform,
+                priority: game.priority,
+                notes: game.notes,
+                addedDate: game.createdAt
+            }))
+        });
+    } catch (error) {
+        console.error('Error getting library:', error);
+        res.status(500).json({ error: 'Failed to get library' });
     }
 });
 
 app.post('/api/wishlists/:username/add-game', async (req, res) => {
     try {
         const { username } = req.params;
-        const { gameId, gameName, gameData } = req.body;
+        const { gameId, gameName, wishlistId, gameData } = req.body;
 
         if (!gameId || !gameName) {
             return res.status(400).json({ error: 'Game ID and name are required' });
         }
 
-        profileManager.loadProfile(username);
-        const wishlistManager = profileManager.getWishlistManager();
+        // Get user from database
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
 
-        if (!wishlistManager) {
-            return res.status(404).json({ error: 'Wishlist manager not found' });
+        let targetWishlistId = wishlistId;
+
+        // If no wishlistId provided, get or create default "My Library"
+        if (!targetWishlistId) {
+            let defaultWishlist = await profileManager.databaseManager.getLibraryByType(user.id, 'automatic');
+            
+            if (!defaultWishlist) {
+                // Create default libraries if they don't exist
+                await profileManager.databaseManager.createDefaultLibraries(user.id);
+                defaultWishlist = await profileManager.databaseManager.getLibraryByType(user.id, 'automatic');
+            }
+            
+            if (!defaultWishlist) {
+                return res.status(500).json({ error: 'Failed to get or create default library' });
+            }
+            targetWishlistId = defaultWishlist.id;
+        } else {
+            // Verify wishlist belongs to user
+            const { Wishlist } = require('./server/models/index');
+            const wishlist = await Wishlist.findOne({
+                where: { id: targetWishlistId, userId: user.id }
+            });
+            if (!wishlist) {
+                return res.status(404).json({ error: 'Library not found' });
+            }
         }
 
         const defaultWishlist = wishlistManager.getWishlists().find(w => w.name === 'Default') || 
@@ -1571,18 +1679,149 @@ app.post('/api/wishlists/:username/add-game', async (req, res) => {
             ...gameData
         });
 
-        if (gameAdded) {
-            res.json({ 
-                success: true, 
-                message: 'Game added to wishlist',
-                game: { id: gameId, name: gameName }
-            });
-        } else {
-            res.status(400).json({ error: 'Failed to add game to wishlist' });
-        }
+        res.json({ 
+            success: true, 
+            message: 'Game added to library',
+            game: { id: gameId, name: gameName }
+        });
     } catch (error) {
         console.error('Error adding game to wishlist:', error);
         res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Remove game from wishlist
+app.delete('/api/wishlists/:username/:wishlistId/games/:gameId', async (req, res) => {
+    try {
+        const { username, wishlistId, gameId } = req.params;
+
+        // Get user from database
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Verify wishlist belongs to user
+        const { Wishlist } = require('./server/models/index');
+        const wishlist = await Wishlist.findOne({
+            where: { id: wishlistId, userId: user.id }
+        });
+        if (!wishlist) {
+            return res.status(404).json({ error: 'Library not found' });
+        }
+
+        // Remove game from library (check by gameId or steamId)
+        const { WishlistGame } = require('./server/models/index');
+        const wishlistGame = await WishlistGame.findOne({
+            where: {
+                wishlistId: wishlistId,
+                [Op.or]: [
+                    { gameId: gameId },
+                    { steamId: gameId }  // Also check by Steam ID
+                ]
+            }
+        });
+
+        if (wishlistGame) {
+            await wishlistGame.destroy();
+            res.json({ 
+                success: true, 
+                message: 'Game removed from library' 
+            });
+        } else {
+            res.status(404).json({ error: 'Game not found in library' });
+        }
+    } catch (error) {
+        console.error('Error removing game from library:', error);
+        res.status(500).json({ error: 'Failed to remove game from library' });
+    }
+});
+
+// Update library (rename)
+app.put('/api/wishlists/:username/:wishlistId', async (req, res) => {
+    try {
+        const { username, wishlistId } = req.params;
+        const { name, description } = req.body;
+
+        if (!name) {
+            return res.status(400).json({ error: 'Library name is required' });
+        }
+
+        // Get user from database
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Verify library belongs to user
+        const { Wishlist } = require('./server/models/index');
+        const wishlist = await Wishlist.findOne({
+            where: { id: wishlistId, userId: user.id }
+        });
+
+        if (!wishlist) {
+            return res.status(404).json({ error: 'Library not found' });
+        }
+
+        // Don't allow renaming automatic/wishlist type libraries
+        if (wishlist.type === 'automatic' || wishlist.type === 'wishlist') {
+            return res.status(400).json({ error: 'Cannot rename default libraries' });
+        }
+
+        // Update library
+        const updated = await profileManager.databaseManager.updateLibrary(wishlistId, {
+            name: name,
+            description: description || wishlist.description
+        });
+
+        if (updated) {
+            res.json({ success: true, message: 'Library updated successfully' });
+        } else {
+            res.status(500).json({ error: 'Failed to update library' });
+        }
+    } catch (error) {
+        console.error('Error updating library:', error);
+        res.status(500).json({ error: 'Failed to update library' });
+    }
+});
+
+// Delete library
+app.delete('/api/wishlists/:username/:wishlistId', async (req, res) => {
+    try {
+        const { username, wishlistId } = req.params;
+
+        // Get user from database
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Verify library belongs to user
+        const { Wishlist } = require('./server/models/index');
+        const wishlist = await Wishlist.findOne({
+            where: { id: wishlistId, userId: user.id }
+        });
+
+        if (!wishlist) {
+            return res.status(404).json({ error: 'Library not found' });
+        }
+
+        // Don't allow deleting automatic/wishlist type libraries
+        if (wishlist.type === 'automatic' || wishlist.type === 'wishlist') {
+            return res.status(400).json({ error: 'Cannot delete default libraries' });
+        }
+
+        // Delete library
+        const deleted = await profileManager.databaseManager.deleteLibrary(wishlistId);
+
+        if (deleted) {
+            res.json({ success: true, message: 'Library deleted successfully' });
+        } else {
+            res.status(500).json({ error: 'Failed to delete library' });
+        }
+    } catch (error) {
+        console.error('Error deleting library:', error);
+        res.status(500).json({ error: 'Failed to delete library' });
     }
 });
 
@@ -1818,21 +2057,123 @@ app.delete('/api/reviews/:reviewId', async (req, res) => {
 app.post('/api/admin/login', (req, res) => {
     const { username, password } = req.body;
 
-    const admin = adminManager.adminLogin(username, password);
-    if (admin) {
-        res.json({ success: true, admin: { username: admin.username, permissions: admin.permissions } });
-    } else {
-        res.status(401).json({ error: 'Invalid admin credentials' });
+        // Use DatabaseManager to avoid connection issues
+        const user = await profileManager.databaseManager.getUserByUsername(req.session.user.username);
+
+        console.log('[Admin Check] User found:', user ? user.username : 'none');
+        console.log('[Admin Check] Is admin:', user ? user.is_admin : false);
+
+        if (user && user.is_admin) {
+            req.session.isAdmin = true;
+            console.log('[Admin Check] Returning isAdmin: true');
+            res.json({ success: true, isAdmin: true });
+        } else {
+            console.log('[Admin Check] Returning isAdmin: false');
+            res.json({ success: false, isAdmin: false });
+        }
+    } catch (error) {
+        console.error('[Admin Check] Error checking admin status:', error);
+        res.json({ success: false, isAdmin: false });
     }
 });
 
-app.get('/api/admin/stats', (req, res) => {
-    const stats = adminManager.getUserStatistics(profileManager);
-    const logs = adminManager.getSystemLogs();
+// Admin login - Uses AdminManager with database
+app.post('/api/admin/login', async (req, res) => {
+    try {
+        console.log('[Admin Login] ===== REQUEST RECEIVED =====');
+        console.log('[Admin Login] Request body:', JSON.stringify(req.body));
+        console.log('[Admin Login] Request headers:', JSON.stringify(req.headers));
+        
+        const { username, password } = req.body;
 
-    res.json({
-        userStats: stats,
-        systemLogs: logs.slice(-20).reverse()
+        if (!username || !password) {
+            console.log('[Admin Login] Missing username or password');
+            return res.status(400).json({ error: 'Username and password are required' });
+        }
+
+        console.log(`[Admin Login] Attempting login for username: ${username}`);
+        console.log(`[Admin Login] Password length: ${password ? password.length : 0}`);
+
+        // Use DatabaseManager instead of User model directly to avoid connection issues
+        const bcrypt = require('bcrypt');
+        
+        console.log('[Admin Login] Querying database using DatabaseManager...');
+        const user = await profileManager.databaseManager.getUserByUsername(username);
+
+        if (!user) {
+            console.log(`[Admin Login] ❌ User not found: ${username}`);
+            return res.status(401).json({ error: 'Invalid admin credentials' });
+        }
+
+        // Check if user is admin and active
+        if (!user.is_admin || !user.is_active) {
+            console.log(`[Admin Login] ❌ User is not admin or not active: ${username}`);
+            console.log(`[Admin Login] is_admin: ${user.is_admin}, is_active: ${user.is_active}`);
+            return res.status(401).json({ error: 'Invalid admin credentials' });
+        }
+
+        console.log(`[Admin Login] ✅ Admin user found: ${user.username}`);
+        console.log(`[Admin Login] Password hash: ${user.password_hash ? user.password_hash.substring(0, 30) + '...' : 'NOT SET'}`);
+        console.log(`[Admin Login] Verifying password...`);
+        
+        // Verify password
+        const passwordMatch = await bcrypt.compare(password, user.password_hash);
+
+        if (!passwordMatch) {
+            console.log(`[Admin Login] ❌ Password mismatch for user: ${username}`);
+            console.log(`[Admin Login] Input password: "${password}"`);
+            console.log(`[Admin Login] Hash comparison failed`);
+            return res.status(401).json({ error: 'Invalid admin credentials' });
+        }
+
+        console.log(`[Admin Login] ✅ Password verified successfully for: ${username}`);
+
+        // Set admin session
+        req.session.user = {
+            username: user.username,
+            email: user.email,
+            joinDate: user.join_date,
+            isAdmin: true
+        };
+        req.session.isAdmin = true;
+
+        // Log admin login
+        adminManager.logAction('admin_login', `Admin ${username} logged in`);
+
+        // Force session save
+        req.session.save((err) => {
+            if (err) {
+                console.error('[Admin Login] ❌ Session save error:', err);
+                return res.status(500).json({ error: 'Session save failed' });
+            }
+
+            console.log(`[Admin Login] ✅ Login successful for: ${username}`);
+            console.log(`[Admin Login] Session ID: ${req.sessionID}`);
+            res.json({ 
+                success: true, 
+                admin: { 
+                    username: user.username, 
+                    permissions: ['user_management', 'system_logs']
+                } 
+            });
+        });
+    } catch (error) {
+        console.error('[Admin Login] ❌ Error during admin login:', error);
+        console.error('[Admin Login] Error name:', error.name);
+        console.error('[Admin Login] Error message:', error.message);
+        console.error('[Admin Login] Error stack:', error.stack);
+        res.status(500).json({ error: 'Internal server error', details: error.message });
+    }
+});
+
+// Admin logout
+app.post('/api/admin/logout', (req, res) => {
+    req.session.isAdmin = false;
+    req.session.save((err) => {
+        if (err) {
+            return res.status(500).json({ error: 'Error logging out' });
+        }
+        res.json({ success: true });
     });
 });
 
@@ -1847,6 +2188,7 @@ app.get('/api/games/search', async (req, res) => {
     }
 
     try {
+        console.log(`[Search API] Query: "${query}", Page: ${page}, PageSize: ${pageSize}`);
         const result = await gameSearchService.searchGames(query.trim(), parseInt(page), parseInt(pageSize));
 
         if (req.session.user && req.session.user.steam_id) {
@@ -1859,9 +2201,13 @@ app.get('/api/games/search', async (req, res) => {
         res.json(result);
     } catch (error) {
         console.error('Error in game search:', error);
+        console.error('Error stack:', error.stack);
         res.status(500).json({ 
-            success: false, 
-            error: 'Internal server error during game search' 
+            success: false,
+            error: 'Failed to search games',
+            games: [],
+            totalResults: 0,
+            isMockData: true
         });
     }
 });
@@ -1889,13 +2235,15 @@ app.get('/api/games/suggestions', async (req, res) => {
 // Trending games endpoint
 app.get('/api/games/trending', async (req, res) => {
     try {
-        const result = await gameSearchService.getTrendingGames();
+        const limit = parseInt(req.query.limit) || 8;
+        const result = await gameSearchService.getTrendingGames(limit);
         res.json(result);
     } catch (error) {
         console.error('Error getting trending games:', error);
         res.status(500).json({ 
             success: false, 
-            error: 'Failed to fetch trending games' 
+            error: 'Failed to fetch trending games',
+            games: []
         });
     }
 });
@@ -1903,13 +2251,15 @@ app.get('/api/games/trending', async (req, res) => {
 // Recent games endpoint
 app.get('/api/games/recent', async (req, res) => {
     try {
-        const result = await gameSearchService.getRecentGames();
+        const limit = parseInt(req.query.limit) || 8;
+        const result = await gameSearchService.getRecentGames(limit);
         res.json(result);
     } catch (error) {
         console.error('Error getting recent games:', error);
         res.status(500).json({ 
             success: false, 
-            error: 'Failed to fetch recent games' 
+            error: 'Failed to fetch recent games',
+            games: []
         });
     }
 });
@@ -1920,18 +2270,23 @@ app.get('/api/games/:gameId', async (req, res) => {
     if (!gameId) {
         return res.status(400).json({ 
             success: false, 
-            error: 'Game ID is required' 
+            error: 'Game ID is required',
+            game: null
         });
     }
 
     try {
+        console.log(`[Game Details API] Request for game ID: ${gameId}`);
         const result = await gameSearchService.getGameDetails(gameId);
+        console.log(`[Game Details API] Result: success=${result.success}, game=${result.game ? result.game.name : 'null'}`);
         res.json(result);
     } catch (error) {
-        console.error('Error fetching game details:', error);
+        console.error('[Game Details API] Error:', error);
+        console.error('[Game Details API] Error stack:', error.stack);
         res.status(500).json({ 
-            success: false, 
-            error: 'Internal server error while fetching game details' 
+            success: false,
+            error: `Failed to fetch game details: ${error.message}`,
+            game: null
         });
     }
 });

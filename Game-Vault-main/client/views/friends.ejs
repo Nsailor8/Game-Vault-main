@@ -25,11 +25,23 @@
           <div class="friends-list">
             <h3>Friends (<span id="friendsCount">0</span>)</h3>
             <div id="friendsList" class="list-container">
-              <div class="empty-state">
-                <i class="fas fa-user-friends"></i>
-                <h3>No friends yet</h3>
-                <p>Send friend requests to start building your network!</p>
-              </div>
+              <!-- Friends will be dynamically populated by updateFriends() -->
+            </div>
+          </div>
+
+          <!-- Wishlist Section -->
+          <div class="wishlist-section">
+            <h3>Wishlist</h3>
+            <div id="wishlistList" class="list-container">
+              <!-- Wishlist items will populate here -->
+            </div>
+          </div>
+
+          <!-- Reviews Section -->
+          <div class="reviews-section">
+            <h3>Reviews</h3>
+            <div id="reviewsList" class="list-container">
+              <!-- Review items will populate here -->
             </div>
           </div>
 
@@ -56,12 +68,26 @@
               </div>
             </div>
           </div>
+
         </div>
       </section>
     </main>
   </div>
 
   <%- include('partials/loginModal') %>
+
+  <!-- Friend Profile Modal -->
+  <div id="friendProfileModal" class="modal" style="display: none;">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h2 id="friendUsername">Friend Name</h2>
+        <span class="close">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p>Friend profile will load here.</p>
+      </div>
+    </div>
+  </div>
 
   <script src="/app.js"></script>
   <script>

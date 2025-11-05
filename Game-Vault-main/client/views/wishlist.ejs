@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-  <%- include('partials/head', { pageTitle: 'Wishlist' }) %>
+  <%- include('partials/head', { pageTitle: 'My Wishlist' }) %>
 <body>
   <%- include('partials/header') %>
 
@@ -9,15 +9,18 @@
       
       <section id="wishlistSection" class="content-section active">
         <div class="section-header">
-          <h2>Wishlist</h2>
-          <div class="wishlist-actions">
+          <h2><i class="fas fa-heart"></i> My Wishlist</h2>
+          <div class="library-actions">
+            <button class="btn btn-secondary" onclick="window.location.href='/library'">
+              <i class="fas fa-arrow-left"></i> Back to Libraries
+            </button>
             <button id="checkSteamOwnershipBtn" class="btn btn-steam">
               <i class="fab fa-steam"></i> Check Steam Ownership
             </button>
-            <button id="addWishlistBtn" class="btn btn-primary">Add Game</button>
           </div>
         </div>
         
+        <!-- Steam Ownership Status -->
         <div id="steamOwnershipStatus" class="steam-ownership-status" style="display: none;">
           <div class="ownership-header">
             <h3><i class="fab fa-steam"></i> Steam Ownership Status</h3>
@@ -44,7 +47,7 @@
 
   <%- include('partials/loginModal') %>
 
-  <script src="/app.js"></script>
+  <script src="/app.js?v=2"></script>
   <script>
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -60,18 +63,163 @@
               if (result) {
                 displaySteamOwnershipStatus(result);
               } else {
-                alert('Failed to check Steam ownership. Make sure you have a Steam account linked.');
+                if (window.app) {
+                  window.app.showAlert('Failed to check Steam ownership. Make sure you have a Steam account linked.', 'Error', 'error');
+                } else {
+                  alert('Failed to check Steam ownership. Make sure you have a Steam account linked.');
+                }
               }
             } catch (error) {
               console.error('Error checking Steam ownership:', error);
-              alert('Error checking Steam ownership');
+              if (window.app) {
+                window.app.showAlert('Error checking Steam ownership', 'Error', 'error');
+              } else {
+                alert('Error checking Steam ownership');
+              }
             }
           } else {
-            alert('Please log in to check Steam ownership');
+            if (window.app) {
+              window.app.showAlert('Please log in to check Steam ownership', 'Login Required', 'warning');
+            } else {
+              alert('Please log in to check Steam ownership');
+            }
           }
         });
       }
     });
+
+    async function loadWishlist() {
+      const wishlistGames = document.getElementById('wishlistGames');
+      if (!wishlistGames) return;
+
+      try {
+        // Get user's libraries
+        const response = await fetch(`/api/wishlists/${window.app.currentUser.username}`, {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (!data.success || !data.wishlists) {
+          wishlistGames.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load wishlist. Please try again.</p></div>';
+          return;
+        }
+
+        // Find the wishlist library
+        const wishlistLib = data.wishlists.find(lib => lib.type === 'wishlist');
+        if (!wishlistLib) {
+          wishlistGames.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>No Wishlist Found</h3><p>Your wishlist library will be created automatically when you add your first game.</p></div>';
+          return;
+        }
+
+        // Load games from the wishlist
+        const gamesResponse = await fetch(`/api/wishlists/${window.app.currentUser.username}/${wishlistLib.id}/games`, {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        const gamesData = await gamesResponse.json();
+        if (!gamesData.success || !gamesData.games) {
+          wishlistGames.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>No Games in Wishlist</h3><p>Add games to your wishlist from the search page!</p></div>';
+          return;
+        }
+
+        const games = gamesData.games;
+        if (games.length === 0) {
+          wishlistGames.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>Your Wishlist is Empty</h3><p>Add games to your wishlist from the search page!</p></div>';
+          return;
+        }
+
+        // Render games
+        wishlistGames.innerHTML = games.map(game => `
+          <div class="wishlist-game-item">
+            <div class="game-info">
+              <h3>${game.title || game.gameTitle || 'Unknown Game'}</h3>
+              ${game.platform ? `<p class="game-platform"><i class="fas fa-gamepad"></i> ${game.platform}</p>` : ''}
+              ${game.notes ? `<p class="game-notes">${game.notes}</p>` : ''}
+              <p class="game-added">Added: ${new Date(game.addedDate || game.createdAt).toLocaleDateString()}</p>
+            </div>
+            <div class="game-actions">
+              ${game.steamId ? `<a href="https://store.steampowered.com/app/${game.steamId}" target="_blank" class="btn btn-steam btn-sm"><i class="fab fa-steam"></i> View on Steam</a>` : ''}
+              <button class="btn btn-danger btn-sm" onclick="removeFromWishlist(${game.id || game.gameId}, '${(game.title || game.gameTitle || '').replace(/'/g, "\\'")}')">
+                <i class="fas fa-trash"></i> Remove
+              </button>
+            </div>
+          </div>
+        `).join('');
+
+      } catch (error) {
+        console.error('Error loading wishlist:', error);
+        wishlistGames.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load wishlist. Please try again.</p></div>';
+      }
+    }
+
+    function showLoginRequired() {
+      const wishlistGames = document.getElementById('wishlistGames');
+      if (wishlistGames) {
+        wishlistGames.innerHTML = '<div class="empty-state"><i class="fas fa-lock"></i><h3>Login Required</h3><p>Please log in to view your wishlist!</p></div>';
+      }
+    }
+
+    async function removeFromWishlist(gameId, gameTitle) {
+      if (!window.app || !window.app.currentUser) {
+        if (window.app) {
+          window.app.showAlert('Please log in to remove games', 'Login Required', 'warning');
+        }
+        return;
+      }
+
+      if (!confirm(`Are you sure you want to remove "${gameTitle}" from your wishlist?`)) {
+        return;
+      }
+
+      try {
+        // Get wishlist library ID
+        const response = await fetch(`/api/wishlists/${window.app.currentUser.username}`, {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (!data.success || !data.wishlists) {
+          throw new Error('Failed to get wishlist');
+        }
+
+        const wishlistLib = data.wishlists.find(lib => lib.type === 'wishlist');
+        if (!wishlistLib) {
+          throw new Error('Wishlist library not found');
+        }
+
+        // Remove game from wishlist
+        const removeResponse = await fetch(`/api/wishlists/${window.app.currentUser.username}/remove-game`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            wishlistId: wishlistLib.id,
+            gameId: gameId
+          })
+        });
+
+        const removeData = await removeResponse.json();
+        if (removeData.success) {
+          if (window.app) {
+            window.app.showAlert('Game removed from wishlist', 'Success', 'success');
+          }
+          // Reload wishlist
+          await loadWishlist();
+        } else {
+          throw new Error(removeData.error || 'Failed to remove game');
+        }
+      } catch (error) {
+        console.error('Error removing game from wishlist:', error);
+        if (window.app) {
+          window.app.showAlert('Failed to remove game from wishlist', 'Error', 'error');
+        } else {
+          alert('Failed to remove game from wishlist');
+        }
+      }
+    }
 
     function displaySteamOwnershipStatus(result) {
       const statusDiv = document.getElementById('steamOwnershipStatus');

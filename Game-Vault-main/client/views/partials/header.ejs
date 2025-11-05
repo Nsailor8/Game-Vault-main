@@ -19,7 +19,7 @@
   <div class="search-bar">
     <div class="search-wrapper">
       <input type="text" id="gameSearchInput" placeholder="Search games..." autocomplete="off" onkeypress="if(event.key==='Enter') { const query = this.value.trim(); if(query) window.location.href = '/search?q=' + encodeURIComponent(query); }">
-      <button id="gameSearchBtn" onclick="const query = document.getElementById('gameSearchInput').value.trim(); if(query) window.location.href = '/search?q=' + encodeURIComponent(query); else alert('Please enter a search term');"><i class="fas fa-search"></i></button>
+      <button id="gameSearchBtn" onclick="const query = document.getElementById('gameSearchInput').value.trim(); if(query) window.location.href = '/search?q=' + encodeURIComponent(query); else if(window.app) window.app.showAlert('Please enter a search term', 'Search Required', 'warning'); else alert('Please enter a search term');"><i class="fas fa-search"></i></button>
       <div id="searchSuggestions" class="search-suggestions" style="display: none;">
         <!-- Autocomplete suggestions will appear here -->
       </div>
@@ -33,9 +33,62 @@
 
   <!-- User Section (shown when logged in) -->
   <div class="user-section" id="userSection" style="display: none;">
-    <div class="user-info">
-      <span id="userDisplayName">User</span>
-      <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+    <div class="user-section-content">
+      <div class="user-profile-dropdown">
+        <div class="user-profile-trigger">
+          <i class="fas fa-user-circle"></i>
+          <span id="userDisplayName">User</span>
+          <i class="fas fa-chevron-down"></i>
+        </div>
+        <div class="user-profile-menu">
+          <a href="/profile" class="profile-menu-item <%= activePage === 'profile' ? 'active' : '' %>">
+            <i class="fas fa-user"></i>
+            <span>Profile</span>
+          </a>
+          <a href="/library" class="profile-menu-item <%= activePage === 'library' ? 'active' : '' %>">
+            <i class="fas fa-book"></i>
+            <span>Library</span>
+          </a>
+          <a href="/wishlist" class="profile-menu-item <%= activePage === 'wishlist' ? 'active' : '' %>">
+            <i class="fas fa-heart"></i>
+            <span>Wishlist</span>
+          </a>
+          <a href="/friends" class="profile-menu-item <%= activePage === 'friends' ? 'active' : '' %>">
+            <i class="fas fa-users"></i>
+            <span>Friends</span>
+          </a>
+          <a href="/reviews" class="profile-menu-item <%= activePage === 'reviews' ? 'active' : '' %>">
+            <i class="fas fa-star"></i>
+            <span>Reviews</span>
+          </a>
+          <a href="/admin" class="profile-menu-item admin-menu-item <%= activePage === 'admin' ? 'active' : '' %>" id="adminMenuLink" style="display: none;">
+            <i class="fas fa-shield-alt"></i>
+            <span>Admin</span>
+          </a>
+          <div class="profile-menu-divider"></div>
+          <button id="logoutBtn" class="profile-menu-item logout-item">
+            <i class="fas fa-sign-out-alt"></i>
+            <span>Logout</span>
+          </button>
+        </div>
+      </div>
+      <button id="signInBtnGuest" class="btn btn-primary" style="display: none;">Sign In</button>
     </div>
   </div>
 </header>
+
+<!-- Custom Alert Modal -->
+<div id="customAlertModal" class="modal" style="display: none;">
+  <div class="modal-content alert-modal-content">
+    <div class="alert-modal-header">
+      <i id="alertIcon" class="fas fa-info-circle"></i>
+      <h3 id="alertTitle">Alert</h3>
+    </div>
+    <div class="alert-modal-body">
+      <p id="alertMessage">Message goes here</p>
+    </div>
+    <div class="alert-modal-footer">
+      <button id="alertOkBtn" class="btn btn-primary">OK</button>
+    </div>
+  </div>
+</div>

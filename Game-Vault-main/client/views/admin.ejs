@@ -4,12 +4,52 @@
 <body>
   <%- include('partials/header') %>
 
-  <div class="container">
+  <!-- Admin Login Screen (shown when not logged in as admin) -->
+  <div id="adminLoginScreen" class="admin-login-screen">
+    <div class="admin-login-container">
+      <div class="admin-login-card">
+        <div class="admin-login-header">
+          <i class="fas fa-shield-alt"></i>
+          <h1>Admin Panel</h1>
+          <p>Secure Administrator Access</p>
+        </div>
+        <form id="adminLoginFormPage" class="admin-login-form">
+          <div class="form-group">
+            <label for="adminUsernamePage">Username</label>
+            <input type="text" id="adminUsernamePage" placeholder="Admin Username" required autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label for="adminPasswordPage">Password</label>
+            <div style="position: relative;">
+              <input type="password" id="adminPasswordPage" placeholder="Admin Password" required autocomplete="current-password">
+              <button type="button" id="togglePasswordVisibility" class="password-toggle-btn" onclick="togglePasswordVisibility()">
+                <i class="fas fa-eye" id="passwordToggleIcon"></i>
+              </button>
+            </div>
+          </div>
+          <div id="adminLoginErrorPage" class="error-message" style="display: none;"></div>
+          <button type="submit" class="btn btn-primary btn-full">
+            <i class="fas fa-sign-in-alt"></i> Login as Admin
+          </button>
+        </form>
+        <div class="admin-login-footer">
+          <p><a href="/">← Back to Home</a></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Panel Content (shown when logged in as admin) -->
+  <div id="adminPanelContent" class="container" style="display: none;">
     <main class="main-content">
       
       <section id="adminSection" class="content-section active">
         <div class="section-header">
           <h2>Admin Panel</h2>
+          <div id="adminStatus" class="admin-status"></div>
+          <button id="adminLogoutBtn" class="btn btn-secondary">
+            <i class="fas fa-sign-out-alt"></i> Logout
+          </button>
         </div>
         <div id="adminContent" class="list-container">
           
@@ -23,20 +63,64 @@
     </main>
   </div>
 
-  <%- include('partials/loginModal') %>
+  <!-- Create Admin Modal -->
+  <div id="createAdminModal" class="modal">
+    <div class="modal-content">
+      <span class="close">&times;</span>
+      <h2>Create New Admin</h2>
+      <form id="createAdminForm">
+        <div class="form-group">
+          <label for="newAdminUsername">Username</label>
+          <input type="text" id="newAdminUsername" required minlength="3" maxlength="50">
+        </div>
+        <div class="form-group">
+          <label for="newAdminEmail">Email</label>
+          <input type="email" id="newAdminEmail" required>
+        </div>
+        <div class="form-group">
+          <label for="newAdminPassword">Password</label>
+          <input type="password" id="newAdminPassword" required minlength="6">
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Create Admin</button>
+          <button type="button" class="btn btn-secondary" id="cancelCreateAdmin">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
+  <%- include('partials/footer') %>
+
+  <script src="/app.js"></script>
   <script>
+    // Admin login functionality
     document.addEventListener('DOMContentLoaded', () => {
-      const authModal = document.getElementById('authModal');
-      const mainContent = document.querySelector('.main-content');
+      const adminLoginScreen = document.getElementById('adminLoginScreen');
+      const adminPanelContent = document.getElementById('adminPanelContent');
+      const adminLoginFormPage = document.getElementById('adminLoginFormPage');
+      const adminLoginErrorPage = document.getElementById('adminLoginErrorPage');
 
 
       authModal.style.display = 'block';
       mainContent.style.display = 'none';
 
-      function showMainContent() {
-        authModal.style.display = 'none';
-        mainContent.style.display = 'block';
+      function initializeAdminPanel() {
+        // Wait for app to be initialized
+        const initAdminPanel = () => {
+          const app = window.app || window.gameVaultApp;
+          if (app) {
+            // Set up admin panel tabs
+            app.setupAdminTabs();
+            
+            // Load admin data
+            app.loadAdminPanel();
+          } else {
+            // Retry after a short delay if app not ready
+            setTimeout(initAdminPanel, 100);
+          }
+        };
+        
+        initAdminPanel();
       }
 
 

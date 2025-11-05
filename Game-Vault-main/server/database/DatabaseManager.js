@@ -65,6 +65,17 @@ class DatabaseManager {
       const [user, created] = await User.upsert(userDataToSave);
       
       console.log(`${created ? 'Created' : 'Updated'} user ${userData.username} in database.`);
+      
+      // If this is a new user, create default libraries
+      if (created && user.id) {
+        try {
+          await this.createDefaultLibraries(user.id);
+        } catch (error) {
+          console.error('Error creating default libraries for new user:', error);
+          // Don't throw - libraries can be created later
+        }
+      }
+      
       return user;
     } catch (error) {
       console.error('Error saving user:', error);
@@ -304,16 +315,107 @@ class DatabaseManager {
       const wishlist = await Wishlist.create({
         userId: wishlistData.userId,
         name: wishlistData.name,
-        description: wishlistData.description,
-        isPublic: wishlistData.isPublic,
-        priority: wishlistData.priority
+        description: wishlistData.description || '',
+        isPublic: wishlistData.isPublic || false,
+        priority: wishlistData.priority || 'medium',
+        type: wishlistData.type || 'custom'
       });
       
-      console.log(`Wishlist "${wishlistData.name}" created`);
+      console.log(`Library "${wishlistData.name}" created (type: ${wishlistData.type || 'custom'})`);
       return wishlist;
     } catch (error) {
-      console.error('Error creating wishlist:', error);
+      console.error('Error creating library:', error);
       throw error;
+    }
+  }
+
+  async createDefaultLibraries(userId) {
+    try {
+      // Check if default libraries already exist
+      const existingAutomatic = await Wishlist.findOne({
+        where: { userId, type: 'automatic' }
+      });
+      const existingWishlist = await Wishlist.findOne({
+        where: { userId, type: 'wishlist' }
+      });
+
+      const created = [];
+
+      if (!existingAutomatic) {
+        const automatic = await this.createWishlist({
+          userId,
+          name: 'My Library',
+          description: 'Your personal game library',
+          type: 'automatic',
+          isPublic: false,
+          priority: 'medium'
+        });
+        created.push(automatic);
+      }
+
+      if (!existingWishlist) {
+        const wishlist = await this.createWishlist({
+          userId,
+          name: 'Wishlist',
+          description: 'Games you want to play',
+          type: 'wishlist',
+          isPublic: false,
+          priority: 'medium'
+        });
+        created.push(wishlist);
+      }
+
+      if (created.length > 0) {
+        console.log(`Created ${created.length} default library/libraries for user ${userId}`);
+      }
+      return created;
+    } catch (error) {
+      console.error('Error creating default libraries:', error);
+      throw error;
+    }
+  }
+
+  async updateLibrary(libraryId, updates) {
+    try {
+      const [updatedRowsCount] = await Wishlist.update(updates, {
+        where: { id: libraryId }
+      });
+      if (updatedRowsCount > 0) {
+        console.log(`Library ${libraryId} updated`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error updating library:', error);
+      throw error;
+    }
+  }
+
+  async deleteLibrary(libraryId) {
+    try {
+      // First delete all games in the library
+      await WishlistGame.destroy({ where: { wishlistId: libraryId } });
+      // Then delete the library
+      const result = await Wishlist.destroy({ where: { id: libraryId } });
+      if (result > 0) {
+        console.log(`Library ${libraryId} deleted`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error deleting library:', error);
+      throw error;
+    }
+  }
+
+  async getLibraryByType(userId, type) {
+    try {
+      return await Wishlist.findOne({
+        where: { userId, type }
+      });
+    } catch (error) {
+      console.error('Error getting library by type:', error);
+      return null;
     }
   }
 
@@ -321,29 +423,49 @@ class DatabaseManager {
     try {
       return await Wishlist.findAll({
         where: { userId },
-        order: [['createdAt', 'DESC']]
+        order: [
+          // Sort by type first: automatic, wishlist, then custom
+          [sequelize.literal("CASE WHEN type = 'automatic' THEN 0 WHEN type = 'wishlist' THEN 1 ELSE 2 END"), 'ASC'],
+          ['createdAt', 'ASC']
+        ]
       });
     } catch (error) {
-      console.error('Error getting user wishlists:', error);
+      console.error('Error getting user libraries:', error);
       return [];
     }
   }
 
   async addGameToWishlist(wishlistId, gameData) {
     try {
+      // Check if game exists in local games table
+      let localGameId = null;
+      if (gameData.gameId) {
+        const localGame = await Game.findByPk(gameData.gameId);
+        if (localGame) {
+          localGameId = gameData.gameId;
+        }
+      }
+      
+      // If gameId looks like a Steam ID (large number) and game doesn't exist locally,
+      // treat it as a Steam ID
+      const steamId = (!localGameId && gameData.gameId && gameData.gameId > 10000) 
+        ? gameData.gameId 
+        : gameData.steamId || null;
+      
       const wishlistGame = await WishlistGame.create({
         wishlistId: wishlistId,
-        gameId: gameData.gameId,
+        gameId: localGameId,  // Can be null if game doesn't exist locally
+        steamId: steamId,  // Store Steam ID separately
         gameTitle: gameData.title,
         platform: gameData.platform,
         priority: gameData.priority,
         notes: gameData.notes
       });
       
-      console.log(`Game ${gameData.title} added to wishlist`);
+      console.log(`Game ${gameData.title} added to library (gameId: ${localGameId || 'N/A'}, steamId: ${steamId || 'N/A'})`);
       return wishlistGame;
     } catch (error) {
-      console.error('Error adding game to wishlist:', error);
+      console.error('Error adding game to library:', error);
       throw error;
     }
   }

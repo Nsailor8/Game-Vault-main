@@ -386,35 +386,103 @@ class ReviewManager {
 }
 
 class AdminManager {
-  constructor() {
-    this.admins = [];
-    this.systemLogs = [];
+  constructor(databaseManager = null) {
+    this.databaseManager = databaseManager || new RealDatabaseManager();
+    this.systemLogs = []; // Keep in-memory logs for now (could be moved to DB later)
   }
 
-  createAdmin(username, email, password) {
-    const admin = {
-      username: username,
-      email: email,
-      password: password,
-      permissions: ['user_management', 'system_logs'],
-      createdDate: new Date().toISOString(),
-      isActive: true
-    };
-    this.admins.push(admin);
-    this.logAction('admin_created', `Admin ${username} created`);
-    console.log(`Admin ${username} created successfully!`);
-    return admin;
+  async createAdmin(username, email, password) {
+    try {
+      const admin = await this.databaseManager.createAdmin(username, email, password);
+      this.logAction('admin_created', `Admin ${username} created`);
+      console.log(`Admin ${username} created successfully in database!`);
+      return {
+        username: admin.username,
+        email: admin.email,
+        permissions: ['user_management', 'system_logs'],
+        createdDate: admin.join_date,
+        isActive: admin.is_active
+      };
+    } catch (error) {
+      console.error('Error creating admin:', error);
+      throw error;
+    }
   }
 
-  adminLogin(username, password) {
-    const admin = this.admins.find(a => a.username === username && a.password === password && a.isActive);
-    if (admin) {
-      this.logAction('admin_login', `Admin ${username} logged in`);
-      console.log(`Admin ${username} logged in successfully!`);
-      return admin;
-    } else {
-      console.log('Invalid admin credentials.');
+  async adminLogin(username, password) {
+    try {
+      // Check if user exists and is admin in database
+      const user = await this.databaseManager.getUserByUsername(username);
+      if (!user || !user.is_admin || !user.is_active) {
+        console.log('Invalid admin credentials.');
+        return null;
+      }
+
+      // Verify password
+      const bcrypt = require('bcrypt');
+      const passwordMatch = await bcrypt.compare(password, user.password_hash);
+      
+      if (passwordMatch) {
+        this.logAction('admin_login', `Admin ${username} logged in`);
+        console.log(`Admin ${username} logged in successfully!`);
+        return {
+          username: user.username,
+          email: user.email,
+          permissions: ['user_management', 'system_logs'],
+          createdDate: user.join_date,
+          isActive: user.is_active
+        };
+      } else {
+        console.log('Invalid admin credentials.');
+        return null;
+      }
+    } catch (error) {
+      console.error('Error during admin login:', error);
       return null;
+    }
+  }
+
+  async getAdmins() {
+    try {
+      return await this.databaseManager.getAdmins();
+    } catch (error) {
+      console.error('Error getting admins:', error);
+      return [];
+    }
+  }
+
+  async isAdmin(username) {
+    try {
+      return await this.databaseManager.isAdmin(username);
+    } catch (error) {
+      console.error('Error checking admin status:', error);
+      return false;
+    }
+  }
+
+  async promoteToAdmin(username) {
+    try {
+      const result = await this.databaseManager.promoteToAdmin(username);
+      if (result) {
+        this.logAction('admin_promoted', `User ${username} promoted to admin`);
+      }
+      return result;
+    } catch (error) {
+      console.error('Error promoting user to admin:', error);
+      return false;
+    }
+  }
+
+  async demoteFromAdmin(username) {
+    try {
+      const result = await this.databaseManager.demoteFromAdmin(username);
+      if (result) {
+        this.logAction('admin_demoted', `User ${username} demoted from admin`);
+      }
+      return result;
+    } catch (error) {
+      console.error('Error demoting user from admin:', error);
+      return false;
     }
   }
 
@@ -424,6 +492,10 @@ class AdminManager {
       details: details,
       timestamp: new Date().toISOString()
     });
+    // Keep only last 100 logs in memory
+    if (this.systemLogs.length > 100) {
+      this.systemLogs.shift();
+    }
   }
 
   getSystemLogs() {
@@ -431,6 +503,8 @@ class AdminManager {
   }
 
   getUserStatistics(profileManager) {
+    // This method is now primarily used for backward compatibility
+    // The actual stats are fetched from database in server.js
     const profiles = profileManager.getAllProfiles();
     return {
       totalUsers: profiles.length,
@@ -526,10 +600,24 @@ class ProfileManager {
       return false;
     }
 
-    const existingProfile = this.profiles.find(p => p.username === username);
-    if (existingProfile) {
-      console.log(`Profile with username "${username}" already exists!`);
-      return false;
+    // Check if user already exists in database first
+    try {
+      const existingUser = await this.getUserByUsername(username);
+      if (existingUser) {
+        console.log(`Profile with username "${username}" already exists in database!`);
+        return false;
+      }
+
+      // Also check by email
+      const { User } = require('../server/models/index');
+      const existingEmail = await User.findOne({ where: { email: email } });
+      if (existingEmail) {
+        console.log(`Profile with email "${email}" already exists in database!`);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error checking for existing user:', error);
+      // If there's an error checking, we should still try to create, but the database constraint will catch duplicates
     }
 
     const saltRounds = 10;
@@ -544,7 +632,31 @@ class ProfileManager {
     this.reviewManagers.set(username, new ReviewManager(username));
 
     try {
-      await this.databaseManager.saveUser(profile);
+      const { User } = require('../server/models/index');
+      const user = await User.create({
+        username: username,
+        email: email,
+        password_hash: hashedPassword,
+        join_date: new Date(),
+        is_active: true,
+        bio: '',
+        gaming_preferences: gamingPreferences,
+        statistics: {
+          totalGamesPlayed: 0,
+          totalPlaytime: 0,
+          averageRating: 0,
+          favoriteGame: null,
+          mostPlayedPlatform: null,
+          completionRate: 0,
+          totalReviews: 0,
+          friendsCount: 0
+        }
+      });
+      
+      // Add to local profiles array
+      this.profiles.push(profile);
+      this.currentProfile = profile;
+      
       console.log(`Profile created successfully for ${username}!`);
       return profile;
     } catch (error) {
@@ -554,7 +666,9 @@ class ProfileManager {
       if (index !== -1) {
         this.profiles.splice(index, 1);
       }
-      return false;
+      
+      // Re-throw other errors so they can be handled upstream
+      throw error;
     }
   }
 
@@ -1168,6 +1282,28 @@ class ProfileManager {
       return false;
     } catch (error) {
       console.error('Error declining friend request:', error);
+      throw error;
+    }
+  }
+
+  async cancelFriendRequest(requestId, userId) {
+    try {
+      const { Friendship } = require('../server/models/index');
+      const friendship = await Friendship.findOne({
+        where: {
+          id: requestId,
+          userId: userId,
+          status: 'pending'
+        }
+      });
+
+      if (friendship) {
+        await friendship.destroy();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error canceling friend request:', error);
       throw error;
     }
   }

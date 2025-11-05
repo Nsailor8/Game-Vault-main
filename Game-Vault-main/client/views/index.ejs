@@ -17,62 +17,28 @@
         <div id="trendingList" class="games-grid">
           <% if (trendingGames && trendingGames.length) { %>
             <% trendingGames.forEach(function(game) { %>
-              <div class="game-card-homepage">
-                <div class="game-image-container">
-                  <% if (game.background_image) { %>
-                    <img src="<%= game.background_image %>" alt="<%= game.name %>" class="game-image" loading="lazy">
+              <div class="game-card-simple" onclick="if(window.app) window.app.viewGameDetails(<%= game.id %>)">
+                <div class="game-image-simple" style="cursor: pointer;">
+                  <% if (game.background_image || game.backgroundImage) { %>
+                    <img src="<%= game.background_image || game.backgroundImage %>" alt="<%= game.name %>" class="game-image" loading="lazy">
                   <% } else { %>
                     <div class="no-image">
                       <i class="fas fa-gamepad"></i>
                     </div>
                   <% } %>
-                  <div class="game-rating">
-                    <% if (game.rating && game.rating > 0) { %>
-                      <div class="star-rating-display">
-                        <% 
-                        const rating = Math.min(Math.max(game.rating, 0), 5);
-                        const fullStars = Math.floor(rating);
-                        const hasHalfStar = rating % 1 >= 0.5;
-                        const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
-                        %>
-                        <% for (let i = 0; i < fullStars; i++) { %>
-                          <i class="fas fa-star star-full"></i>
-                        <% } %>
-                        <% if (hasHalfStar) { %>
-                          <i class="fas fa-star-half-alt star-half"></i>
-                        <% } %>
-                        <% for (let i = 0; i < emptyStars; i++) { %>
-                          <i class="far fa-star star-empty"></i>
-                        <% } %>
-                      </div>
-                      <span class="rating-number"><%= rating.toFixed(1) %>/5</span>
-                    <% } else { %>
-                      <span class="no-rating">No rating</span>
-                    <% } %>
-                  </div>
-                </div>
-                <div class="game-info">
-                  <h3 class="game-title"><%= game.name %></h3>
-                  <p class="game-description"><%= game.description_raw ? game.description_raw.substring(0, 120) + '...' : 'No description available' %></p>
-                  <div class="game-meta">
-                    <% if (game.released) { %>
-                      <span class="release-date"><i class="fas fa-calendar"></i> <%= new Date(game.released).getFullYear() %></span>
-                    <% } %>
-                    <% if (game.platforms && game.platforms.length > 0) { %>
-                      <span class="platforms">
-                        <i class="fas fa-desktop"></i>
-                        <%= game.platforms.slice(0, 2).map(p => p.name).join(', ') %>
-                        <% if (game.platforms.length > 2) { %>+<%= game.platforms.length - 2 %> more<% } %>
-                      </span>
-                    <% } %>
-                  </div>
-                  <% if (game.genres && game.genres.length > 0) { %>
-                    <div class="game-genres">
-                      <% game.genres.slice(0, 3).forEach(function(genre) { %>
-                        <span class="genre-tag"><%= genre.name %></span>
-                      <% }); %>
+                  <% if (game.rating || game.metacritic) { %>
+                    <div class="game-card-rating">
+                      <% if (game.rating) { %>
+                        <span class="rating-badge"><i class="fas fa-star"></i> <%= game.rating.toFixed(1) %></span>
+                      <% } %>
+                      <% if (game.metacritic) { %>
+                        <span class="metacritic-badge">M: <%= game.metacritic %></span>
+                      <% } %>
                     </div>
                   <% } %>
+                </div>
+                <div class="game-name-simple" style="cursor: pointer;">
+                  <h3 class="game-title-simple"><%= game.name %></h3>
                 </div>
               </div>
             <% }); %>
@@ -95,62 +61,28 @@
         <div id="recentList" class="games-grid">
           <% if (recentGames && recentGames.length) { %>
             <% recentGames.forEach(function(game) { %>
-              <div class="game-card-homepage">
-                <div class="game-image-container">
-                  <% if (game.background_image) { %>
-                    <img src="<%= game.background_image %>" alt="<%= game.name %>" class="game-image" loading="lazy">
+              <div class="game-card-simple" onclick="if(window.app) window.app.viewGameDetails(<%= game.id %>)">
+                <div class="game-image-simple" style="cursor: pointer;">
+                  <% if (game.background_image || game.backgroundImage) { %>
+                    <img src="<%= game.background_image || game.backgroundImage %>" alt="<%= game.name %>" class="game-image" loading="lazy">
                   <% } else { %>
                     <div class="no-image">
                       <i class="fas fa-gamepad"></i>
                     </div>
                   <% } %>
-                  <div class="game-rating">
-                    <% if (game.rating && game.rating > 0) { %>
-                      <div class="star-rating-display">
-                        <% 
-                        const rating = Math.min(Math.max(game.rating, 0), 5);
-                        const fullStars = Math.floor(rating);
-                        const hasHalfStar = rating % 1 >= 0.5;
-                        const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
-                        %>
-                        <% for (let i = 0; i < fullStars; i++) { %>
-                          <i class="fas fa-star star-full"></i>
-                        <% } %>
-                        <% if (hasHalfStar) { %>
-                          <i class="fas fa-star-half-alt star-half"></i>
-                        <% } %>
-                        <% for (let i = 0; i < emptyStars; i++) { %>
-                          <i class="far fa-star star-empty"></i>
-                        <% } %>
-                      </div>
-                      <span class="rating-number"><%= rating.toFixed(1) %>/5</span>
-                    <% } else { %>
-                      <span class="no-rating">No rating</span>
-                    <% } %>
-                  </div>
-                </div>
-                <div class="game-info">
-                  <h3 class="game-title"><%= game.name %></h3>
-                  <p class="game-description"><%= game.description_raw ? game.description_raw.substring(0, 120) + '...' : 'No description available' %></p>
-                  <div class="game-meta">
-                    <% if (game.released) { %>
-                      <span class="release-date"><i class="fas fa-calendar"></i> <%= new Date(game.released).getFullYear() %></span>
-                    <% } %>
-                    <% if (game.platforms && game.platforms.length > 0) { %>
-                      <span class="platforms">
-                        <i class="fas fa-desktop"></i>
-                        <%= game.platforms.slice(0, 2).map(p => p.name).join(', ') %>
-                        <% if (game.platforms.length > 2) { %>+<%= game.platforms.length - 2 %> more<% } %>
-                      </span>
-                    <% } %>
-                  </div>
-                  <% if (game.genres && game.genres.length > 0) { %>
-                    <div class="game-genres">
-                      <% game.genres.slice(0, 3).forEach(function(genre) { %>
-                        <span class="genre-tag"><%= genre.name %></span>
-                      <% }); %>
+                  <% if (game.rating || game.metacritic) { %>
+                    <div class="game-card-rating">
+                      <% if (game.rating) { %>
+                        <span class="rating-badge"><i class="fas fa-star"></i> <%= game.rating.toFixed(1) %></span>
+                      <% } %>
+                      <% if (game.metacritic) { %>
+                        <span class="metacritic-badge">M: <%= game.metacritic %></span>
+                      <% } %>
                     </div>
                   <% } %>
+                </div>
+                <div class="game-name-simple" style="cursor: pointer;">
+                  <h3 class="game-title-simple"><%= game.name %></h3>
                 </div>
               </div>
             <% }); %>
