@@ -379,7 +379,7 @@ class GameVaultApp {
                 loginError.textContent = 'Please fill in all fields';
                 loginError.style.display = 'block';
             } else {
-                this.showAlert('Please fill in all fields', 'Login Required', 'warning');
+            this.showAlert('Please fill in all fields', 'Login Required', 'warning');
             }
             return;
         }
@@ -551,13 +551,16 @@ class GameVaultApp {
             }
         } catch (error) {
             console.error('Error checking auth status:', error);
-            // Only show login modal on home page even on error
-            if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
+            // Don't reset UI if there's an error - preserve existing state
+            // Only reset if we're on the home page and there's no existing user
+            if ((window.location.pathname === '/' || window.location.pathname === '/index.html') && !this.currentUser) {
                 this.loginScreen.show();
                 this.loginScreen.resetToInitialState();
             }
-            // Show sign-in button in header
+            // Only show sign-in button if we don't have a current user
+            if (!this.currentUser) {
             this.showSignInButton();
+            }
         }
     }
 
@@ -951,7 +954,7 @@ async updateFriends() {
         // Display friends using your existing displayFriends function
         if (friends && typeof this.displayFriends === 'function') {
             this.displayFriends(friends);
-        } else {
+            } else {
             console.warn('displayFriends function is not defined');
         }
     } catch (error) {
@@ -1015,25 +1018,41 @@ async viewFriendProfile(friend) {
                 if (libraries.length === 0) {
                     container.innerHTML = '<div class="empty-state"><i class="fas fa-book"></i><h3>No Libraries</h3><p>Create your first library!</p></div>';
                 } else {
+                    // Create a grid container for libraries if it doesn't exist
+                    if (!container.classList.contains('libraries-grid')) {
+                        container.classList.add('libraries-grid');
+                    }
+                    
                     libraries.forEach(library => {
                         const libraryItem = document.createElement('div');
-                        libraryItem.className = 'library-item';
+                        libraryItem.className = 'library-card';
                         const typeBadge = library.type === 'automatic' ? '<span class="badge badge-primary">Default</span>' :
                                          library.type === 'wishlist' ? '<span class="badge badge-warning">Wishlist</span>' : '';
                         const canEdit = library.type === 'custom';
                         libraryItem.innerHTML = `
-                            <div>
-                                <strong>${library.name}</strong> ${typeBadge}
-                                <br>
-                                <small>${library.gameCount || 0} games • Created: ${new Date(library.createdDate).toLocaleDateString()}</small>
-                                ${library.description ? `<br><small style="color: #888;">${library.description}</small>` : ''}
+                            <div class="library-card-header">
+                                <h3>${library.name}</h3>
+                                ${typeBadge}
                             </div>
-                            <div class="library-actions">
-                                <button class="btn btn-primary" onclick="app.selectLibrary(${library.id})">View</button>
-                                ${canEdit ? `
-                                    <button class="btn btn-secondary btn-sm" onclick="app.editLibrary(${library.id}, '${library.name.replace(/'/g, "\\'")}', '${(library.description || '').replace(/'/g, "\\'")}')">Edit</button>
-                                    <button class="btn btn-danger btn-sm" onclick="app.deleteLibrary(${library.id})">Delete</button>
-                                ` : ''}
+                            <div class="library-card-body">
+                                <div class="library-info">
+                                    <p class="library-game-count"><i class="fas fa-gamepad"></i> ${library.gameCount || 0} games</p>
+                                    ${library.description ? `<p class="library-description">${library.description}</p>` : ''}
+                                    <p class="library-date"><i class="fas fa-calendar"></i> Created: ${new Date(library.createdDate).toLocaleDateString()}</p>
+                                </div>
+                                <div class="library-card-actions">
+                                    <button class="btn btn-primary" onclick="app.selectLibrary(${library.id})">
+                                        <i class="fas fa-eye"></i> View
+                                    </button>
+                                    ${canEdit ? `
+                                        <button class="btn btn-secondary btn-sm" onclick="app.editLibrary(${library.id}, '${library.name.replace(/'/g, "\\'")}', '${(library.description || '').replace(/'/g, "\\'")}')">
+                                            <i class="fas fa-edit"></i> Edit
+                                        </button>
+                                        <button class="btn btn-danger btn-sm" onclick="app.deleteLibrary(${library.id})">
+                                            <i class="fas fa-trash"></i> Delete
+                                        </button>
+                                    ` : ''}
+                                </div>
                             </div>
                         `;
                         container.appendChild(libraryItem);
@@ -1292,9 +1311,23 @@ async viewFriendProfile(friend) {
                 })
             });
 
+            // Check if response is ok before trying to parse JSON
+            if (!response.ok) {
+                let errorMessage = 'Failed to create library';
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch (e) {
+                    // If response isn't valid JSON, use status text
+                    errorMessage = response.statusText || errorMessage;
+                }
+                this.showAlert(errorMessage, 'Error', 'error');
+                return false;
+            }
+
             const data = await response.json();
 
-            if (response.ok && data.success) {
+            if (data.success) {
                 this.updateLibraries();
                 this.showNotification('Library created successfully!', 'success');
                 return true;
@@ -1304,7 +1337,17 @@ async viewFriendProfile(friend) {
             }
         } catch (error) {
             console.error('Error creating library:', error);
-            this.showAlert('Error creating library. Please try again.', 'Error', 'error');
+            console.error('Error type:', error.constructor.name);
+            console.error('Error message:', error.message);
+            
+            // Handle network errors specifically
+            if (error instanceof TypeError && (error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
+                this.showAlert('Failed to connect to server. Please check your internet connection and try again.', 'Connection Error', 'error');
+            } else if (error.message) {
+                this.showAlert('Error creating library: ' + error.message, 'Error', 'error');
+            } else {
+                this.showAlert('Error creating library. Please try again.', 'Error', 'error');
+            }
             return false;
         }
     }
@@ -1428,8 +1471,9 @@ async viewFriendProfile(friend) {
                 if (selectedSection) {
                     selectedSection.style.display = 'block';
                 }
-                if (libraryContainer && libraryContainer.parentElement) {
-                    libraryContainer.parentElement.style.display = 'none';
+                // Hide the libraries container
+                if (libraryContainer) {
+                    libraryContainer.style.display = 'none';
                 }
                 
                 if (title) {
@@ -1447,13 +1491,16 @@ async viewFriendProfile(friend) {
                     data.games.forEach(game => {
                         const gameItem = document.createElement('div');
                         gameItem.className = 'friend-item';
+                        // Use game.title (from API) or game.gameTitle as fallback
+                        const gameTitle = game.title || game.gameTitle || 'Unknown Game';
+                        const gameIdToRemove = game.gameId || game.steamId || game.id;
                         gameItem.innerHTML = `
                             <div>
-                                <strong>${game.title}</strong>
+                                <strong>${gameTitle}</strong>
                                 <br>
                                 <small>${game.platform || 'PC'} • Added: ${new Date(game.addedDate).toLocaleDateString()}</small>
                             </div>
-                            <button class="btn btn-danger" onclick="app.removeFromLibrary(${libraryId}, ${game.gameId})">Remove</button>
+                            <button class="btn btn-danger" onclick="app.removeFromLibrary(${libraryId}, ${gameIdToRemove})">Remove</button>
                         `;
                         container.appendChild(gameItem);
                     });
@@ -1474,8 +1521,9 @@ async viewFriendProfile(friend) {
         if (selectedSection) {
             selectedSection.style.display = 'none';
         }
-        if (libraryContainer && libraryContainer.parentElement) {
-            libraryContainer.parentElement.style.display = 'block';
+        // Show the libraries container
+        if (libraryContainer) {
+            libraryContainer.style.display = 'block';
         }
         this.updateLibraries();
     }
@@ -1878,31 +1926,31 @@ async viewFriendProfile(friend) {
         .then(response => response.json())
         .then(data => {
             if (data.userStats) {
-                const stats = data.userStats;
-                const container = document.getElementById('adminStats');
+            const stats = data.userStats;
+            const container = document.getElementById('adminStats');
                 if (container) {
-                    container.innerHTML = `
-                        <div class="stat-card">
-                            <i class="fas fa-users"></i>
-                            <h3>${stats.totalUsers || 0}</h3>
-                            <p>Total Users</p>
-                        </div>
-                        <div class="stat-card">
-                            <i class="fas fa-user-check"></i>
-                            <h3>${stats.activeUsers || 0}</h3>
-                            <p>Active Users</p>
-                        </div>
-                        <div class="stat-card">
-                            <i class="fas fa-user-plus"></i>
-                            <h3>${stats.newUsersThisMonth || 0}</h3>
-                            <p>New This Month</p>
-                        </div>
+            container.innerHTML = `
+                <div class="stat-card">
+                    <i class="fas fa-users"></i>
+                    <h3>${stats.totalUsers || 0}</h3>
+                    <p>Total Users</p>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-user-check"></i>
+                    <h3>${stats.activeUsers || 0}</h3>
+                    <p>Active Users</p>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-user-plus"></i>
+                    <h3>${stats.newUsersThisMonth || 0}</h3>
+                    <p>New This Month</p>
+                </div>
                         <div class="stat-card">
                             <i class="fas fa-shield-alt"></i>
                             <h3>${stats.totalAdmins || 0}</h3>
                             <p>Admins</p>
-                        </div>
-                    `;
+                </div>
+            `;
                 }
             }
         })
@@ -2044,15 +2092,15 @@ async viewFriendProfile(friend) {
 
                 container.innerHTML = '';
                 data.logs.slice(-50).reverse().forEach(log => {
-                    const logItem = document.createElement('div');
-                    logItem.className = 'log-item';
-                    logItem.innerHTML = `
-                        <strong>${log.action}</strong>: ${log.details}
-                        <br>
-                        <small>${new Date(log.timestamp).toLocaleString()}</small>
-                    `;
+                const logItem = document.createElement('div');
+                logItem.className = 'log-item';
+                logItem.innerHTML = `
+                    <strong>${log.action}</strong>: ${log.details}
+                    <br>
+                    <small>${new Date(log.timestamp).toLocaleString()}</small>
+                `;
                     container.appendChild(logItem);
-                });
+            });
             } else {
                 container.innerHTML = '<div class="error">Failed to load system logs</div>';
             }
@@ -2657,6 +2705,7 @@ async viewFriendProfile(friend) {
         try {
             const response = await fetch(`/api/wishlists/${this.currentUser.username}/add-game`, {
                 method: 'POST',
+                credentials: 'include', // Important: include session cookies
                 headers: {
                     'Content-Type': 'application/json'
                 },
@@ -2691,6 +2740,7 @@ async viewFriendProfile(friend) {
         try {
             const response = await fetch(`/api/wishlists/${this.currentUser.username}/add-game`, {
                 method: 'POST',
+                credentials: 'include', // Important: include session cookies
                 headers: {
                     'Content-Type': 'application/json'
                 },
@@ -2704,6 +2754,18 @@ async viewFriendProfile(friend) {
                 })
             });
 
+            if (!response.ok) {
+                let errorMessage = 'Failed to add game to library';
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorMessage;
+                } catch (e) {
+                    errorMessage = response.statusText || errorMessage;
+                }
+                this.showAlert(errorMessage, 'Error', 'error');
+                return;
+            }
+
             const result = await response.json();
 
             if (result.success) {
@@ -2713,12 +2775,18 @@ async viewFriendProfile(friend) {
                 if (selectionModal) {
                     selectionModal.style.display = 'none';
                 }
+                // Refresh library view if on library page
+                if (window.location.pathname.includes('/library') || window.location.pathname.includes('/wishlist')) {
+                    if (this.updateLibraries) {
+                        this.updateLibraries();
+                    }
+                }
             } else {
-                this.showAlert('Failed to add game to library: ' + result.error, 'Error', 'error');
+                this.showAlert('Failed to add game to library: ' + (result.error || 'Unknown error'), 'Error', 'error');
             }
         } catch (error) {
             console.error('Error adding game to library:', error);
-            this.showAlert('Error adding game to library', 'Error', 'error');
+            this.showAlert('Error adding game to library: ' + (error.message || 'Please try again'), 'Error', 'error');
         }
     }
 
@@ -2852,56 +2920,56 @@ async viewFriendProfile(friend) {
         }
     }
 
-   displayFriends(friends) {
-    const container = document.getElementById('friendsList');
-    const countElement = document.getElementById('friendsCount');
-
-    if (!container) return;
+    displayFriends(friends) {
+        const container = document.getElementById('friendsList');
+        const countElement = document.getElementById('friendsCount');
+        
+        if (!container) return;
 
     // Update friend count
-    if (countElement) {
-        countElement.textContent = friends.length;
-    }
+        if (countElement) {
+            countElement.textContent = friends.length;
+        }
 
     // Handle empty list
-    if (friends.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <i class="fas fa-user-friends"></i>
-                <h3>No friends yet</h3>
-                <p>Send friend requests to start building your network!</p>
-            </div>
-        `;
-        return;
-    }
+        if (friends.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-user-friends"></i>
+                    <h3>No friends yet</h3>
+                    <p>Send friend requests to start building your network!</p>
+                </div>
+            `;
+            return;
+        }
 
-    container.innerHTML = '';
+        container.innerHTML = '';
 
-    friends.forEach(friend => {
+        friends.forEach(friend => {
         // Normalize date
         const date = friend.friendshipDate || friend.acceptedDate || friend.createdDate;
         const formattedDate = date ? new Date(date).toLocaleDateString() : 'N/A';
 
-        const friendItem = document.createElement('div');
-        friendItem.className = 'friend-item';
+            const friendItem = document.createElement('div');
+            friendItem.className = 'friend-item';
 
-        friendItem.innerHTML = `
-            <div class="friend-info">
-                <div class="friend-avatar">
-                    <i class="fas fa-user-circle"></i>
-                </div>
-                <div class="friend-details">
-                    <h4>${friend.username}</h4>
+            friendItem.innerHTML = `
+                <div class="friend-info">
+                    <div class="friend-avatar">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                    <div class="friend-details">
+                        <h4>${friend.username}</h4>
                     <p>Friends since: ${formattedDate}</p>
-                    ${friend.bio ? `<p class="friend-bio">${friend.bio}</p>` : ''}
+                        ${friend.bio ? `<p class="friend-bio">${friend.bio}</p>` : ''}
+                    </div>
                 </div>
-            </div>
-            <div class="friend-actions">
-                <button class="btn btn-danger" onclick="app.removeFriend(${friend.friendId})">Remove</button>
-            </div>
-        `;
+                <div class="friend-actions">
+                    <button class="btn btn-danger" onclick="app.removeFriend(${friend.friendId})">Remove</button>
+                </div>
+            `;
 
-        container.appendChild(friendItem);
+            container.appendChild(friendItem);
 
         // Add View Profile button dynamically before Remove button
         const actionsDiv = friendItem.querySelector('.friend-actions');

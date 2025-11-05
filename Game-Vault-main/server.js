@@ -1415,6 +1415,8 @@ app.post('/api/wishlists/:username/create', async (req, res) => {
         const { username } = req.params;
         const { name, description, isPublic, priority } = req.body;
 
+        console.log(`[Create Library] Request from user: ${username}, library name: ${name}`);
+
         if (!name) {
             return res.status(400).json({ error: 'Library name is required' });
         }
@@ -1422,8 +1424,11 @@ app.post('/api/wishlists/:username/create', async (req, res) => {
         // Get user from database
         const user = await profileManager.getUserByUsername(username);
         if (!user) {
-            return res.status(404).json({ error: 'User not found' });
+            console.error(`[Create Library] User not found: ${username}`);
+            return res.status(404).json({ error: 'User not found. Please log in and try again.' });
         }
+
+        console.log(`[Create Library] User found: ${user.id}, creating library...`);
 
         // Create library in database
         const wishlist = await profileManager.databaseManager.createWishlist({
@@ -1434,6 +1439,8 @@ app.post('/api/wishlists/:username/create', async (req, res) => {
             priority: priority || 'medium',
             type: 'custom'  // User-created libraries are always custom
         });
+
+        console.log(`[Create Library] Library created successfully: ${wishlist.id}`);
 
         res.json({
             success: true,
@@ -1449,8 +1456,22 @@ app.post('/api/wishlists/:username/create', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Error creating library:', error);
-        res.status(500).json({ error: 'Failed to create library' });
+        console.error('[Create Library] Error creating library:', error);
+        console.error('[Create Library] Error details:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+        });
+        
+        // Provide more specific error messages
+        let errorMessage = 'Failed to create library';
+        if (error.name === 'SequelizeConnectionError' || error.message.includes('connection')) {
+            errorMessage = 'Database connection failed. Please try again.';
+        } else if (error.message) {
+            errorMessage = `Failed to create library: ${error.message}`;
+        }
+        
+        res.status(500).json({ error: errorMessage });
     }
 });
 
@@ -1581,8 +1602,20 @@ app.post('/api/wishlists/:username/add-game', async (req, res) => {
             game: { id: gameId, name: gameName }
         });
     } catch (error) {
-        console.error('Error adding game to wishlist:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        console.error('[Add Game] Error adding game to library:', error);
+        console.error('[Add Game] Error details:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+        });
+        
+        // Provide more specific error messages
+        let errorMessage = 'Internal server error';
+        if (error.message) {
+            errorMessage = `Failed to add game: ${error.message}`;
+        }
+        
+        res.status(500).json({ error: errorMessage });
     }
 });
 
