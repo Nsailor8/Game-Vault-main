@@ -1,6 +1,7 @@
 const { Sequelize } = require('sequelize');
 require('dotenv').config();
 
+// Database configuration
 const config = {
   development: {
     username: process.env.DB_USERNAME || 'Game_Vault_Admin',
@@ -9,7 +10,7 @@ const config = {
     host: process.env.DB_HOST || 'game-vault.cgx26cmuk72p.us-east-1.rds.amazonaws.com',
     port: process.env.DB_PORT || 5432,
     dialect: process.env.DB_DIALECT || 'postgres',
-    logging: console.log,
+    logging: console.log, // Set to false to disable SQL logging
     pool: {
       max: 5,
       min: 0,
@@ -30,7 +31,7 @@ const config = {
     host: process.env.DB_HOST,
     port: process.env.DB_PORT || 5432,
     dialect: process.env.DB_DIALECT || 'postgres',
-    logging: false,
+    logging: false, // Disable logging in production
     pool: {
       max: 20,
       min: 5,
@@ -46,6 +47,7 @@ const config = {
   }
 };
 
+// Create Sequelize instance
 const env = process.env.NODE_ENV || 'development';
 const dbConfig = config[env];
 
@@ -63,6 +65,7 @@ const sequelize = new Sequelize(
   }
 );
 
+// Test database connection
 const testConnection = async () => {
   try {
     await sequelize.authenticate();

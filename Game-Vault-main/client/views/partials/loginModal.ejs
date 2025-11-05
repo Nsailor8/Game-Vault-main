@@ -1,3 +1,4 @@
+<!-- Login/Signup Modal -->
 <div id="authModal" class="modal">
   <div class="modal-content auth-modal-content">
     <div class="auth-container">
@@ -6,7 +7,7 @@
         <span class="close">&times;</span>
       </div>
       
-      
+      <!-- Login Form -->
       <div id="loginForm" class="auth-form">
         <div class="form-group">
           <input type="text" id="loginUsername" placeholder="Username" required>
@@ -31,7 +32,7 @@
         </div>
       </div>
       
-      
+      <!-- Signup Form -->
       <div id="signupForm" class="auth-form" style="display: none;">
         <div class="form-group">
           <input type="text" id="signupUsername" placeholder="Username" required>
@@ -75,7 +76,7 @@
   </div>
 
   <script>
-
+    // Modal functionality
     const authModal = document.getElementById('authModal');
     const loginForm = document.getElementById('loginForm');
     const signupForm = document.getElementById('signupForm');
@@ -83,7 +84,7 @@
     const showLogin = document.getElementById('showLogin');
     const closeModal = authModal.querySelector('.close');
 
-
+    // Switch between login/signup
     showSignup?.addEventListener('click', (e) => {
       e.preventDefault();
       // Clear login errors
@@ -108,15 +109,15 @@
       loginForm.style.display = 'block';
     });
 
-
+    // Close modal
     closeModal?.addEventListener('click', () => {
       authModal.style.display = 'none';
     });
 
-
+    // Guest buttons
     document.getElementById('guestBtnLogin')?.addEventListener('click', () => {
       authModal.style.display = 'none';
-
+      // Optionally set a flag for guest session
       console.log('Continuing as Guest (Login Form)');
     });
 
@@ -125,7 +126,7 @@
       console.log('Continuing as Guest (Signup Form)');
     });
 
-
+    // Optional: Close modal when clicking outside
     window.addEventListener('click', (e) => {
       if(e.target == authModal) authModal.style.display = 'none';
     });

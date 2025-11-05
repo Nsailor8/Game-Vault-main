@@ -4,25 +4,13 @@
 <body>
     <%- include('partials/header') %>
   <div class="container">
-    
+    <!-- Main Content -->
     <main id="mainContent" class="main-content">
-      
+      <!-- Profile Section -->
       <section id="profileSection" class="content-section active">
         <div class="profile-header">
           <div class="profile-avatar">
-            <% if (profile.avatar_path) { %>
-              <img src="<%= profile.avatar_path %>" alt="Profile Avatar" id="profileAvatarImg" class="avatar-image">
-            <% } else { %>
-              <img src="https://ui-avatars.com/api/?name=<%= encodeURIComponent(profile.username) %>&size=120&background=667eea&color=fff&bold=true" alt="Profile Avatar" id="profileAvatarImg" class="avatar-image">
-            <% } %>
-            <% if (profile.isCurrentUser) { %>
-              <div class="avatar-upload-overlay">
-                <label for="avatarUpload" class="avatar-upload-btn" title="Change avatar">
-                  <i class="fas fa-camera"></i>
-                </label>
-                <input type="file" id="avatarUpload" accept="image/*" style="display: none;">
-              </div>
-            <% } %>
+            <i class="fas fa-user-circle"></i>
           </div>
           <div class="profile-info">
             <h2 id="profileUsername"><%= profile.username || 'Loading...' %></h2>
@@ -34,10 +22,7 @@
           </div>
         </div>
 
-        <div class="profile-stats" 
-             data-total-games="<%= profile.totalGames || 0 %>"
-             data-total-playtime="<%= profile.totalPlaytime || 0 %>"
-             data-avg-rating="<%= profile.avgRating || 0 %>">
+        <div class="profile-stats">
           <div class="stat-card">
             <i class="fas fa-gamepad"></i>
             <h3 id="totalGames"><%= profile.totalGames || 0 %></h3>
@@ -53,10 +38,15 @@
             <h3 id="avgRating"><%= profile.avgRating || 0 %></h3>
             <p>Avg Rating</p>
           </div>
+          <div class="stat-card">
+            <i class="fas fa-trophy"></i>
+            <h3 id="achievementCount"><%= profile.achievementCount || 0 %></h3>
+            <p>Achievements</p>
+          </div>
         </div>
 
 
-        
+        <!-- Steam Profile Section -->
         <% if (profile.steamLinked) { %>
         <div id="steamProfileSection" class="steam-profile-section">
           <h3>Steam Profile</h3>
@@ -83,7 +73,7 @@
           </div>
         </div>
         <% } else { %>
-        
+        <!-- Steam Connect Section -->
         <div id="steamConnectSection" class="steam-connect-section">
           <h3>Connect Your Steam Account</h3>
           <p>Link your Steam account to import your game library and achievements</p>
@@ -93,7 +83,7 @@
         </div>
         <% } %>
         
-        
+        <!-- Profile Details Section -->
         <div class="profile-details">
           <h3>Profile Information</h3>
           <div class="detail-item">
@@ -114,59 +104,32 @@
           </div>
         </div>
 
-        
+        <!-- Steam Games Section -->
         <% if (profile.steamLinked && profile.steam_games && profile.steam_games.length > 0) { %>
         <div id="steamGamesSection" class="steam-games-section">
-          <div class="steam-games-header">
-            <h3>Steam Games Library (<span id="gamesCount"><%= profile.steam_games.length %></span> games)</h3>
-            <div class="steam-games-controls">
-              <select id="gamesSortSelect" class="sort-select">
-                <option value="name-asc">Name (A-Z)</option>
-                <option value="name-desc">Name (Z-A)</option>
-                <option value="playtime-desc">Most Played</option>
-                <option value="playtime-asc">Least Played</option>
-              </select>
-              <button id="toggleGamesList" class="btn btn-secondary collapse-btn">
-                <i class="fas fa-chevron-up"></i> Collapse
-              </button>
-            </div>
-          </div>
-          <div id="gamesListContainer" class="games-list-container">
-            <div class="games-grid" id="steamGamesGrid">
-              <% profile.steam_games.forEach(function(game) { %>
-              <div class="game-card-modern" data-appid="<%= game.appid %>" data-name="<%= game.name.toLowerCase() %>" data-playtime="<%= game.playtime_forever || 0 %>" data-achievements="<%= game.achievements || 0 %>">
-                <a href="https://store.steampowered.com/app/<%= game.appid %>" target="_blank" class="game-link-modern">
-                  <div class="game-image-wrapper">
-                    <img class="game-header-image" 
-                         src="https://cdn.akamai.steamstatic.com/steam/apps/<%= game.appid %>/header.jpg" 
-                         alt="<%= game.name %>"
-                         onerror="this.src='https://via.placeholder.com/460x215?text=<%= encodeURIComponent(game.name) %>';"
-                         loading="lazy">
-                    <div class="game-badges">
-                      <% if (game.rating && game.rating > 0) { %>
-                      <div class="rating-badge">
-                        <i class="fas fa-star"></i>
-                        <span><%= game.rating.toFixed(1) %></span>
-                      </div>
-                      <% } %>
-                      <% if (game.metacritic) { %>
-                      <div class="metacritic-badge">
-                        <span>M: <%= game.metacritic %></span>
-                      </div>
-                      <% } %>
+          <h3>Steam Games Library</h3>
+          <div class="games-grid">
+            <% profile.steam_games.forEach(function(game) { %>
+            <div class="game-card">
+              <a href="https://store.steampowered.com/app/<%= game.appid %>" target="_blank" class="game-link">
+                <div class="game-info">
+                  <h4 class="game-title"><%= game.name %></h4>
+                  <div class="game-stats">
+                    <div class="stat">
+                      <i class="fas fa-clock"></i>
+                      <span><%= Math.round((game.playtime_forever || 0) / 60) %> hours</span>
                     </div>
+                    <% if (game.achievements && game.achievements > 0) { %>
+                    <div class="stat">
+                      <i class="fas fa-trophy"></i>
+                      <span><%= game.achievements %> achievements</span>
+                    </div>
+                    <% } %>
                   </div>
-                  <div class="game-title-modern">
-                    <%= game.name %>
-                  </div>
-                  <div class="game-playtime" style="display: none;">
-                    <i class="fas fa-clock"></i>
-                    <span class="playtime-hours"><%= Math.round((game.playtime_forever || 0) / 60) %></span> hours
-                  </div>
-                </a>
-              </div>
-              <% }); %>
+                </div>
+              </a>
             </div>
+            <% }); %>
           </div>
         </div>
         <% } %>
@@ -175,7 +138,7 @@
   </div>
     <%- include('partials/loginModal') %>
     
-    
+    <!-- Edit Profile Modal -->
     <div id="editProfileModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -219,366 +182,27 @@
   <script src="/app.js"></script>
   <script src="/profile.js"></script>
   <script>
-
+    // Initialize the app when the page loads
     document.addEventListener('DOMContentLoaded', () => {
       console.log('Profile page - DOM Content Loaded');
-      
-      // Preserve statistics values from data attributes to prevent reset
-      const statsContainer = document.querySelector('.profile-stats');
-      if (statsContainer) {
-        const totalGamesEl = document.getElementById('totalGames');
-        const totalPlaytimeEl = document.getElementById('totalPlaytime');
-        const avgRatingEl = document.getElementById('avgRating');
-        
-        // Store initial values from data attributes
-        const initialGames = statsContainer.dataset.totalGames || '0';
-        const initialPlaytime = statsContainer.dataset.totalPlaytime || '0';
-        const initialRating = statsContainer.dataset.avgRating || '0';
-        
-        // Ensure values are set and prevent them from being reset to 0
-        if (totalGamesEl && initialGames !== '0') {
-          totalGamesEl.textContent = initialGames;
-        }
-        if (totalPlaytimeEl && initialPlaytime !== '0') {
-          totalPlaytimeEl.textContent = initialPlaytime;
-        }
-        if (avgRatingEl && initialRating !== '0') {
-          avgRatingEl.textContent = initialRating;
-        }
-        
-        // Monitor for changes and restore if reset to 0
-        const observer = new MutationObserver(() => {
-          if (totalGamesEl && totalGamesEl.textContent === '0' && initialGames !== '0') {
-            totalGamesEl.textContent = initialGames;
-          }
-          if (totalPlaytimeEl && totalPlaytimeEl.textContent === '0' && initialPlaytime !== '0') {
-            totalPlaytimeEl.textContent = initialPlaytime;
-          }
-          if (avgRatingEl && avgRatingEl.textContent === '0' && initialRating !== '0') {
-            avgRatingEl.textContent = initialRating;
-          }
-        });
-        
-        if (totalGamesEl) observer.observe(totalGamesEl, { childList: true, characterData: true });
-        if (totalPlaytimeEl) observer.observe(totalPlaytimeEl, { childList: true, characterData: true });
-        if (avgRatingEl) observer.observe(avgRatingEl, { childList: true, characterData: true });
-      }
-      
-      // Check for Steam auth success parameter and reload page to show updated profile
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('steam_auth') === 'success') {
-        console.log('Steam authentication successful, reloading page to show updated profile...');
-        // Remove the parameter from URL and reload
-        urlParams.delete('steam_auth');
-        const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
-        window.history.replaceState({}, '', newUrl);
-        // Increase delay to ensure server has fully processed the session and database updates
-        // Steam sync can take time, so we wait longer for database to be ready
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000); // Increased to 2000ms to allow database operations to complete
-        return;
-      }
-      
-      // Check for Steam auth error
-      if (urlParams.get('error') === 'steam_auth_failed') {
-        console.error('Steam authentication failed');
-        alert('Failed to connect Steam account. Please try again.');
-        // Remove the error parameter from URL
-        urlParams.delete('error');
-        const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
-        window.history.replaceState({}, '', newUrl);
-      }
       
       // Set up Steam button event listeners
       const connectSteamBtn = document.getElementById('connectSteamBtn');
       if (connectSteamBtn) {
-        connectSteamBtn.addEventListener('click', async () => {
-          try {
-            // Get username from multiple sources (URL path, page element, or session)
-            let username = null;
-            
-            // Try to get from URL path first (e.g., /profile/nsailor8)
-            const pathMatch = window.location.pathname.match(/\/profile\/([^\/]+)/);
-            if (pathMatch) {
-              username = pathMatch[1];
-            }
-            
-            // Fallback to page element
-            if (!username) {
-              const usernameEl = document.getElementById('profileUsername');
-              if (usernameEl) {
-                username = usernameEl.textContent?.trim();
-              }
-            }
-            
-            // Fallback: try to get from session via API
-            if (!username) {
-              try {
-                const sessionResponse = await fetch('/api/auth/status', {
-                  credentials: 'include'
-                });
-                if (sessionResponse.ok) {
-                  const sessionData = await sessionResponse.json();
-                  if (sessionData.user && sessionData.user.username) {
-                    username = sessionData.user.username;
-                  }
-                }
-              } catch (e) {
-                console.error('Error getting session:', e);
-              }
-            }
-            
-            if (!username) {
-              alert('Unable to find username. Please refresh the page and try again.');
-              return;
-            }
-            
-            console.log('Connecting Steam for username:', username);
-            
-            // Call the Steam link endpoint to set up session
-            const response = await fetch(`/api/auth/steam/link/${encodeURIComponent(username)}`, {
-              method: 'POST',
-              credentials: 'include',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                returnUrl: window.location.pathname
-              })
-            });
-            
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => ({ error: 'Failed to connect Steam account' }));
-              alert(errorData.error || `Error: ${response.status} ${response.statusText}`);
-              return;
-            }
-            
-            const data = await response.json();
-            
-            if (data.success && data.redirectUrl) {
-              console.log('Redirecting to Steam OAuth:', data.redirectUrl);
-              // Redirect to Steam OAuth
-              window.location.href = data.redirectUrl;
-            } else {
-              alert(data.error || 'Failed to initiate Steam connection');
-            }
-          } catch (error) {
-            console.error('Error connecting Steam account:', error);
-            alert('Failed to connect Steam account. Please try again.');
-          }
-        });
+        connectSteamBtn.addEventListener('click', connectSteam);
       }
       
       const importSteamLibraryBtn = document.getElementById('importSteamLibraryBtn');
       if (importSteamLibraryBtn) {
-        importSteamLibraryBtn.addEventListener('click', async () => {
-          try {
-            const response = await fetch('/api/steam/sync', {
-              method: 'POST',
-              credentials: 'include'
-            });
-            const data = await response.json();
-            if (data.success) {
-              alert('Steam library imported successfully!');
-              window.location.reload();
-            } else {
-              alert(data.error || 'Failed to import Steam library');
-            }
-          } catch (error) {
-            console.error('Error importing Steam library:', error);
-            alert('Failed to import Steam library. Please try again.');
-          }
-        });
+        importSteamLibraryBtn.addEventListener('click', importSteamLibrary);
       }
       
       const disconnectSteamBtn = document.getElementById('disconnectSteamBtn');
       if (disconnectSteamBtn) {
-        disconnectSteamBtn.addEventListener('click', async () => {
-          if (!confirm('Are you sure you want to disconnect your Steam account? This will remove all Steam data from your profile.')) {
-            return;
-          }
-          
-          try {
-            const response = await fetch('/api/auth/steam/unlink', {
-              method: 'POST',
-              credentials: 'include',
-              headers: {
-                'Content-Type': 'application/json'
-              }
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok && data.success) {
-              alert('Steam account disconnected successfully!');
-              // Reload page to show updated profile
-              window.location.reload();
-            } else {
-              alert(data.error || 'Failed to disconnect Steam account');
-            }
-          } catch (error) {
-            console.error('Error disconnecting Steam account:', error);
-            alert('Failed to disconnect Steam account. Please try again.');
-          }
-        });
+        disconnectSteamBtn.addEventListener('click', disconnectSteam);
       }
       
       // The app.js will handle session checking and show/hide login modal as needed
-      
-      // Steam Games List Functionality
-      const toggleGamesListBtn = document.getElementById('toggleGamesList');
-      const gamesListContainer = document.getElementById('gamesListContainer');
-      const gamesSortSelect = document.getElementById('gamesSortSelect');
-      const steamGamesGrid = document.getElementById('steamGamesGrid');
-      
-      if (toggleGamesListBtn && gamesListContainer) {
-        let isCollapsed = false;
-        
-        toggleGamesListBtn.addEventListener('click', () => {
-          isCollapsed = !isCollapsed;
-          gamesListContainer.classList.toggle('collapsed', isCollapsed);
-          const icon = toggleGamesListBtn.querySelector('i');
-          const text = toggleGamesListBtn.querySelector('i').nextSibling;
-          
-          if (isCollapsed) {
-            icon.className = 'fas fa-chevron-down';
-            toggleGamesListBtn.innerHTML = '<i class="fas fa-chevron-down"></i> Expand';
-          } else {
-            icon.className = 'fas fa-chevron-up';
-            toggleGamesListBtn.innerHTML = '<i class="fas fa-chevron-up"></i> Collapse';
-          }
-        });
-      }
-      
-      // Sorting functionality
-      if (gamesSortSelect && steamGamesGrid) {
-        const showPlaytimeForSort = (sortValue) => {
-          const gameCards = steamGamesGrid.querySelectorAll('.game-card-modern');
-          const shouldShow = sortValue === 'playtime-desc' || sortValue === 'playtime-asc';
-          
-          gameCards.forEach(card => {
-            const playtimeElement = card.querySelector('.game-playtime');
-            if (playtimeElement) {
-              playtimeElement.style.display = shouldShow ? 'flex' : 'none';
-            }
-          });
-        };
-        
-        gamesSortSelect.addEventListener('change', () => {
-          const sortValue = gamesSortSelect.value;
-          const gameCards = Array.from(steamGamesGrid.querySelectorAll('.game-card-modern'));
-          
-          if (gameCards.length === 0) {
-            console.log('No game cards found for sorting');
-            return;
-          }
-          
-          gameCards.sort((a, b) => {
-            if (sortValue === 'name-asc') {
-              return a.dataset.name.localeCompare(b.dataset.name);
-            } else if (sortValue === 'name-desc') {
-              return b.dataset.name.localeCompare(a.dataset.name);
-            } else if (sortValue === 'playtime-desc') {
-              return parseInt(b.dataset.playtime || 0) - parseInt(a.dataset.playtime || 0);
-            } else if (sortValue === 'playtime-asc') {
-              return parseInt(a.dataset.playtime || 0) - parseInt(b.dataset.playtime || 0);
-            }
-            return 0;
-          });
-          
-          // Clear and re-append sorted cards
-          gameCards.forEach(card => steamGamesGrid.appendChild(card));
-          
-          // Show/hide playtime based on sort
-          showPlaytimeForSort(sortValue);
-        });
-        
-        // Check initial sort value on page load
-        showPlaytimeForSort(gamesSortSelect.value);
-      }
-      
-      // Avatar upload functionality
-      const avatarUpload = document.getElementById('avatarUpload');
-      if (avatarUpload) {
-        avatarUpload.addEventListener('change', async (e) => {
-          const file = e.target.files[0];
-          if (!file) return;
-          
-          // Validate file size (5MB)
-          if (file.size > 5 * 1024 * 1024) {
-            alert('File size must be less than 5MB');
-            e.target.value = '';
-            return;
-          }
-          
-          // Validate file type
-          if (!file.type.startsWith('image/')) {
-            alert('Please select an image file');
-            e.target.value = '';
-            return;
-          }
-          
-          // Show loading state
-          const avatarImg = document.getElementById('profileAvatarImg');
-          const avatarIcon = document.querySelector('.profile-avatar i');
-          const originalSrc = avatarImg ? avatarImg.src : null;
-          
-          // Create FormData
-          const formData = new FormData();
-          formData.append('avatar', file);
-          
-          try {
-            const response = await fetch('/api/profile/avatar', {
-              method: 'POST',
-              body: formData,
-              credentials: 'include'
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-              // Update avatar image
-              if (avatarImg) {
-                avatarImg.src = data.avatar_path + '?t=' + Date.now(); // Add cache busting
-              } else {
-                // Replace placeholder with uploaded image
-                const avatarContainer = document.querySelector('.profile-avatar');
-                if (avatarContainer) {
-                  const existingImg = avatarContainer.querySelector('img');
-                  if (existingImg) {
-                    existingImg.src = data.avatar_path + '?t=' + Date.now();
-                  } else {
-                    const newImg = document.createElement('img');
-                    newImg.src = data.avatar_path + '?t=' + Date.now();
-                    newImg.alt = 'Profile Avatar';
-                    newImg.id = 'profileAvatarImg';
-                    newImg.className = 'avatar-image';
-                    avatarContainer.insertBefore(newImg, avatarContainer.firstChild);
-                  }
-                }
-              }
-              console.log('Avatar uploaded successfully');
-            } else {
-              alert(data.error || 'Failed to upload avatar');
-              // Restore original if available
-              if (avatarImg && originalSrc) {
-                avatarImg.src = originalSrc;
-              }
-            }
-          } catch (error) {
-            console.error('Error uploading avatar:', error);
-            alert('Failed to upload avatar. Please try again.');
-            // Restore original if available
-            if (avatarImg && originalSrc) {
-              avatarImg.src = originalSrc;
-            }
-          } finally {
-            // Reset file input
-            e.target.value = '';
-          }
-        });
-      }
     });
   </script>
 </body>

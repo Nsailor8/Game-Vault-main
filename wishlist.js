@@ -1,9 +1,10 @@
+// Wishlist Item Class
 class WishlistItem {
   constructor(id, title, platform, priority, price, releaseDate, tags, notes) {
     this.id = id;
     this.title = title;
     this.platform = platform;
-    this.priority = priority;
+    this.priority = priority; // 'high', 'medium', 'low'
     this.price = price;
     this.releaseDate = releaseDate;
     this.tags = tags;
@@ -16,6 +17,7 @@ class WishlistItem {
   }
 }
 
+// Wishlist Manager Class
 class WishlistManager {
   constructor() {
     this.wishlist = [];
@@ -190,6 +192,7 @@ class WishlistManager {
     return this.wishlist.find(item => item.id === id);
   }
 
+  // Move item from wishlist to game library
   moveToLibrary(id, gameLibraryManager, status = 'backlog', rating = 0, playtime = '0 hours') {
     const item = this.findItemById(id);
     if (item) {
@@ -211,3 +214,11 @@ class WishlistManager {
   }
 }
 
+// Usage Example:
+// const wishlist = new WishlistManager();
+// const library = new GameLibraryManager();
+// 
+// wishlist.addItem('Hollow Knight', 'Steam', 'high', 14.99, '2017-02-24', ['Metroidvania', 'Indie']);
+// wishlist.addItem('God of War', 'PlayStation', 'medium', 39.99, '2018-04-20', ['Action', 'Adventure']);
+// wishlist.displayAllItems();
+// wishlist.moveToLibrary(1, library);

@@ -8,11 +8,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="app-container">
-        
+    <div class="container">
+        <!-- Header -->
         <%- include('partials/header', { activePage: 'search', homeLink: '/' }) %>
 
-        
+        <!-- Main Content -->
         <main class="main-content">
             <!-- Search Results Section -->
             <section class="section">
@@ -119,13 +119,28 @@
                     </div>
                 </div>
 
-                
-                <div id="searchLoading" class="search-loading">
+                <!-- Search History -->
+                <div id="searchHistoryContainer" style="display: none; margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h4 style="color: #667eea; margin: 0;">
+                            <i class="fas fa-history"></i> Recent Searches
+                        </h4>
+                        <button class="btn btn-sm btn-secondary" onclick="clearSearchHistory()">
+                            <i class="fas fa-trash"></i> Clear
+                        </button>
+                    </div>
+                    <div id="searchHistory" class="search-history-list" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <!-- Recent search items will appear here -->
+                    </div>
+                </div>
+
+                <!-- Loading State -->
+                <div id="searchLoading" class="search-loading" style="display: block;">
                     <i class="fas fa-spinner fa-spin"></i>
                     <p>Searching games...</p>
                 </div>
 
-                
+                <!-- Error State -->
                 <div id="searchError" class="search-error" style="display: none;">
                     <i class="fas fa-exclamation-triangle"></i>
                     <h3>Search Error</h3>
@@ -133,24 +148,24 @@
                     <button class="btn btn-primary" onclick="retrySearch()">Try Again</button>
                 </div>
 
-                
+                <!-- Mock Data Notice -->
                 <div id="mockDataNotice" class="mock-data-notice" style="display: none;">
                     <i class="fas fa-info-circle"></i>
                     <strong>Loading:</strong> The Steam game database is being loaded. If you see sample data, the Steam app list is still loading (this may take a moment on first use).
                 </div>
 
-                
-                <div id="searchResults" class="search-results-grid" style="display: none;">
-                    
+                <!-- Search Results -->
+                <div id="searchResults" class="games-grid" style="display: none;">
+                    <!-- Game cards will be populated here -->
                 </div>
 
-                
-                <div id="searchPagination" class="search-pagination" style="display: none;">
-                    
+                <!-- Pagination -->
+                <div id="searchPagination" class="search-pagination" style="display: none; margin-top: 30px; text-align: center;">
+                    <!-- Pagination will be populated here -->
                 </div>
 
-                
-                <div id="noResults" class="no-results" style="display: none;">
+                <!-- No Results -->
+                <div id="noResults" class="empty-state" style="display: none;">
                     <i class="fas fa-search"></i>
                     <h3>No Games Found</h3>
                     <p>Try a different search term</p>
@@ -159,19 +174,33 @@
             </section>
         </main>
 
-        
+        <!-- Footer -->
         <%- include('partials/footer') %>
     </div>
 
     <script src="/app.js"></script>
     <script>
-
+        // Get search parameters from URL
         const urlParams = new URLSearchParams(window.location.search);
         const query = urlParams.get('q');
         const page = parseInt(urlParams.get('page')) || 1;
 
+        // Initialize search when page loads
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Wait for app to initialize
+            if (window.app) {
+                await window.app.checkAuthStatus();
+            } else {
+                setTimeout(async () => {
+                    if (window.app) {
+                        await window.app.checkAuthStatus();
+                    }
+                }, 500);
+            }
 
-        document.addEventListener('DOMContentLoaded', function() {
+            // Load search history
+            loadSearchHistory();
+
             if (query) {
                 // Add to search history
                 addToSearchHistory(query);
@@ -240,11 +269,11 @@
             document.getElementById('searchPagination').style.display = 'block';
             document.getElementById('noResults').style.display = 'none';
 
-
+            // Update title
             document.getElementById('searchTitle').textContent = `Search Results for "${query}"`;
             document.getElementById('searchSubtitle').textContent = `${totalResults} games found`;
 
-
+            // Display games
             const resultsContainer = document.getElementById('searchResults');
             resultsContainer.innerHTML = '';
 
@@ -260,7 +289,7 @@
                 resultsContainer.appendChild(gameCard);
             });
 
-
+            // Display pagination
             displayPagination(currentPage, totalPages, query);
         }
 
@@ -273,7 +302,7 @@
             const pagination = document.createElement('div');
             pagination.className = 'pagination-large';
 
-
+            // Previous button
             if (currentPage > 1) {
                 const prevBtn = document.createElement('button');
                 prevBtn.className = 'btn btn-secondary';
@@ -282,7 +311,7 @@
                 pagination.appendChild(prevBtn);
             }
 
-
+            // Page numbers
             const startPage = Math.max(1, currentPage - 2);
             const endPage = Math.min(totalPages, currentPage + 2);
 
@@ -294,7 +323,7 @@
                 pagination.appendChild(pageBtn);
             }
 
-
+            // Next button
             if (currentPage < totalPages) {
                 const nextBtn = document.createElement('button');
                 nextBtn.className = 'btn btn-secondary';
@@ -307,13 +336,91 @@
         }
 
         function viewGameDetails(gameId) {
-            alert(`Viewing details for game ID: ${gameId}`);
-
+            // Use the app's game details function if available
+            if (window.app && window.app.viewGameDetails) {
+                window.app.viewGameDetails(gameId);
+            } else {
+                // Fallback: wait for app to initialize
+                setTimeout(() => {
+                    if (window.app && window.app.viewGameDetails) {
+                        window.app.viewGameDetails(gameId);
+                    } else {
+                        if (window.app) {
+                            window.app.showAlert('Game details feature is loading. Please try again in a moment.', 'Loading', 'info');
+                        } else {
+                            alert('Please wait for the page to load completely.');
+                        }
+                    }
+                }, 500);
+            }
         }
 
-        function addToWishlist(gameId, gameName) {
-            alert(`Added "${gameName}" to wishlist!`);
+        async function addToLibrary(gameId, gameName) {
+            // Check if user is logged in
+            if (!window.app || !window.app.currentUser) {
+                if (window.app) {
+                    await window.app.showAlert('Please log in to add games to your library', 'Login Required', 'warning');
+                } else {
+                    alert('Please log in to add games to your library');
+                }
+                return;
+            }
 
+            // Get user's libraries
+            try {
+                const response = await fetch(`/api/wishlists/${window.app.currentUser.username}`, {
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+                const libraries = data.success ? (data.wishlists || []) : [];
+
+                if (libraries.length === 0) {
+                    // No libraries, create default and add
+                    if (window.app) {
+                        await window.app.addToLibrary(gameId, gameName);
+                    }
+                } else if (libraries.length === 1) {
+                    // Only one library, add directly
+                    if (window.app) {
+                        await window.app.addToLibraryWithId(gameId, gameName, libraries[0].id);
+                    }
+                } else {
+                    // Multiple libraries, show selection modal
+                    if (window.app && window.app.showLibrarySelectionModal) {
+                        window.app.showLibrarySelectionModal(gameId, gameName, libraries);
+                    } else {
+                        // Fallback: show simple selection
+                        showLibrarySelection(gameId, gameName, libraries);
+                    }
+                }
+            } catch (error) {
+                console.error('Error adding to library:', error);
+                if (window.app) {
+                    window.app.showAlert('Error adding game to library', 'Error', 'error');
+                } else {
+                    alert('Error adding game to library');
+                }
+            }
+        }
+
+        function showLibrarySelection(gameId, gameName, libraries) {
+            const libraryNames = libraries.map(lib => lib.name).join('\n');
+            const libraryIds = libraries.map(lib => lib.id);
+            const selectedIndex = prompt(`Select a library to add "${gameName}" to:\n\n${libraries.map((lib, i) => `${i + 1}. ${lib.name} (${lib.gameCount || 0} games)`).join('\n')}\n\nEnter number (1-${libraries.length}):`);
+            
+            if (selectedIndex && !isNaN(selectedIndex) && selectedIndex >= 1 && selectedIndex <= libraries.length) {
+                const selectedLibrary = libraries[parseInt(selectedIndex) - 1];
+                if (window.app && window.app.addToLibraryWithId) {
+                    window.app.addToLibraryWithId(gameId, gameName, selectedLibrary.id);
+                }
+            }
+        }
+
+        // Backward compatibility
+        async function addToWishlist(gameId, gameName) {
+            return await addToLibrary(gameId, gameName);
         }
 
         function retrySearch() {

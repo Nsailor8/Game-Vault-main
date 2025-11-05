@@ -1,19 +1,32 @@
 <header class="header">
-  
+  <style>
+    /* Immediate layout fix - hide nav when user section is visible */
+    .nav.user-hidden {
+      display: none !important;
+    }
+    /* Hide nav when user section is displayed (handled by JS, but CSS fallback) */
+    body:has(.user-section[style*="display: block"]) .nav {
+      display: none !important;
+    }
+  </style>
+  <script>
+    // Immediate fix - hide nav if user section is visible before JS fully loads
+    (function() {
+      const userSection = document.getElementById('userSection');
+      const nav = document.querySelector('.nav');
+      if (userSection && window.getComputedStyle(userSection).display !== 'none') {
+        if (nav) {
+          nav.classList.add('user-hidden');
+          nav.style.display = 'none';
+        }
+      }
+    })();
+  </script>
+  <!-- Logo -->
   <div class="logo" onclick="window.location.href='<%= homeLink %>'">
     <i class="fas fa-gamepad"></i>
     <h1>Game Vault</h1>
   </div>
-
-  <!-- Navigation Buttons -->
-  <nav class="nav">
-    <a class="nav-btn <%= activePage === 'profile' ? 'active' : '' %>" href="/profile">Profile</a>
-    <a class="nav-btn <%= activePage === 'friends' ? 'active' : '' %>" href="/friends">Friends</a>
-    <a class="nav-btn <%= activePage === 'wishlist' ? 'active' : '' %>" href="/wishlist">Wishlist</a>
-    <a class="nav-btn <%= activePage === 'reviews' ? 'active' : '' %>" href="/reviews">Reviews</a>
-    <a class="nav-btn <%= activePage === 'settings' ? 'active' : '' %>" href="/settings">Settings</a>
-    <a class="nav-btn <%= activePage === 'admin' ? 'active' : '' %>" href="/admin">Admin</a>
-  </nav>
 
   <!-- Search Bar -->
   <div class="search-bar">
@@ -25,6 +38,15 @@
       </div>
     </div>
   </div>
+
+  <!-- Navigation Buttons -->
+  <nav class="nav">
+    <a class="nav-btn <%= activePage === 'profile' ? 'active' : '' %>" href="/profile">Profile</a>
+    <a class="nav-btn <%= activePage === 'friends' ? 'active' : '' %>" href="/friends">Friends</a>
+    <a class="nav-btn <%= activePage === 'library' ? 'active' : '' %>" href="/library">Library</a>
+    <a class="nav-btn <%= activePage === 'reviews' ? 'active' : '' %>" href="/reviews">Reviews</a>
+    <a class="nav-btn <%= activePage === 'admin' ? 'active' : '' %>" href="/admin">Admin</a>
+  </nav>
 
   <!-- Authentication Section -->
   <div class="auth-section" id="authSection" style="display: none;">

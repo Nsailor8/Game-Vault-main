@@ -6,7 +6,7 @@
 
   <div class="container">
     <main class="main-content">
-      
+      <!-- Wishlist Section -->
       <section id="wishlistSection" class="content-section active">
         <div class="section-header">
           <h2><i class="fas fa-heart"></i> My Wishlist</h2>
@@ -27,18 +27,16 @@
             <span id="steamOwnershipCount" class="ownership-count">0 games owned</span>
           </div>
           <div id="steamOwnedGamesList" class="steam-owned-games">
-            
+            <!-- Steam owned games will be populated here -->
           </div>
         </div>
 
-        <div class="wishlists-content">
-          <div id="wishlistContainer" class="list-container">
-            
-            <div class="empty-state">
-              <i class="fas fa-heart"></i>
-              <h3>Loading...</h3>
-              <p>Please wait while we load your wishlist.</p>
-            </div>
+        <!-- Wishlist Games -->
+        <div id="wishlistGames" class="list-container">
+          <div class="empty-state">
+            <i class="fas fa-heart"></i>
+            <h3>Loading...</h3>
+            <p>Please wait while we load your wishlist.</p>
           </div>
         </div>
       </section>
@@ -49,11 +47,36 @@
 
   <script src="/app.js?v=2"></script>
   <script>
-
-    document.addEventListener('DOMContentLoaded', () => {
+    // Initialize the app when the page loads
+    document.addEventListener('DOMContentLoaded', async () => {
       console.log('Wishlist page - DOM Content Loaded');
       
-
+      // Wait for app to initialize
+      if (window.app) {
+        // Check auth status first
+        await window.app.checkAuthStatus();
+        
+        // If user is logged in, load wishlist
+        if (window.app.currentUser) {
+          await loadWishlist();
+        } else {
+          showLoginRequired();
+        }
+      } else {
+        // Wait a bit for app to initialize
+        setTimeout(async () => {
+          if (window.app) {
+            await window.app.checkAuthStatus();
+            if (window.app.currentUser) {
+              await loadWishlist();
+            } else {
+              showLoginRequired();
+            }
+          }
+        }, 500);
+      }
+      
+      // Add event listener for Steam ownership check button
       const checkSteamOwnershipBtn = document.getElementById('checkSteamOwnershipBtn');
       if (checkSteamOwnershipBtn) {
         checkSteamOwnershipBtn.addEventListener('click', async () => {
@@ -235,7 +258,7 @@
             <div class="steam-owned-game">
               <span class="game-name">${game.gameName}</span>
               <span class="wishlist-name">in ${game.wishlistName}</span>
-              <a href="steam:
+              <a href="steam://run/${game.gameId}" class="btn btn-steam btn-sm">
                 <i class="fab fa-steam"></i> Play
               </a>
             </div>

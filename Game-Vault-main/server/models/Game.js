@@ -31,7 +31,7 @@ const Game = sequelize.define('Game', {
   }
 }, {
   tableName: 'games',
-  timestamps: false,
+  timestamps: false, // Disable automatic timestamps since the existing table doesn't have them
   indexes: [
     {
       fields: ['title']

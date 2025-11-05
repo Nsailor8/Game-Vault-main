@@ -42,7 +42,7 @@
   <!-- Admin Panel Content (shown when logged in as admin) -->
   <div id="adminPanelContent" class="container" style="display: none;">
     <main class="main-content">
-      
+      <!-- Admin Section -->
       <section id="adminSection" class="content-section active">
         <div class="section-header">
           <h2>Admin Panel</h2>
@@ -51,12 +51,111 @@
             <i class="fas fa-sign-out-alt"></i> Logout
           </button>
         </div>
-        <div id="adminContent" class="list-container">
-          
-          <div class="empty-state">
-            <i class="fas fa-cogs"></i>
-            <h3>No admin data available</h3>
-            <p>Login to access administrative tools!</p>
+
+        <!-- Admin Tabs -->
+        <div class="admin-tabs">
+          <button class="admin-tab active" data-tab="stats">Statistics</button>
+          <button class="admin-tab" data-tab="users">Users</button>
+          <button class="admin-tab" data-tab="admins">Admins</button>
+          <button class="admin-tab" data-tab="logs">System Logs</button>
+        </div>
+
+        <div id="adminContent" class="admin-content">
+          <!-- Statistics Tab -->
+          <div id="statsTab" class="admin-tab-content active">
+            <div class="stats-grid" id="adminStats">
+              <div class="stat-card">
+                <i class="fas fa-users"></i>
+                <h3>0</h3>
+                <p>Total Users</p>
+              </div>
+              <div class="stat-card">
+                <i class="fas fa-user-check"></i>
+                <h3>0</h3>
+                <p>Active Users</p>
+              </div>
+              <div class="stat-card">
+                <i class="fas fa-user-plus"></i>
+                <h3>0</h3>
+                <p>New This Month</p>
+              </div>
+              <div class="stat-card">
+                <i class="fas fa-shield-alt"></i>
+                <h3>0</h3>
+                <p>Admins</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Users Tab -->
+          <div id="usersTab" class="admin-tab-content">
+            <div class="admin-section-header">
+              <h3>User Management</h3>
+              <button class="btn btn-primary" id="refreshUsersBtn">
+                <i class="fas fa-sync-alt"></i> Refresh
+              </button>
+            </div>
+            <div class="users-table-container">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Join Date</th>
+                    <th>Status</th>
+                    <th>Admin</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="usersTableBody">
+                  <tr>
+                    <td colspan="7" class="loading">Loading users...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Admins Tab -->
+          <div id="adminsTab" class="admin-tab-content">
+            <div class="admin-section-header">
+              <h3>Admin Management</h3>
+              <button class="btn btn-primary" id="createAdminBtn">
+                <i class="fas fa-user-plus"></i> Create Admin
+              </button>
+            </div>
+            <div class="admins-list-container">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Join Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="adminsTableBody">
+                  <tr>
+                    <td colspan="5" class="loading">Loading admins...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- System Logs Tab -->
+          <div id="logsTab" class="admin-tab-content">
+            <div class="admin-section-header">
+              <h3>System Logs</h3>
+              <button class="btn btn-secondary" id="refreshLogsBtn">
+                <i class="fas fa-sync-alt"></i> Refresh
+              </button>
+            </div>
+            <div class="logs-container" id="systemLogs">
+              <div class="loading">Loading system logs...</div>
+            </div>
           </div>
         </div>
       </section>
@@ -100,9 +199,146 @@
       const adminLoginFormPage = document.getElementById('adminLoginFormPage');
       const adminLoginErrorPage = document.getElementById('adminLoginErrorPage');
 
+      // Check if already logged in as admin
+      function checkAdminSession() {
+        fetch('/api/admin/check', {
+          credentials: 'include'
+        })
+        .then(response => {
+          if (!response.ok) {
+            console.error(`[Admin Check] HTTP error! status: ${response.status}`);
+            // If 404, the route might not exist - show login screen
+            if (response.status === 404) {
+              console.log('[Admin Check] Route not found - showing login screen');
+              showLoginScreen();
+              return null;
+            }
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then(data => {
+          if (!data) return; // Already handled error
+          
+          if (data.isAdmin) {
+            // Already logged in as admin
+            showAdminPanel();
+            initializeAdminPanel();
+          } else {
+            // Not logged in as admin
+            showLoginScreen();
+          }
+        })
+        .catch(error => {
+          console.error('[Admin Check] Error checking admin status:', error);
+          showLoginScreen();
+        });
+      }
 
-      authModal.style.display = 'block';
-      mainContent.style.display = 'none';
+      function showLoginScreen() {
+        if (adminLoginScreen) adminLoginScreen.style.display = 'flex';
+        if (adminPanelContent) adminPanelContent.style.display = 'none';
+      }
+
+      function showAdminPanel() {
+        if (adminLoginScreen) adminLoginScreen.style.display = 'none';
+        if (adminPanelContent) adminPanelContent.style.display = 'block';
+      }
+
+      function showError(message) {
+        if (adminLoginErrorPage) {
+          adminLoginErrorPage.textContent = message;
+          adminLoginErrorPage.style.display = 'block';
+        }
+      }
+
+      function hideError() {
+        if (adminLoginErrorPage) {
+          adminLoginErrorPage.style.display = 'none';
+          adminLoginErrorPage.textContent = '';
+        }
+      }
+
+      // Password visibility toggle function
+      function togglePasswordVisibility() {
+        const passwordInput = document.getElementById('adminPasswordPage');
+        const toggleIcon = document.getElementById('passwordToggleIcon');
+        
+        if (passwordInput && toggleIcon) {
+          if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            toggleIcon.classList.remove('fa-eye');
+            toggleIcon.classList.add('fa-eye-slash');
+          } else {
+            passwordInput.type = 'password';
+            toggleIcon.classList.remove('fa-eye-slash');
+            toggleIcon.classList.add('fa-eye');
+          }
+        }
+      }
+
+      // Make function globally available
+      window.togglePasswordVisibility = togglePasswordVisibility;
+
+      // Handle admin login form submission
+      if (adminLoginFormPage) {
+        adminLoginFormPage.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          hideError();
+
+          const username = document.getElementById('adminUsernamePage').value;
+          const password = document.getElementById('adminPasswordPage').value;
+
+          if (!username || !password) {
+            showError('Please fill in all fields');
+            return;
+          }
+
+          try {
+            const response = await fetch('/api/admin/login', {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ username, password })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+              hideError();
+              showAdminPanel();
+              initializeAdminPanel();
+            } else {
+              // Show error in the same form
+              const errorMessage = data.error || 'Invalid admin credentials';
+              showError(errorMessage);
+            }
+          } catch (error) {
+            console.error('Error logging in as admin:', error);
+            showError('Error logging in. Please try again.');
+          }
+        });
+      }
+
+      // Handle admin logout
+      const adminLogoutBtn = document.getElementById('adminLogoutBtn');
+      if (adminLogoutBtn) {
+        adminLogoutBtn.addEventListener('click', () => {
+          fetch('/api/admin/logout', {
+            method: 'POST',
+            credentials: 'include'
+          })
+          .then(() => {
+            showLoginScreen();
+            if (adminLoginFormPage) adminLoginFormPage.reset();
+          })
+          .catch(error => {
+            console.error('Error logging out:', error);
+          });
+        });
+      }
 
       function initializeAdminPanel() {
         // Wait for app to be initialized
@@ -123,30 +359,8 @@
         initAdminPanel();
       }
 
-
-      const loginBtn = document.getElementById('loginBtn');
-      const guestBtns = document.querySelectorAll('#guestBtnLogin, #guestBtnSignup');
-
-      loginBtn.addEventListener('click', showMainContent);
-      guestBtns.forEach(btn => btn.addEventListener('click', showMainContent));
-
-
-      const showSignup = document.getElementById('showSignup');
-      const showLogin = document.getElementById('showLogin');
-      const loginForm = document.getElementById('loginForm');
-      const signupForm = document.getElementById('signupForm');
-
-      showSignup.addEventListener('click', (e) => {
-        e.preventDefault();
-        loginForm.style.display = 'none';
-        signupForm.style.display = 'block';
-      });
-
-      showLogin.addEventListener('click', (e) => {
-        e.preventDefault();
-        signupForm.style.display = 'none';
-        loginForm.style.display = 'block';
-      });
+      // Initial check
+      checkAdminSession();
     });
   </script>
 </body>
