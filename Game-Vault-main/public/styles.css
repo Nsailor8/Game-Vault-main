@@ -1001,13 +1001,16 @@ body {
 }
 
 
-/* Friends Section */
-.friends-content {
+/* Layout for Friends, Wishlist, and Reviews Sections */
+.friends-content,
+.wishlist-content,
+.reviews-content {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 30px;
 }
 
+/* Common container styling */
 .list-container {
     background: #f8f9ff;
     border-radius: 15px;
@@ -1021,7 +1024,33 @@ body {
     color: #333;
 }
 
-.friend-item, .wishlist-item, .review-item {
+/* Friend Items */
+.friend-item {
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.friend-item span {
+    flex: 1; /* username takes all available space */
+}
+
+.friend-item button {
+    flex: none;
+    padding: 6px 12px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+/* Wishlist Items */
+.wishlist-item {
     background: white;
     padding: 15px;
     border-radius: 10px;
@@ -1032,9 +1061,108 @@ body {
     align-items: center;
 }
 
-.friend-item:hover, .wishlist-item:hover, .review-item:hover {
+.wishlist-item button {
+    flex: none;
+    padding: 6px 12px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+/* Review Items */
+.review-item {
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.review-item button {
+    flex: none;
+    padding: 6px 12px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+/* Hover effects */
+.friend-item:hover,
+.wishlist-item:hover,
+.review-item:hover {
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
 }
+
+
+/* Wishlist Items */
+.wishlist-item {
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #e0e0e0;
+
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.wishlist-item button {
+    padding: 6px 12px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+/* Review Items */
+.review-item {
+    background: white;
+    padding: 15px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #e0e0e0;
+
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.review-item button {
+    padding: 6px 12px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+/* Hover Effects */
+.friend-item:hover,
+.wishlist-item:hover,
+.review-item:hover {
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+}
+
+/* Button Colors */
+.btn-primary {
+    background-color: #667eea;
+    color: white;
+    border: none;
+    border-radius: 6px;
+}
+
+.btn-primary:hover {
+    background-color: #5a67d8;
+}
+
+.btn-danger {
+    background-color: #e53e3e;
+    color: white;
+    border: none;
+    border-radius: 6px;
+}
+
+.btn-danger:hover {
+    background-color: #c53030;
+}
+
 
 /* Wishlist Section */
 .wishlists-content {

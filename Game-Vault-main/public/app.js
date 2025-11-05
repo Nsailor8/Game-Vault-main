@@ -477,6 +477,8 @@ class GameVaultApp {
                 console.log('User already logged in:', data.user.username);
                 // Hide login screen if user is logged in
                 this.loginScreen.hide();
+                    app.updateFriends();
+    console.log('updateFriends called for', app.currentUser.username);
             } else {
                 console.log('No active session found');
                 // Only show login modal on the home page, not on every page
@@ -802,65 +804,47 @@ class GameVaultApp {
         });
     }
 
-    updateFriends() {
-        if (!this.currentUser) {
-            return;
+async updateFriends() {
+    console.log('updateFriends called');
+
+    try {
+        // Fetch friends
+        const friends = await this.getFriendsList();
+        console.log('Fetched friends:', friends);
+
+        // Display friends using your existing displayFriends function
+        if (friends && typeof this.displayFriends === 'function') {
+            this.displayFriends(friends);
+        } else {
+            console.warn('displayFriends function is not defined');
         }
-
-        // Call the server API to get friends list
-        fetch(`/api/friends/${this.currentUser.username}`)
-        .then(response => response.json())
-        .then(data => {
-            const container = document.getElementById('friendsList');
-            const friends = data.friends || [];
-            const pendingRequests = data.pendingRequests || [];
-
-            container.innerHTML = '';
-
-            if (friends.length === 0) {
-                container.innerHTML = '<div class="empty-state"><i class="fas fa-users"></i><h3>No Friends</h3><p>Add some friends to get started!</p></div>';
-            } else {
-                friends.forEach(friend => {
-                    const friendItem = document.createElement('div');
-                    friendItem.className = 'friend-item';
-                    friendItem.innerHTML = `
-                        <div>
-                            <strong>${friend.username}</strong>
-                            <br>
-                            <small>Added: ${new Date(friend.addedDate).toLocaleDateString()}</small>
-                        </div>
-                        <button class="btn btn-danger" onclick="app.removeFriend('${friend.username}')">Remove</button>
-                    `;
-                    container.appendChild(friendItem);
-                });
-            }
-
-            // Update pending requests
-            const pendingContainer = document.getElementById('pendingRequests');
-            
-            if (pendingRequests.length === 0) {
-                pendingContainer.innerHTML = '<div class="empty-state"><i class="fas fa-clock"></i><h3>No Pending Requests</h3></div>';
-            } else {
-                pendingContainer.innerHTML = '';
-                pendingRequests.forEach(request => {
-                    const requestItem = document.createElement('div');
-                    requestItem.className = 'friend-item';
-                    requestItem.innerHTML = `
-                        <div>
-                            <strong>${request.targetUsername}</strong>
-                            <br>
-                            <small>Sent: ${new Date(request.sentDate).toLocaleDateString()}</small>
-                        </div>
-                        <button class="btn btn-primary" onclick="app.acceptFriendRequest('${request.targetId}')">Accept</button>
-                    `;
-                    pendingContainer.appendChild(requestItem);
-                });
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching friends:', error);
-        });
+    } catch (error) {
+        console.error('Error fetching friends:', error);
     }
+}
+
+
+
+async viewFriendProfile(friend) {
+  // Get modal elements
+  const modal = document.getElementById('friendProfileModal');
+  const usernameEl = document.getElementById('friendUsername');
+  const modalBody = modal.querySelector('.modal-body');
+
+  // Set the username
+  usernameEl.textContent = friend.username;
+
+  // Optional: show more info if available
+  modalBody.innerHTML = `
+    <p>Friend profile will load here.</p>
+    <p>Username: ${friend.username}</p>
+    <p>Friend since: ${friend.acceptedDate || 'N/A'}</p>
+  `;
+
+  // Show the modal
+  modal.style.display = 'block';
+}
+
 
     updateWishlists() {
         const container = document.getElementById('wishlistContainer');
@@ -2176,49 +2160,70 @@ class GameVaultApp {
         }
     }
 
-    displayFriends(friends) {
-        const container = document.getElementById('friendsList');
-        const countElement = document.getElementById('friendsCount');
-        
-        if (!container) return;
+   displayFriends(friends) {
+    const container = document.getElementById('friendsList');
+    const countElement = document.getElementById('friendsCount');
 
-        if (countElement) {
-            countElement.textContent = friends.length;
-        }
+    if (!container) return;
 
-        if (friends.length === 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-user-friends"></i>
-                    <h3>No friends yet</h3>
-                    <p>Send friend requests to start building your network!</p>
-                </div>
-            `;
-            return;
-        }
-
-        container.innerHTML = '';
-        friends.forEach(friend => {
-            const friendItem = document.createElement('div');
-            friendItem.className = 'friend-item';
-            friendItem.innerHTML = `
-                <div class="friend-info">
-                    <div class="friend-avatar">
-                        <i class="fas fa-user-circle"></i>
-                    </div>
-                    <div class="friend-details">
-                        <h4>${friend.username}</h4>
-                        <p>Friends since: ${new Date(friend.friendshipDate).toLocaleDateString()}</p>
-                        ${friend.bio ? `<p class="friend-bio">${friend.bio}</p>` : ''}
-                    </div>
-                </div>
-                <div class="friend-actions">
-                    <button class="btn btn-danger" onclick="app.removeFriend(${friend.friendId})">Remove</button>
-                </div>
-            `;
-            container.appendChild(friendItem);
-        });
+    // Update friend count
+    if (countElement) {
+        countElement.textContent = friends.length;
     }
+
+    // Handle empty list
+    if (friends.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-user-friends"></i>
+                <h3>No friends yet</h3>
+                <p>Send friend requests to start building your network!</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = '';
+
+    friends.forEach(friend => {
+        // Normalize date
+        const date = friend.friendshipDate || friend.acceptedDate || friend.createdDate;
+        const formattedDate = date ? new Date(date).toLocaleDateString() : 'N/A';
+
+        const friendItem = document.createElement('div');
+        friendItem.className = 'friend-item';
+
+        friendItem.innerHTML = `
+            <div class="friend-info">
+                <div class="friend-avatar">
+                    <i class="fas fa-user-circle"></i>
+                </div>
+                <div class="friend-details">
+                    <h4>${friend.username}</h4>
+                    <p>Friends since: ${formattedDate}</p>
+                    ${friend.bio ? `<p class="friend-bio">${friend.bio}</p>` : ''}
+                </div>
+            </div>
+            <div class="friend-actions">
+                <button class="btn btn-danger" onclick="app.removeFriend(${friend.friendId})">Remove</button>
+            </div>
+        `;
+
+        container.appendChild(friendItem);
+
+        // Add View Profile button dynamically before Remove button
+        const actionsDiv = friendItem.querySelector('.friend-actions');
+        const viewBtn = document.createElement('button');
+        viewBtn.textContent = 'View Profile';
+        viewBtn.className = 'btn btn-primary';
+        viewBtn.addEventListener('click', () => this.viewFriendProfile(friend));
+        actionsDiv.insertBefore(viewBtn, actionsDiv.firstChild);
+    });
+}
+
+
+
+
 
     displayReceivedRequests(requests) {
         const container = document.getElementById('receivedRequests');
