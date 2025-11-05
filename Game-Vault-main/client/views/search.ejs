@@ -170,33 +170,6 @@
         const query = urlParams.get('q');
         const page = parseInt(urlParams.get('page')) || 1;
 
-        // Initialize search when page loads
-        document.addEventListener('DOMContentLoaded', async function() {
-            // Wait for app to initialize and check auth status
-            // Don't reset user state if check fails - preserve existing session
-            if (window.app) {
-                try {
-                    await window.app.checkAuthStatus();
-                } catch (error) {
-                    console.error('Auth check error (non-fatal):', error);
-                    // Don't reset UI if check fails - user might still be logged in
-                    // Only update UI if we successfully got a user
-                }
-            } else {
-                setTimeout(async () => {
-                    if (window.app) {
-                        try {
-                            await window.app.checkAuthStatus();
-                        } catch (error) {
-                            console.error('Auth check error (non-fatal):', error);
-                            // Don't reset UI if check fails
-                        }
-                    }
-                }, 500);
-            }
-
-            // Load search history
-            loadSearchHistory();
 
         document.addEventListener('DOMContentLoaded', function() {
             if (query) {
@@ -213,12 +186,7 @@
                 showLoading();
                 console.log('Searching for:', searchQuery);
 
-                const response = await fetch(`/api/games/search?q=${encodeURIComponent(searchQuery)}&page=${pageNum}&pageSize=20`, {
-                    credentials: 'include', // Important: include session cookies
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
+                const response = await fetch(`/api/games/search?q=${encodeURIComponent(searchQuery)}&page=${pageNum}&pageSize=20`);
                 console.log('Response status:', response.status);
                 
                 if (!response.ok) {

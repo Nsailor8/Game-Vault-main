@@ -937,12 +937,6 @@ limit ${pageSize};`;
         try {
             console.log(`🔍 [Trending] Fetching most played games from Steam...`);
             
-            // Check if Steam API is blocked - use fallback
-            if (this.steamApiBlocked) {
-                console.log('⚠️ [Trending] Steam API blocked, using fallback method');
-                return await this.getPopularGamesFallback(limit);
-            }
-            
             // Get Steam app list (cached)
             const appList = await this.getSteamAppList();
             
@@ -957,17 +951,11 @@ limit ${pageSize};`;
             const sampleGames = appList.slice(0, sampleSize);
             
             // Fetch details and player counts in batches
-            const batchSize = 5; // Reduced batch size to avoid rate limits
+            const batchSize = 10;
             const gamesWithPlayerCounts = [];
             const targetGames = limit * 5; // Fetch 5x the limit to ensure we get good results
             
             for (let i = 0; i < Math.min(sampleGames.length, targetGames); i += batchSize) {
-                // Check circuit breaker during loop
-                if (this.steamApiBlocked) {
-                    console.log('⚠️ [Trending] Steam API blocked during fetch, using fallback');
-                    return await this.getPopularGamesFallback(limit);
-                }
-                
                 const batch = sampleGames.slice(i, i + batchSize);
                 const batchResults = await Promise.all(
                     batch.map(async (game) => {
@@ -975,13 +963,9 @@ limit ${pageSize};`;
                             const details = await this.getSteamGameDetails(game.appid);
                             if (details) {
                                 const formattedGame = this.formatSteamGameData(game, details);
-                                // Try to get current player count, but don't fail if it doesn't work
-                                try {
-                                    const playerCount = await this.getCurrentPlayerCount(game.appid);
-                                    formattedGame.currentPlayers = playerCount;
-                                } catch (e) {
-                                    formattedGame.currentPlayers = 0; // Default to 0 if player count fails
-                                }
+                                // Get current player count
+                                const playerCount = await this.getCurrentPlayerCount(game.appid);
+                                formattedGame.currentPlayers = playerCount;
                                 return formattedGame;
                             }
                             return null;
@@ -994,11 +978,6 @@ limit ${pageSize};`;
                 const validGames = batchResults.filter(g => g !== null);
                 gamesWithPlayerCounts.push(...validGames);
                 
-                // Add delay between batches to avoid rate limiting
-                if (i + batchSize < Math.min(sampleGames.length, targetGames)) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                }
-                
                 // Sort what we have so far by player count
                 gamesWithPlayerCounts.sort((a, b) => (b.currentPlayers || 0) - (a.currentPlayers || 0));
                 
@@ -1010,42 +989,31 @@ limit ${pageSize};`;
                 }
             }
 
-            // Filter to games with ratings OR players (be more lenient)
+            // Filter to only games with ratings (as a quality filter)
+            // But prioritize player count for sorting
             const ratedGames = gamesWithPlayerCounts.filter(g => {
                 if (!g) return false;
                 const hasMetacritic = g.metacritic !== null && g.metacritic !== undefined && g.metacritic > 0;
                 const hasRating = g.rating !== null && g.rating !== undefined && g.rating > 0;
-                const hasPlayers = (g.currentPlayers || 0) > 0;
-                // Include games with ratings OR players
-                return (hasMetacritic || hasRating || hasPlayers);
+                // Prioritize games with both player count and ratings
+                return (hasMetacritic || hasRating) && (g.currentPlayers || 0) > 0;
             });
 
-            // If we still don't have enough, include all games we found (no strict filtering)
-            if (ratedGames.length < limit && gamesWithPlayerCounts.length > 0) {
-                const remainingGames = gamesWithPlayerCounts.filter(g => !ratedGames.includes(g));
-                ratedGames.push(...remainingGames.slice(0, limit - ratedGames.length));
+            // If we don't have enough rated games with players, include games with just players
+            if (ratedGames.length < limit) {
+                const gamesWithJustPlayers = gamesWithPlayerCounts.filter(g => {
+                    if (!g || !g.currentPlayers || g.currentPlayers === 0) return false;
+                    const hasMetacritic = g.metacritic !== null && g.metacritic !== undefined && g.metacritic > 0;
+                    const hasRating = g.rating !== null && g.rating !== undefined && g.rating > 0;
+                    return !hasMetacritic && !hasRating; // Games with players but no ratings
+                });
+                ratedGames.push(...gamesWithJustPlayers);
             }
 
-            // Sort by player count (highest first), then by rating
-            ratedGames.sort((a, b) => {
-                const playerDiff = (b.currentPlayers || 0) - (a.currentPlayers || 0);
-                if (playerDiff !== 0) return playerDiff;
-                const aRating = (a.metacritic || 0) + (a.rating || 0) * 10;
-                const bRating = (b.metacritic || 0) + (b.rating || 0) * 10;
-                return bRating - aRating;
-            });
+            // Sort by player count (highest first)
+            ratedGames.sort((a, b) => (b.currentPlayers || 0) - (a.currentPlayers || 0));
 
             const topGames = ratedGames.slice(0, limit);
-            
-            // If we still don't have enough games, use fallback
-            if (topGames.length < limit) {
-                console.log(`⚠️ [Trending] Only found ${topGames.length} games, using fallback for remaining`);
-                const fallback = await this.getPopularGamesFallback(limit - topGames.length);
-                if (fallback.games && fallback.games.length > 0) {
-                    topGames.push(...fallback.games.slice(0, limit - topGames.length));
-                }
-            }
-            
             console.log(`✅ [Trending] Found ${topGames.length} most played games from Steam (checked ${gamesWithPlayerCounts.length} games)`);
             
             // Log top games for debugging
@@ -1059,13 +1027,7 @@ limit ${pageSize};`;
             };
         } catch (error) {
             console.error('❌ [Trending] Error fetching trending games:', error.message);
-            // Try fallback on error
-            try {
-                return await this.getPopularGamesFallback(limit);
-            } catch (fallbackError) {
-                console.error('❌ [Trending] Fallback also failed:', fallbackError.message);
-                return { success: true, games: [] };
-            }
+            return { success: true, games: [] };
         }
     }
 
@@ -1159,13 +1121,6 @@ limit ${pageSize};`;
         try {
             console.log(`🔍 [Recent] Fetching recent games from Steam...`);
             
-            // Check if Steam API is blocked - use fallback
-            if (this.steamApiBlocked) {
-                console.log('⚠️ [Recent] Steam API blocked, using fallback method');
-                // Use popular games as fallback for recent games
-                return await this.getPopularGamesFallback(limit);
-            }
-            
             // Get Steam app list (cached)
             const appList = await this.getSteamAppList();
             
@@ -1187,16 +1142,10 @@ limit ${pageSize};`;
                 .map(idx => appList[idx]);
 
             // Fetch details in batches
-            const batchSize = 5; // Reduced batch size to avoid rate limits
+            const batchSize = 10;
             const gamesWithDetails = [];
             
             for (let i = 0; i < Math.min(recentSampleSize * 2, sampleGames.length); i += batchSize) {
-                // Check circuit breaker during loop
-                if (this.steamApiBlocked) {
-                    console.log('⚠️ [Recent] Steam API blocked during fetch, using fallback');
-                    return await this.getPopularGamesFallback(limit);
-                }
-                
                 const batch = sampleGames.slice(i, i + batchSize);
                 const batchResults = await Promise.all(
                     batch.map(async (game) => {
@@ -1214,23 +1163,13 @@ limit ${pageSize};`;
                 
                 gamesWithDetails.push(...batchResults.filter(g => g !== null));
                 
-                // Add delay between batches to avoid rate limiting
-                if (i + batchSize < Math.min(recentSampleSize * 2, sampleGames.length)) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                }
-                
                 if (gamesWithDetails.length >= limit * 3) break;
             }
 
-            // Filter games with release dates - be more lenient
+            // Filter games with release dates - prefer those with ratings too
             let gamesWithDates = gamesWithDetails.filter(g => {
-                if (!g) return false;
-                // Include games with release dates OR just games we found (if no dates available)
-                if (g.released && g.released !== 'TBA' && g.released !== 'No release date') {
-                    return true;
-                }
-                // If no release date, still include if it has other info
-                return g.name && g.name.length > 0;
+                if (!g || !g.released) return false;
+                return g.released !== 'TBA' && g.released !== 'No release date';
             });
             
             // Prefer games with ratings if we have enough
@@ -1244,12 +1183,6 @@ limit ${pageSize};`;
             if (gamesWithRatingsAndDates.length >= limit) {
                 gamesWithDates = gamesWithRatingsAndDates;
             }
-            
-            // If we still don't have enough, use all games we found
-            if (gamesWithDates.length < limit && gamesWithDetails.length > 0) {
-                const remainingGames = gamesWithDetails.filter(g => !gamesWithDates.includes(g));
-                gamesWithDates.push(...remainingGames.slice(0, limit - gamesWithDates.length));
-            }
 
             // Sort by release date (newest first), but prioritize games with ratings
             gamesWithDates.sort((a, b) => {
@@ -1260,27 +1193,13 @@ limit ${pageSize};`;
                 if (!aHasRating && bHasRating) return 1;
                 
                 // Then sort by release date (newest first)
-                if (a.released && b.released) {
-                    const dateA = new Date(a.released);
-                    const dateB = new Date(b.released);
-                    if (!isNaN(dateA.getTime()) && !isNaN(dateB.getTime())) {
-                        return dateB - dateA; // Newest first
-                    }
-                }
-                return 0;
+                const dateA = new Date(a.released);
+                const dateB = new Date(b.released);
+                if (isNaN(dateA.getTime()) || isNaN(dateB.getTime())) return 0;
+                return dateB - dateA; // Newest first
             });
 
             const recentGames = gamesWithDates.slice(0, limit);
-            
-            // If we still don't have enough games, use fallback
-            if (recentGames.length < limit) {
-                console.log(`⚠️ [Recent] Only found ${recentGames.length} games, using fallback for remaining`);
-                const fallback = await this.getPopularGamesFallback(limit - recentGames.length);
-                if (fallback.games && fallback.games.length > 0) {
-                    recentGames.push(...fallback.games.slice(0, limit - recentGames.length));
-                }
-            }
-            
             console.log(`✅ [Recent] Found ${recentGames.length} recent games (with ratings where available)`);
 
             return {
@@ -1289,13 +1208,7 @@ limit ${pageSize};`;
             };
         } catch (error) {
             console.error('❌ [Recent] Error fetching recent games:', error.message);
-            // Try fallback on error
-            try {
-                return await this.getPopularGamesFallback(limit);
-            } catch (fallbackError) {
-                console.error('❌ [Recent] Fallback also failed:', fallbackError.message);
-                return { success: true, games: [] };
-            }
+            return { success: true, games: [] };
         }
     }
 
