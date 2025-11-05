@@ -66,6 +66,11 @@ body {
     flex-wrap: wrap;
 }
 
+/* Hide nav buttons when user is logged in (they're in the dropdown instead) */
+.nav.user-hidden {
+    display: none !important;
+}
+
 .nav-btn {
     padding: 12px 24px;
     border: none;
@@ -1909,6 +1914,175 @@ textarea {
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
+/* User Section Styles */
+.user-section {
+    position: relative;
+    z-index: 10001;
+}
+
+.user-section-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Nav hiding is handled by JavaScript adding .user-hidden class */
+.nav.user-hidden {
+    display: none !important;
+}
+
+/* Ensure nav is hidden when user section is visible */
+.user-section:not([style*="display: none"]) ~ .nav {
+    display: none !important;
+}
+
+/* When user section is displayed, hide nav */
+.user-section[style*="display: block"] ~ .nav {
+    display: none !important;
+}
+
+.user-profile-dropdown {
+    position: relative;
+    z-index: 10000;
+}
+
+/* Create invisible bridge to maintain hover when moving from trigger to menu */
+.user-profile-dropdown::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    height: 8px;
+    z-index: 9999;
+    background: transparent;
+    pointer-events: auto;
+}
+
+/* Ensure dropdown menu stays visible when hovering over it */
+.user-profile-dropdown:hover .user-profile-menu {
+    opacity: 1 !important;
+    visibility: visible !important;
+    transform: translateY(0) !important;
+    pointer-events: auto !important;
+}
+
+.user-profile-menu:hover {
+    opacity: 1 !important;
+    visibility: visible !important;
+    transform: translateY(0) !important;
+    pointer-events: auto !important;
+}
+
+.user-profile-trigger {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    border-radius: 25px;
+    background: rgba(102, 126, 234, 0.1);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    user-select: none;
+}
+
+.user-profile-trigger:hover {
+    background: rgba(102, 126, 234, 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+}
+
+.user-profile-trigger i.fa-user-circle {
+    font-size: 1.5rem;
+    color: #667eea;
+}
+
+.user-profile-trigger span {
+    font-weight: 500;
+    color: #333;
+    font-size: 14px;
+}
+
+.user-profile-trigger i.fa-chevron-down {
+    font-size: 0.75rem;
+    color: #666;
+    transition: transform 0.3s ease;
+}
+
+.user-profile-dropdown:hover .user-profile-trigger i.fa-chevron-down {
+    transform: rotate(180deg);
+}
+
+.user-profile-menu {
+    position: absolute;
+    top: calc(100% + 5px);
+    right: 0;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    min-width: 200px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: opacity 0.25s ease, visibility 0.25s ease, transform 0.25s ease;
+    z-index: 10000;
+    padding: 8px 0;
+    pointer-events: none;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+
+.profile-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    color: #333;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    font-size: 14px;
+    cursor: pointer;
+    font-family: inherit;
+    pointer-events: auto;
+}
+
+.profile-menu-item:hover {
+    background: rgba(102, 126, 234, 0.1);
+    color: #667eea;
+}
+
+.profile-menu-item.active {
+    background: rgba(102, 126, 234, 0.15);
+    color: #667eea;
+    font-weight: 600;
+}
+
+.profile-menu-item i {
+    width: 20px;
+    text-align: center;
+    font-size: 16px;
+}
+
+.profile-menu-item.logout-item {
+    color: #e74c3c;
+}
+
+.profile-menu-item.logout-item:hover {
+    background: rgba(231, 76, 60, 0.1);
+    color: #c0392b;
+}
+
+.profile-menu-divider {
+    height: 1px;
+    background: #e0e0e0;
+    margin: 8px 0;
+}
+
 /* Modal Styles */
 .modal {
     display: none;
@@ -2753,6 +2927,64 @@ textarea {
     text-align: center;
     padding: 20px;
     grid-column: 1 / -1;
+}
+
+/* Wishlist Game Item Styles */
+.wishlist-game-item {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    margin-bottom: 15px;
+    border: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.3s ease;
+}
+
+.wishlist-game-item:hover {
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+    transform: translateY(-2px);
+}
+
+.wishlist-game-item .game-info {
+    flex: 1;
+}
+
+.wishlist-game-item .game-info h3 {
+    margin: 0 0 8px 0;
+    font-size: 1.1rem;
+    color: #333;
+    font-weight: 600;
+}
+
+.wishlist-game-item .game-platform {
+    color: #667eea;
+    font-size: 0.9rem;
+    margin: 5px 0;
+}
+
+.wishlist-game-item .game-platform i {
+    margin-right: 5px;
+}
+
+.wishlist-game-item .game-notes {
+    color: #666;
+    font-size: 0.85rem;
+    margin: 5px 0;
+    font-style: italic;
+}
+
+.wishlist-game-item .game-added {
+    color: #999;
+    font-size: 0.8rem;
+    margin: 5px 0 0 0;
+}
+
+.wishlist-game-item .game-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
 }
 
 /* Steam Games Section */

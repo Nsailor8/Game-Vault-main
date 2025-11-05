@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Game Vault - Home</title>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=2">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
@@ -111,8 +111,21 @@
   <%- include('partials/loginModal') %>
 
   <!-- App Script -->
-  <script src="/app.js"></script>
+  <script src="/app.js?v=2"></script>
   <script>
+    // Ensure layout is correct immediately on page load
+    (function() {
+      // Hide nav if user section is visible (before JS loads)
+      const userSection = document.getElementById('userSection');
+      const nav = document.querySelector('.nav');
+      if (userSection && userSection.style.display !== 'none') {
+        if (nav) {
+          nav.classList.add('user-hidden');
+          nav.style.display = 'none';
+        }
+      }
+    })();
+    
     // Load games asynchronously after page loads
     document.addEventListener('DOMContentLoaded', async function() {
       const trendingList = document.getElementById('trendingList');

@@ -642,6 +642,15 @@ class GameVaultApp {
         // Update UI but don't show logout button for guests
         this.updateUI();
         
+        // Explicitly ensure Sign In button is visible for guests
+        setTimeout(() => {
+            const signInBtnGuest = document.getElementById('signInBtnGuest');
+            if (signInBtnGuest && this.currentUser && this.currentUser.isGuest) {
+                signInBtnGuest.style.display = 'inline-block';
+                signInBtnGuest.style.visibility = 'visible';
+            }
+        }, 100);
+        
         console.log('Guest user logged in successfully');
     }
 
@@ -683,15 +692,22 @@ class GameVaultApp {
         // Show appropriate buttons based on user type
         const logoutBtn = document.getElementById('logoutBtn');
         const loginBtnProfile = document.getElementById('loginBtnProfile');
+        const adminMenuLink = document.getElementById('adminMenuLink');
         
         if (this.currentUser.isGuest) {
             // Guest user - show login button, hide logout
             if (logoutBtn) logoutBtn.style.display = 'none';
             if (loginBtnProfile) loginBtnProfile.style.display = 'inline-block';
+            if (adminMenuLink) adminMenuLink.style.display = 'none';
         } else {
             // Registered user - show logout button, hide login
             if (logoutBtn) logoutBtn.style.display = 'inline-block';
             if (loginBtnProfile) loginBtnProfile.style.display = 'none';
+            
+            // Show admin menu link if user is admin
+            if (adminMenuLink) {
+                adminMenuLink.style.display = (this.currentUser.isAdmin || this.currentUser.is_admin) ? 'flex' : 'none';
+            }
         }
 
         // Update profile section
@@ -796,6 +812,13 @@ class GameVaultApp {
         if (userSection) {
             userSection.style.display = 'none';
         }
+        
+        // Show nav buttons when user logs out
+        const nav = document.querySelector('.nav');
+        if (nav) {
+            nav.classList.remove('user-hidden');
+            nav.style.display = 'flex'; // Restore display
+        }
     }
 
     hideSignInButton() {
@@ -815,6 +838,8 @@ class GameVaultApp {
         const authSection = document.getElementById('authSection');
         const userSection = document.getElementById('userSection');
         const userDisplayName = document.getElementById('userDisplayName');
+        const signInBtnGuest = document.getElementById('signInBtnGuest');
+        const nav = document.querySelector('.nav');
         
         if (authSection) {
             authSection.style.display = 'none';
@@ -824,9 +849,61 @@ class GameVaultApp {
             userSection.style.display = 'block';
         }
         
+        // Show Sign In button for guests, hide for registered users
+        if (signInBtnGuest) {
+            // Check if user is a guest - check both isGuest flag and username
+            const isGuest = this.currentUser && (this.currentUser.isGuest === true || this.currentUser.username === 'Guest');
+            if (isGuest) {
+                signInBtnGuest.style.display = 'inline-block';
+                signInBtnGuest.style.visibility = 'visible';
+                // Add click handler to open login modal (same as regular signInBtn)
+                signInBtnGuest.onclick = () => {
+                    if (this.loginScreen) {
+                        this.loginScreen.show();
+                        this.loginScreen.resetToInitialState();
+                    } else if (this.showLoginModal) {
+                        this.showLoginModal();
+                    } else {
+                        const loginModal = document.getElementById('loginModal');
+                        if (loginModal) {
+                            loginModal.style.display = 'block';
+                        }
+                    }
+                };
+            } else {
+                signInBtnGuest.style.display = 'none';
+            }
+        } else {
+            console.warn('signInBtnGuest element not found in header');
+        }
+        
+        // Hide nav buttons when user is logged in (they're in the dropdown)
+        // Do this immediately to prevent flicker
+        if (nav) {
+            nav.classList.add('user-hidden');
+            nav.style.display = 'none'; // Also set inline style for immediate effect
+        }
+        
         if (userDisplayName && this.currentUser) {
             userDisplayName.textContent = this.currentUser.username;
         }
+        
+        // Ensure nav stays hidden and button visibility after a short delay
+        setTimeout(() => {
+            if (nav && this.currentUser) {
+                nav.classList.add('user-hidden');
+                nav.style.display = 'none';
+            }
+            if (signInBtnGuest && this.currentUser) {
+                const isGuest = this.currentUser && (this.currentUser.isGuest === true || this.currentUser.username === 'Guest');
+                if (isGuest) {
+                    signInBtnGuest.style.display = 'inline-block';
+                    signInBtnGuest.style.visibility = 'visible';
+                } else {
+                    signInBtnGuest.style.display = 'none';
+                }
+            }
+        }, 100);
     }
 
     updateAchievements() {
@@ -921,18 +998,18 @@ class GameVaultApp {
         });
     }
 
-    updateWishlists() {
-        const container = document.getElementById('wishlistContainer');
+    updateLibraries() {
+        const container = document.getElementById('libraryContainer');
         if (!container) {
             return; // Element not found, skip update
         }
         
         if (!this.currentUser) {
-            container.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>Login Required</h3><p>Please log in to view your wishlist!</p></div>';
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-book"></i><h3>Login Required</h3><p>Please log in to view your libraries!</p></div>';
             return;
         }
 
-        // Call the server API to get wishlists
+        // Call the server API to get libraries
         fetch(`/api/wishlists/${this.currentUser.username}`, {
             credentials: 'include',
             headers: {
@@ -941,45 +1018,59 @@ class GameVaultApp {
         })
         .then(response => response.json())
         .then(data => {
-            const container = document.getElementById('wishlistContainer');
+            const container = document.getElementById('libraryContainer');
             if (!container) {
                 return; // Element not found, skip update
             }
             
             if (data.success && data.wishlists) {
-                const wishlists = data.wishlists || [];
+                const libraries = data.wishlists || [];
                 
                 container.innerHTML = '';
 
-                if (wishlists.length === 0) {
-                    container.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>No Wishlists</h3><p>Create your first wishlist!</p></div>';
+                if (libraries.length === 0) {
+                    container.innerHTML = '<div class="empty-state"><i class="fas fa-book"></i><h3>No Libraries</h3><p>Create your first library!</p></div>';
                 } else {
-                    wishlists.forEach(wishlist => {
-                        const wishlistItem = document.createElement('div');
-                        wishlistItem.className = 'wishlist-item';
-                        wishlistItem.innerHTML = `
+                    libraries.forEach(library => {
+                        const libraryItem = document.createElement('div');
+                        libraryItem.className = 'library-item';
+                        const typeBadge = library.type === 'automatic' ? '<span class="badge badge-primary">Default</span>' :
+                                         library.type === 'wishlist' ? '<span class="badge badge-warning">Wishlist</span>' : '';
+                        const canEdit = library.type === 'custom';
+                        libraryItem.innerHTML = `
                             <div>
-                                <strong>${wishlist.name}</strong>
+                                <strong>${library.name}</strong> ${typeBadge}
                                 <br>
-                                <small>${wishlist.gameCount || 0} games • Created: ${new Date(wishlist.createdDate).toLocaleDateString()}</small>
-                                ${wishlist.description ? `<br><small style="color: #888;">${wishlist.description}</small>` : ''}
+                                <small>${library.gameCount || 0} games • Created: ${new Date(library.createdDate).toLocaleDateString()}</small>
+                                ${library.description ? `<br><small style="color: #888;">${library.description}</small>` : ''}
                             </div>
-                            <button class="btn btn-primary" onclick="app.selectWishlist(${wishlist.id})">View</button>
+                            <div class="library-actions">
+                                <button class="btn btn-primary" onclick="app.selectLibrary(${library.id})">View</button>
+                                ${canEdit ? `
+                                    <button class="btn btn-secondary btn-sm" onclick="app.editLibrary(${library.id}, '${library.name.replace(/'/g, "\\'")}', '${(library.description || '').replace(/'/g, "\\'")}')">Edit</button>
+                                    <button class="btn btn-danger btn-sm" onclick="app.deleteLibrary(${library.id})">Delete</button>
+                                ` : ''}
+                            </div>
                         `;
-                        container.appendChild(wishlistItem);
+                        container.appendChild(libraryItem);
                     });
                 }
             } else {
-                container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load wishlists. Please try again.</p></div>';
+                container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load libraries. Please try again.</p></div>';
             }
         })
         .catch(error => {
-            console.error('Error fetching wishlists:', error);
-            const container = document.getElementById('wishlistContainer');
+            console.error('Error fetching libraries:', error);
+            const container = document.getElementById('libraryContainer');
             if (container) {
-                container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load wishlists. Please try again.</p></div>';
+                container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load libraries. Please try again.</p></div>';
             }
         });
+    }
+
+    // Alias for backward compatibility
+    updateWishlists() {
+        this.updateLibraries();
     }
 
     updateReviews() {
@@ -1191,18 +1282,15 @@ class GameVaultApp {
         }
     }
 
-    async createWishlist() {
-        const name = document.getElementById('wishlistName').value;
-        const description = document.getElementById('wishlistDescription').value;
-
+    async createLibrary(name, description) {
         if (!name) {
-            this.showAlert('Please enter a wishlist name', 'Wishlist Name Required', 'warning');
-            return;
+            this.showAlert('Please enter a library name', 'Library Name Required', 'warning');
+            return false;
         }
 
         if (!this.currentUser) {
-            this.showAlert('Please log in to create a wishlist', 'Login Required', 'warning');
-            return;
+            this.showAlert('Please log in to create a library', 'Login Required', 'warning');
+            return false;
         }
 
         try {
@@ -1223,29 +1311,74 @@ class GameVaultApp {
             const data = await response.json();
 
             if (response.ok && data.success) {
-                this.closeModal(document.getElementById('createWishlistModal'));
-                // Clear form
-                document.getElementById('wishlistName').value = '';
-                document.getElementById('wishlistDescription').value = '';
-                this.updateWishlists();
-                this.showNotification('Wishlist created successfully!', 'success');
+                this.updateLibraries();
+                this.showNotification('Library created successfully!', 'success');
+                return true;
             } else {
-                this.showAlert(data.error || 'Failed to create wishlist', 'Error', 'error');
+                this.showAlert(data.error || 'Failed to create library', 'Error', 'error');
+                return false;
             }
         } catch (error) {
-            console.error('Error creating wishlist:', error);
-            this.showAlert('Error creating wishlist. Please try again.', 'Error', 'error');
+            console.error('Error creating library:', error);
+            this.showAlert('Error creating library. Please try again.', 'Error', 'error');
+            return false;
         }
     }
 
-    async selectWishlist(wishlistId) {
+    async updateLibrary(libraryId, name, description) {
+        if (!name) {
+            this.showAlert('Please enter a library name', 'Library Name Required', 'warning');
+            return false;
+        }
+
         if (!this.currentUser) {
-            this.showAlert('Please log in to view wishlists', 'Login Required', 'warning');
+            this.showAlert('Please log in to update a library', 'Login Required', 'warning');
+            return false;
+        }
+
+        try {
+            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${libraryId}`, {
+                method: 'PUT',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: name,
+                    description: description || ''
+                })
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                this.updateLibraries();
+                this.showNotification('Library updated successfully!', 'success');
+                return true;
+            } else {
+                this.showAlert(data.error || 'Failed to update library', 'Error', 'error');
+                return false;
+            }
+        } catch (error) {
+            console.error('Error updating library:', error);
+            this.showAlert('Error updating library. Please try again.', 'Error', 'error');
+            return false;
+        }
+    }
+
+    async deleteLibrary(libraryId) {
+        if (!this.currentUser) {
+            this.showAlert('Please log in to delete a library', 'Login Required', 'warning');
+            return;
+        }
+
+        if (!confirm('Are you sure you want to delete this library? All games in it will be removed.')) {
             return;
         }
 
         try {
-            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${wishlistId}`, {
+            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${libraryId}`, {
+                method: 'DELETE',
                 credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json'
@@ -1255,28 +1388,75 @@ class GameVaultApp {
             const data = await response.json();
 
             if (response.ok && data.success) {
-                const container = document.getElementById('wishlistGames');
-                const title = document.getElementById('selectedWishlistTitle');
-                const selectedSection = document.getElementById('selectedWishlistSection');
-                const wishlistContainer = document.getElementById('wishlistContainer');
+                this.updateLibraries();
+                this.showNotification('Library deleted successfully!', 'success');
+            } else {
+                this.showAlert(data.error || 'Failed to delete library', 'Error', 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting library:', error);
+            this.showAlert('Error deleting library. Please try again.', 'Error', 'error');
+        }
+    }
+
+    editLibrary(libraryId, name, description) {
+        if (typeof openEditLibraryModal === 'function') {
+            openEditLibraryModal(libraryId, name, description);
+        } else {
+            // Fallback if modal functions aren't available
+            const newName = prompt('Enter new library name:', name);
+            if (newName && newName !== name) {
+                this.updateLibrary(libraryId, newName, description);
+            }
+        }
+    }
+
+    // Backward compatibility
+    async createWishlist() {
+        const name = document.getElementById('wishlistName')?.value || document.getElementById('libraryName')?.value;
+        const description = document.getElementById('wishlistDescription')?.value || document.getElementById('libraryDescription')?.value;
+        return await this.createLibrary(name, description);
+    }
+
+    async selectLibrary(libraryId) {
+        if (!this.currentUser) {
+            this.showAlert('Please log in to view libraries', 'Login Required', 'warning');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${libraryId}`, {
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                const container = document.getElementById('libraryGames');
+                const title = document.getElementById('selectedLibraryTitle');
+                const selectedSection = document.getElementById('selectedLibrarySection');
+                const libraryContainer = document.getElementById('libraryContainer');
                 
-                // Show selected wishlist section, hide wishlists list
+                // Show selected library section, hide libraries list
                 if (selectedSection) {
                     selectedSection.style.display = 'block';
                 }
-                if (wishlistContainer && wishlistContainer.parentElement) {
-                    wishlistContainer.parentElement.style.display = 'none';
+                if (libraryContainer && libraryContainer.parentElement) {
+                    libraryContainer.parentElement.style.display = 'none';
                 }
                 
                 if (title) {
-                    title.textContent = data.wishlist.name;
+                    title.textContent = `${data.wishlist.name} Games`;
                 }
 
                 if (container) {
                     container.innerHTML = '';
 
                     if (!data.games || data.games.length === 0) {
-                        container.innerHTML = '<div class="empty-state"><i class="fas fa-gamepad"></i><h3>No Games</h3><p>Add some games to this wishlist!</p></div>';
+                        container.innerHTML = '<div class="empty-state"><i class="fas fa-gamepad"></i><h3>No Games</h3><p>Add some games to this library!</p></div>';
                         return;
                     }
 
@@ -1289,33 +1469,45 @@ class GameVaultApp {
                                 <br>
                                 <small>${game.platform || 'PC'} • Added: ${new Date(game.addedDate).toLocaleDateString()}</small>
                             </div>
-                            <button class="btn btn-danger" onclick="app.removeFromWishlist(${wishlistId}, ${game.gameId})">Remove</button>
+                            <button class="btn btn-danger" onclick="app.removeFromLibrary(${libraryId}, ${game.gameId})">Remove</button>
                         `;
                         container.appendChild(gameItem);
                     });
                 }
             } else {
-                this.showAlert(data.error || 'Failed to load wishlist', 'Error', 'error');
+                this.showAlert(data.error || 'Failed to load library', 'Error', 'error');
             }
         } catch (error) {
-            console.error('Error loading wishlist:', error);
-            this.showAlert('Error loading wishlist. Please try again.', 'Error', 'error');
+            console.error('Error loading library:', error);
+            this.showAlert('Error loading library. Please try again.', 'Error', 'error');
         }
     }
 
-    async removeFromWishlist(wishlistId, gameId) {
+    backToLibraries() {
+        const selectedSection = document.getElementById('selectedLibrarySection');
+        const libraryContainer = document.getElementById('libraryContainer');
+        
+        if (selectedSection) {
+            selectedSection.style.display = 'none';
+        }
+        if (libraryContainer && libraryContainer.parentElement) {
+            libraryContainer.parentElement.style.display = 'block';
+        }
+        this.updateLibraries();
+    }
+
+    async removeFromLibrary(libraryId, gameId) {
         if (!this.currentUser) {
-            this.showAlert('Please log in to manage wishlists', 'Login Required', 'warning');
+            this.showAlert('Please log in to manage libraries', 'Login Required', 'warning');
             return;
         }
 
-        // Use a custom confirm dialog - for now we'll use browser confirm but could enhance this later
-        if (!confirm('Are you sure you want to remove this game from the wishlist?')) {
+        if (!confirm('Are you sure you want to remove this game from the library?')) {
             return;
         }
 
         try {
-            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${wishlistId}/games/${gameId}`, {
+            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${libraryId}/games/${gameId}`, {
                 method: 'DELETE',
                 credentials: 'include',
                 headers: {
@@ -1326,16 +1518,27 @@ class GameVaultApp {
             const data = await response.json();
 
             if (response.ok && data.success) {
-                this.showNotification(data.message || 'Game removed from wishlist', 'success');
-                this.selectWishlist(wishlistId); // Refresh the wishlist view
-                this.updateWishlists(); // Update the wishlists list
+                this.showNotification(data.message || 'Game removed from library', 'success');
+                this.selectLibrary(libraryId); // Refresh the library view
+                this.updateLibraries(); // Update the libraries list
             } else {
-                this.showAlert(data.error || 'Failed to remove game from wishlist', 'Error', 'error');
+                this.showAlert(data.error || 'Failed to remove game from library', 'Error', 'error');
             }
         } catch (error) {
-            console.error('Error removing game from wishlist:', error);
-            this.showAlert('Error removing game from wishlist. Please try again.', 'Error', 'error');
+            console.error('Error removing game from library:', error);
+            this.showAlert('Error removing game from library. Please try again.', 'Error', 'error');
         }
+    }
+
+    // Backward compatibility
+    async selectWishlist(wishlistId) {
+        return await this.selectLibrary(wishlistId);
+    }
+
+
+    // Backward compatibility
+    async removeFromWishlist(wishlistId, gameId) {
+        return await this.removeFromLibrary(wishlistId, gameId);
     }
     
     // Helper function to go back to wishlists view
@@ -2227,8 +2430,8 @@ class GameVaultApp {
                             `<a href="steam://run/${game.id}" class="btn btn-steam">
                                 <i class="fab fa-steam"></i> Play on Steam
                             </a>` : 
-                            `<button class="btn btn-secondary" onclick="app.addToWishlist(${game.id}, '${game.name}')">
-                                <i class="fas fa-heart"></i> Add to Wishlist
+                            `                            <button class="btn btn-secondary" onclick="app.handleAddToLibrary(${game.id}, '${game.name}')">
+                                <i class="fas fa-book"></i> Add to Library
                             </button>`
                         }
                     </div>
@@ -2430,12 +2633,12 @@ class GameVaultApp {
                 </div>
                 <div class="game-details-actions">
                     ${this.currentUser ? `
-                        <button class="btn btn-primary" onclick="app.handleAddToWishlist(${gameData.id}, '${gameData.name.replace(/'/g, "\\'")}')">
-                            <i class="fas fa-heart"></i> Add to Wishlist
+                        <button class="btn btn-primary" onclick="app.handleAddToLibrary(${gameData.id}, '${gameData.name.replace(/'/g, "\\'")}')">
+                            <i class="fas fa-book"></i> Add to Library
                         </button>
                     ` : `
                         <button class="btn btn-secondary" onclick="app.showLoginModal()">
-                            <i class="fas fa-sign-in-alt"></i> Login to Add to Wishlist
+                            <i class="fas fa-sign-in-alt"></i> Login to Add to Library
                         </button>
                     `}
                     ${gameData.website ? `
@@ -2461,9 +2664,9 @@ class GameVaultApp {
         }
     }
 
-    async addToWishlist(gameId, gameName) {
+    async addToLibrary(gameId, gameName) {
         if (!this.currentUser) {
-            this.showAlert('Please log in to add games to your wishlist', 'Login Required', 'warning');
+            this.showAlert('Please log in to add games to your library', 'Login Required', 'warning');
             return;
         }
 
@@ -2485,19 +2688,19 @@ class GameVaultApp {
             const result = await response.json();
 
             if (result.success) {
-                this.showAlert(`Added "${gameName}" to wishlist!`, 'Success', 'success');
+                this.showAlert(`Added "${gameName}" to library!`, 'Success', 'success');
             } else {
-                this.showAlert('Failed to add game to wishlist: ' + result.error, 'Error', 'error');
+                this.showAlert('Failed to add game to library: ' + result.error, 'Error', 'error');
             }
         } catch (error) {
-            console.error('Error adding game to wishlist:', error);
-            this.showAlert('Error adding game to wishlist', 'Error', 'error');
+            console.error('Error adding game to library:', error);
+            this.showAlert('Error adding game to library', 'Error', 'error');
         }
     }
 
-    async addToWishlistWithId(gameId, gameName, wishlistId) {
+    async addToLibraryWithId(gameId, gameName, libraryId) {
         if (!this.currentUser) {
-            this.showAlert('Please log in to add games to your wishlist', 'Login Required', 'warning');
+            this.showAlert('Please log in to add games to your library', 'Login Required', 'warning');
             return;
         }
 
@@ -2510,7 +2713,7 @@ class GameVaultApp {
                 body: JSON.stringify({
                     gameId: gameId,
                     gameName: gameName,
-                    wishlistId: wishlistId,
+                    wishlistId: libraryId,
                     gameData: {
                         addedDate: new Date().toISOString()
                     }
@@ -2520,45 +2723,45 @@ class GameVaultApp {
             const result = await response.json();
 
             if (result.success) {
-                this.showAlert(`Added "${gameName}" to wishlist!`, 'Success', 'success');
-                // Close wishlist selection modal if open
-                const selectionModal = document.getElementById('wishlistSelectionModal');
+                this.showAlert(`Added "${gameName}" to library!`, 'Success', 'success');
+                // Close library selection modal if open
+                const selectionModal = document.getElementById('librarySelectionModal');
                 if (selectionModal) {
                     selectionModal.style.display = 'none';
                 }
             } else {
-                this.showAlert('Failed to add game to wishlist: ' + result.error, 'Error', 'error');
+                this.showAlert('Failed to add game to library: ' + result.error, 'Error', 'error');
             }
         } catch (error) {
-            console.error('Error adding game to wishlist:', error);
-            this.showAlert('Error adding game to wishlist', 'Error', 'error');
+            console.error('Error adding game to library:', error);
+            this.showAlert('Error adding game to library', 'Error', 'error');
         }
     }
 
-    showWishlistSelectionModal(gameId, gameName, wishlists) {
-        // Create or update wishlist selection modal
-        let selectionModal = document.getElementById('wishlistSelectionModal');
+    showLibrarySelectionModal(gameId, gameName, libraries) {
+        // Create or update library selection modal
+        let selectionModal = document.getElementById('librarySelectionModal');
         if (!selectionModal) {
             selectionModal = document.createElement('div');
-            selectionModal.id = 'wishlistSelectionModal';
+            selectionModal.id = 'librarySelectionModal';
             selectionModal.className = 'modal';
             document.body.appendChild(selectionModal);
         }
 
         selectionModal.innerHTML = `
             <div class="modal-content wishlist-selection-content">
-                <span class="close" onclick="app.closeWishlistSelectionModal()">&times;</span>
-                <h2>Add "${gameName}" to Wishlist</h2>
-                <p class="wishlist-selection-subtitle">Choose which wishlist to add this game to:</p>
+                <span class="close" onclick="app.closeLibrarySelectionModal()">&times;</span>
+                <h2>Add "${gameName}" to Library</h2>
+                <p class="wishlist-selection-subtitle">Choose which library to add this game to:</p>
                 <div class="wishlist-list">
-                    ${wishlists.map(wishlist => `
-                        <div class="wishlist-item" onclick="app.addToWishlistWithId(${gameId}, '${gameName.replace(/'/g, "\\'")}', ${wishlist.id})">
+                    ${libraries.map(library => `
+                        <div class="wishlist-item" onclick="app.addToLibraryWithId(${gameId}, '${gameName.replace(/'/g, "\\'")}', ${library.id})">
                             <div class="wishlist-item-info">
-                                <h3>${wishlist.name}</h3>
-                                ${wishlist.description ? `<p>${wishlist.description}</p>` : ''}
+                                <h3>${library.name} ${library.type === 'automatic' ? '<span class="badge badge-primary">Default</span>' : library.type === 'wishlist' ? '<span class="badge badge-warning">Wishlist</span>' : ''}</h3>
+                                ${library.description ? `<p>${library.description}</p>` : ''}
                                 <span class="wishlist-item-meta">
-                                    ${wishlist.gameCount || 0} ${wishlist.gameCount === 1 ? 'game' : 'games'}
-                                    ${wishlist.isPublic ? '<i class="fas fa-globe" title="Public"></i>' : '<i class="fas fa-lock" title="Private"></i>'}
+                                    ${library.gameCount || 0} ${library.gameCount === 1 ? 'game' : 'games'}
+                                    ${library.isPublic ? '<i class="fas fa-globe" title="Public"></i>' : '<i class="fas fa-lock" title="Private"></i>'}
                                 </span>
                             </div>
                             <i class="fas fa-chevron-right"></i>
@@ -2566,7 +2769,7 @@ class GameVaultApp {
                     `).join('')}
                 </div>
                 <div class="wishlist-selection-actions">
-                    <button class="btn btn-secondary" onclick="app.closeWishlistSelectionModal()">Cancel</button>
+                    <button class="btn btn-secondary" onclick="app.closeLibrarySelectionModal()">Cancel</button>
                 </div>
             </div>
         `;
@@ -2574,16 +2777,35 @@ class GameVaultApp {
         selectionModal.style.display = 'block';
     }
 
-    closeWishlistSelectionModal() {
-        const selectionModal = document.getElementById('wishlistSelectionModal');
+    closeLibrarySelectionModal() {
+        const selectionModal = document.getElementById('librarySelectionModal');
         if (selectionModal) {
             selectionModal.style.display = 'none';
         }
     }
 
-    async handleAddToWishlist(gameId, gameName) {
+    // Backward compatibility
+    async addToWishlist(gameId, gameName) {
+        return await this.addToLibrary(gameId, gameName);
+    }
+
+    // Backward compatibility
+    async addToWishlistWithId(gameId, gameName, wishlistId) {
+        return await this.addToLibraryWithId(gameId, gameName, wishlistId);
+    }
+
+    // Backward compatibility
+    showWishlistSelectionModal(gameId, gameName, wishlists) {
+        return this.showLibrarySelectionModal(gameId, gameName, wishlists);
+    }
+
+    closeWishlistSelectionModal() {
+        return this.closeLibrarySelectionModal();
+    }
+
+    async handleAddToLibrary(gameId, gameName) {
         if (!this.currentUser) {
-            this.showAlert('Please log in to add games to your wishlist', 'Login Required', 'warning');
+            this.showAlert('Please log in to add games to your library', 'Login Required', 'warning');
             return;
         }
 
@@ -2594,23 +2816,28 @@ class GameVaultApp {
             });
 
             const data = await response.json();
-            const wishlists = data.success ? (data.wishlists || []) : [];
+            const libraries = data.success ? (data.wishlists || []) : [];
 
-            if (wishlists.length === 0) {
-                // No wishlists, create default and add
-                await this.addToWishlist(gameId, gameName);
-            } else if (wishlists.length === 1) {
-                // Only one wishlist, add directly
-                await this.addToWishlistWithId(gameId, gameName, wishlists[0].id);
+            if (libraries.length === 0) {
+                // No libraries, create default and add
+                await this.addToLibrary(gameId, gameName);
+            } else if (libraries.length === 1) {
+                // Only one library, add directly
+                await this.addToLibraryWithId(gameId, gameName, libraries[0].id);
             } else {
-                // Multiple wishlists, show selection modal
-                this.showWishlistSelectionModal(gameId, gameName, wishlists);
+                // Multiple libraries, show selection modal
+                this.showLibrarySelectionModal(gameId, gameName, libraries);
             }
         } catch (error) {
-            console.error('Error handling add to wishlist:', error);
+            console.error('Error handling add to library:', error);
             // Fallback to default behavior
-            await this.addToWishlist(gameId, gameName);
+            await this.addToLibrary(gameId, gameName);
         }
+    }
+
+    // Backward compatibility
+    async handleAddToWishlist(gameId, gameName) {
+        return await this.handleAddToLibrary(gameId, gameName);
     }
 
     // Friend management methods
@@ -3607,3 +3834,4 @@ window.generateSteamWishlistLink = function(gameId) {
     }
     return `https://store.steampowered.com/app/${gameId}/`;
 };
+

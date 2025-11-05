@@ -11,6 +11,8 @@ const SteamService = require('./server/services/SteamService');
 
 // Load database models once at startup
 const { User, Game, Review, Wishlist, WishlistGame, Friendship, Achievement } = require('./server/models/index');
+const { sequelize } = require('./server/config/database');
+const { Op } = require('sequelize');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -142,6 +144,7 @@ app.use((req, res, next) => {
     const pathName = req.path;
     if (pathName.startsWith('/profile')) res.locals.activePage = 'profile';
     else if (pathName.startsWith('/friends')) res.locals.activePage = 'friends';
+    else if (pathName.startsWith('/library')) res.locals.activePage = 'library';
     else if (pathName.startsWith('/wishlist')) res.locals.activePage = 'wishlist';
     else if (pathName.startsWith('/reviews')) res.locals.activePage = 'reviews';
     else if (pathName.startsWith('/admin')) res.locals.activePage = 'admin';
@@ -336,6 +339,7 @@ app.get('/search', (req, res) => {
     res.render('search');
 });
 app.get('/friends', (req, res) => res.render('friends'));
+app.get('/library', (req, res) => res.render('library'));
 app.get('/wishlist', (req, res) => res.render('wishlist'));
 app.get('/reviews', (req, res) => res.render('reviews'));
 app.get('/admin', (req, res) => res.render('admin'));
@@ -1359,10 +1363,18 @@ app.get('/api/wishlists/:username', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Get wishlists from database
+        // Ensure default libraries exist for this user
+        try {
+            await profileManager.databaseManager.createDefaultLibraries(user.id);
+        } catch (error) {
+            console.error('Error ensuring default libraries:', error);
+            // Continue anyway - libraries might already exist
+        }
+
+        // Get libraries from database
         const wishlists = await profileManager.databaseManager.getUserWishlists(user.id);
         
-        // Format wishlists with game counts
+        // Format libraries with game counts and sort by type (automatic first, then wishlist, then custom)
         const formattedWishlists = await Promise.all(wishlists.map(async (wishlist) => {
             const games = await profileManager.databaseManager.getWishlistGames(wishlist.id);
             return {
@@ -1372,17 +1384,29 @@ app.get('/api/wishlists/:username', async (req, res) => {
                 gameCount: games.length,
                 createdDate: wishlist.createdAt,
                 isPublic: wishlist.isPublic,
-                priority: wishlist.priority
+                priority: wishlist.priority,
+                type: wishlist.type || 'custom'
             };
         }));
+        
+        // Sort libraries: automatic first, then wishlist, then custom, then by creation date
+        formattedWishlists.sort((a, b) => {
+            const typeOrder = { 'automatic': 0, 'wishlist': 1, 'custom': 2 };
+            const orderA = typeOrder[a.type] ?? 3;
+            const orderB = typeOrder[b.type] ?? 3;
+            if (orderA !== orderB) {
+                return orderA - orderB;
+            }
+            return new Date(a.createdDate) - new Date(b.createdDate);
+        });
 
         res.json({
             success: true,
             wishlists: formattedWishlists
         });
     } catch (error) {
-        console.error('Error getting wishlists:', error);
-        res.status(500).json({ error: 'Failed to get wishlists' });
+        console.error('Error getting libraries:', error);
+        res.status(500).json({ error: 'Failed to get libraries' });
     }
 });
 
@@ -1392,7 +1416,7 @@ app.post('/api/wishlists/:username/create', async (req, res) => {
         const { name, description, isPublic, priority } = req.body;
 
         if (!name) {
-            return res.status(400).json({ error: 'Wishlist name is required' });
+            return res.status(400).json({ error: 'Library name is required' });
         }
 
         // Get user from database
@@ -1401,13 +1425,14 @@ app.post('/api/wishlists/:username/create', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Create wishlist in database
+        // Create library in database
         const wishlist = await profileManager.databaseManager.createWishlist({
             userId: user.id,
             name: name,
             description: description || '',
             isPublic: isPublic || false,
-            priority: priority || 'medium'
+            priority: priority || 'medium',
+            type: 'custom'  // User-created libraries are always custom
         });
 
         res.json({
@@ -1419,12 +1444,13 @@ app.post('/api/wishlists/:username/create', async (req, res) => {
                 gameCount: 0,
                 createdDate: wishlist.createdAt,
                 isPublic: wishlist.isPublic,
-                priority: wishlist.priority
+                priority: wishlist.priority,
+                type: wishlist.type || 'custom'
             }
         });
     } catch (error) {
-        console.error('Error creating wishlist:', error);
-        res.status(500).json({ error: 'Failed to create wishlist' });
+        console.error('Error creating library:', error);
+        res.status(500).json({ error: 'Failed to create library' });
     }
 });
 
@@ -1446,10 +1472,10 @@ app.get('/api/wishlists/:username/:wishlistId', async (req, res) => {
         });
 
         if (!wishlist) {
-            return res.status(404).json({ error: 'Wishlist not found' });
+            return res.status(404).json({ error: 'Library not found' });
         }
 
-        // Get games in wishlist
+        // Get games in library
         const games = await profileManager.databaseManager.getWishlistGames(wishlistId);
 
         res.json({
@@ -1460,11 +1486,13 @@ app.get('/api/wishlists/:username/:wishlistId', async (req, res) => {
                 description: wishlist.description,
                 createdDate: wishlist.createdAt,
                 isPublic: wishlist.isPublic,
-                priority: wishlist.priority
+                priority: wishlist.priority,
+                type: wishlist.type || 'custom'
             },
             games: games.map(game => ({
                 id: game.id,
                 gameId: game.gameId,
+                steamId: game.steamId,
                 title: game.gameTitle,
                 platform: game.platform,
                 priority: game.priority,
@@ -1473,8 +1501,8 @@ app.get('/api/wishlists/:username/:wishlistId', async (req, res) => {
             }))
         });
     } catch (error) {
-        console.error('Error getting wishlist:', error);
-        res.status(500).json({ error: 'Failed to get wishlist' });
+        console.error('Error getting library:', error);
+        res.status(500).json({ error: 'Failed to get library' });
     }
 });
 
@@ -1496,21 +1524,18 @@ app.post('/api/wishlists/:username/add-game', async (req, res) => {
 
         let targetWishlistId = wishlistId;
 
-        // If no wishlistId provided, get or create default wishlist
+        // If no wishlistId provided, get or create default "My Library"
         if (!targetWishlistId) {
-            const { Wishlist } = require('./server/models/index');
-            let defaultWishlist = await Wishlist.findOne({
-                where: { userId: user.id, name: 'Default' }
-            });
-
+            let defaultWishlist = await profileManager.databaseManager.getLibraryByType(user.id, 'automatic');
+            
             if (!defaultWishlist) {
-                defaultWishlist = await profileManager.databaseManager.createWishlist({
-                    userId: user.id,
-                    name: 'Default',
-                    description: 'Default wishlist',
-                    isPublic: false,
-                    priority: 'medium'
-                });
+                // Create default libraries if they don't exist
+                await profileManager.databaseManager.createDefaultLibraries(user.id);
+                defaultWishlist = await profileManager.databaseManager.getLibraryByType(user.id, 'automatic');
+            }
+            
+            if (!defaultWishlist) {
+                return res.status(500).json({ error: 'Failed to get or create default library' });
             }
             targetWishlistId = defaultWishlist.id;
         } else {
@@ -1520,23 +1545,30 @@ app.post('/api/wishlists/:username/add-game', async (req, res) => {
                 where: { id: targetWishlistId, userId: user.id }
             });
             if (!wishlist) {
-                return res.status(404).json({ error: 'Wishlist not found' });
+                return res.status(404).json({ error: 'Library not found' });
             }
         }
 
-        // Check if game already exists in wishlist
+        // Check if game already exists in library (by gameId or steamId)
         const { WishlistGame } = require('./server/models/index');
         const existingGame = await WishlistGame.findOne({
-            where: { wishlistId: targetWishlistId, gameId: gameId }
+            where: {
+                wishlistId: targetWishlistId,
+                [Op.or]: [
+                    { gameId: gameId },
+                    { steamId: gameId }  // Also check by Steam ID
+                ]
+            }
         });
 
         if (existingGame) {
-            return res.status(400).json({ error: 'Game already in wishlist' });
+            return res.status(400).json({ error: 'Game already in library' });
         }
 
-        // Add game to wishlist in database
+        // Add game to library in database
         await profileManager.databaseManager.addGameToWishlist(targetWishlistId, {
             gameId: gameId,
+            steamId: gameData?.steamId || gameId,  // Use steamId from gameData or gameId as steamId
             title: gameName,
             platform: gameData?.platform || 'PC',
             priority: gameData?.priority || 'medium',
@@ -1545,7 +1577,7 @@ app.post('/api/wishlists/:username/add-game', async (req, res) => {
 
         res.json({ 
             success: true, 
-            message: 'Game added to wishlist',
+            message: 'Game added to library',
             game: { id: gameId, name: gameName }
         });
     } catch (error) {
@@ -1571,27 +1603,121 @@ app.delete('/api/wishlists/:username/:wishlistId/games/:gameId', async (req, res
             where: { id: wishlistId, userId: user.id }
         });
         if (!wishlist) {
-            return res.status(404).json({ error: 'Wishlist not found' });
+            return res.status(404).json({ error: 'Library not found' });
         }
 
-        // Remove game from wishlist
+        // Remove game from library (check by gameId or steamId)
         const { WishlistGame } = require('./server/models/index');
         const wishlistGame = await WishlistGame.findOne({
-            where: { wishlistId: wishlistId, gameId: gameId }
+            where: {
+                wishlistId: wishlistId,
+                [Op.or]: [
+                    { gameId: gameId },
+                    { steamId: gameId }  // Also check by Steam ID
+                ]
+            }
         });
 
         if (wishlistGame) {
             await wishlistGame.destroy();
             res.json({ 
                 success: true, 
-                message: 'Game removed from wishlist' 
+                message: 'Game removed from library' 
             });
         } else {
-            res.status(404).json({ error: 'Game not found in wishlist' });
+            res.status(404).json({ error: 'Game not found in library' });
         }
     } catch (error) {
-        console.error('Error removing game from wishlist:', error);
-        res.status(500).json({ error: 'Failed to remove game from wishlist' });
+        console.error('Error removing game from library:', error);
+        res.status(500).json({ error: 'Failed to remove game from library' });
+    }
+});
+
+// Update library (rename)
+app.put('/api/wishlists/:username/:wishlistId', async (req, res) => {
+    try {
+        const { username, wishlistId } = req.params;
+        const { name, description } = req.body;
+
+        if (!name) {
+            return res.status(400).json({ error: 'Library name is required' });
+        }
+
+        // Get user from database
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Verify library belongs to user
+        const { Wishlist } = require('./server/models/index');
+        const wishlist = await Wishlist.findOne({
+            where: { id: wishlistId, userId: user.id }
+        });
+
+        if (!wishlist) {
+            return res.status(404).json({ error: 'Library not found' });
+        }
+
+        // Don't allow renaming automatic/wishlist type libraries
+        if (wishlist.type === 'automatic' || wishlist.type === 'wishlist') {
+            return res.status(400).json({ error: 'Cannot rename default libraries' });
+        }
+
+        // Update library
+        const updated = await profileManager.databaseManager.updateLibrary(wishlistId, {
+            name: name,
+            description: description || wishlist.description
+        });
+
+        if (updated) {
+            res.json({ success: true, message: 'Library updated successfully' });
+        } else {
+            res.status(500).json({ error: 'Failed to update library' });
+        }
+    } catch (error) {
+        console.error('Error updating library:', error);
+        res.status(500).json({ error: 'Failed to update library' });
+    }
+});
+
+// Delete library
+app.delete('/api/wishlists/:username/:wishlistId', async (req, res) => {
+    try {
+        const { username, wishlistId } = req.params;
+
+        // Get user from database
+        const user = await profileManager.getUserByUsername(username);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Verify library belongs to user
+        const { Wishlist } = require('./server/models/index');
+        const wishlist = await Wishlist.findOne({
+            where: { id: wishlistId, userId: user.id }
+        });
+
+        if (!wishlist) {
+            return res.status(404).json({ error: 'Library not found' });
+        }
+
+        // Don't allow deleting automatic/wishlist type libraries
+        if (wishlist.type === 'automatic' || wishlist.type === 'wishlist') {
+            return res.status(400).json({ error: 'Cannot delete default libraries' });
+        }
+
+        // Delete library
+        const deleted = await profileManager.databaseManager.deleteLibrary(wishlistId);
+
+        if (deleted) {
+            res.json({ success: true, message: 'Library deleted successfully' });
+        } else {
+            res.status(500).json({ error: 'Failed to delete library' });
+        }
+    } catch (error) {
+        console.error('Error deleting library:', error);
+        res.status(500).json({ error: 'Failed to delete library' });
     }
 });
 
