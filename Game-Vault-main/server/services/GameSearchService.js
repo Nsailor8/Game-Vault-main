@@ -3,59 +3,44 @@ const https = require('https');
 
 class GameSearchService {
     constructor() {
-        // Steam API configuration
-        this.apiKey = process.env.STEAM_API_KEY;
-        this.steamApiBase = 'https://api.steampowered.com';
-        this.steamStoreBase = 'https://store.steampowered.com/api';
-        // Cache for app list
-        this.appListCache = null;
-        this.appListCacheTime = null;
-        this.cacheExpiration = 24 * 60 * 60 * 1000; // 24 hours
-        // Circuit breaker for Steam API
-        this.consecutive403Errors = 0;
-        this.maxConsecutive403Errors = 5; // After 5 consecutive 403s, stop trying
-        this.steamApiBlocked = false;
+
+        this.clientId = process.env.IGDB_CLIENT_ID || 'your-client-id-here';
+        this.clientSecret = process.env.IGDB_CLIENT_SECRET || 'your-client-secret-here';
+        this.baseUrl = 'https://api.igdb.com/v4';
+        this.accessToken = null;
     }
 
     async searchGames(query, page = 1, pageSize = 20) {
         try {
-            console.log(`🔍 [Search] Searching Steam for: "${query}"`);
-            
-            // Get Steam app list (cached)
-            let appList;
-            try {
-                appList = await this.getSteamAppList();
-            } catch (error) {
-                console.error(`❌ [Search] Failed to get Steam app list:`, error.message);
-                appList = null;
-            }
-            
-            if (!appList || appList.length === 0) {
-                console.log(`⚠️ [Search] No Steam app list available (cache: ${this.appListCache ? this.appListCache.length : 0} games), using mock data`);
-                console.log(`💡 [Search] Tip: Visit /api/games/test-steam to check Steam API status`);
-                const mockResult = this.getMockSearchResults(query, page, pageSize);
-                mockResult.isMockData = true;
-                return mockResult;
+
+            if (!this.clientId || this.clientId === 'your-client-id-here' || 
+                !this.clientSecret || this.clientSecret === 'your-client-secret-here') {
+                console.log('IGDB API credentials not configured, using mock data');
+                return this.getMockSearchResults(query, page, pageSize);
             }
 
-            console.log(`✅ [Search] Using Steam app list with ${appList.length} games`);
+            if (!this.accessToken) {
+                await this.getAccessToken();
+            }
+            
+            console.log('IGDB API - Client ID:', this.clientId);
+            console.log('IGDB API - Access Token:', this.accessToken ? 'Present' : 'Missing');
+            
+            // IGDB API query - simplified format that works
+            const searchQuery = `fields name,summary,rating,rating_count,first_release_date,cover.url,platforms.name,genres.name;
+search "${query}";
+limit ${pageSize};`;
 
-            // Search locally through the app list
-            const searchQuery = query.toLowerCase().trim();
-            const matchingGames = appList.filter(game => 
-                game.name && game.name.toLowerCase().includes(searchQuery)
-            );
-
-            // Sort by relevance (exact matches first, then partial matches) - initial sort
-            matchingGames.sort((a, b) => {
-                const aName = a.name.toLowerCase();
-                const bName = b.name.toLowerCase();
-                const aExact = aName === searchQuery || aName.startsWith(searchQuery);
-                const bExact = bName === searchQuery || bName.startsWith(searchQuery);
-                
-                if (aExact && !bExact) return -1;
-                if (!aExact && bExact) return 1;
-                return aName.localeCompare(bName);
+            // Use axios with proper configuration for IGDB API
+            const response = await axios.post(`${this.baseUrl}/games`, searchQuery, {
+                headers: {
+                    'Client-ID': this.clientId,
+                    'Authorization': `Bearer ${this.accessToken}`,
+                    'Accept': 'application/json',
+                    'Content-Type': 'text/plain'
+                },
+                transformRequest: [(data) => data],
+                timeout: 10000
             });
 
             // Fetch details for more games than needed (to allow proper rating-based sorting)
@@ -225,10 +210,12 @@ class GameSearchService {
                 totalPages: gamesWithRatings.length > 0 ? Math.ceil(gamesWithRatings.length / pageSize) : 0,
                 isMockData: false
             };
-            
-            console.log(`✅ [Search] Completed: Returning ${result.games.length} games`);
-            if (gamesWithRatings.length === 0) {
-                console.log(`ℹ️ [Search] No games found matching "${query}" - try a different search term`);
+        } catch (error) {
+            console.error('Error searching games:', error);
+
+            if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+                console.log('IGDB API credentials invalid, using mock data');
+                return this.getMockSearchResults(query, page, pageSize);
             }
             return result;
         } catch (error) {
@@ -699,7 +686,7 @@ class GameSearchService {
     }
 
     getMockSearchResults(query, page = 1, pageSize = 20) {
-        // Mock data for demonstration when Steam API is not available
+
         const mockGames = [
             {
                 id: 1,

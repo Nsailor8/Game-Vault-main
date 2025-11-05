@@ -1,4 +1,3 @@
-// Game Class
 class Game {
   constructor(id, title, platform, status, rating, playtime, tags) {
     this.id = id;
@@ -15,7 +14,6 @@ class Game {
   }
 }
 
-// Game Library Manager Class
 class GameLibraryManager {
   constructor() {
     this.games = [];
