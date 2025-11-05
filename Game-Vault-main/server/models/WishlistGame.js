@@ -17,16 +17,11 @@ const WishlistGame = sequelize.define('WishlistGame', {
   },
   gameId: {
     type: DataTypes.INTEGER,
-    allowNull: true,  // Made nullable to allow games not in local games table
+    allowNull: false,
     references: {
       model: 'games',
       key: 'id'
     }
-  },
-  steamId: {
-    type: DataTypes.INTEGER,
-    allowNull: true,  // Store Steam app ID for games from Steam
-    field: 'steam_id'
   },
   gameTitle: {
     type: DataTypes.STRING(200),

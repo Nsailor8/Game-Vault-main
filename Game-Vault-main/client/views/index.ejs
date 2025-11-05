@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Game Vault - Home</title>
-  <link rel="stylesheet" href="/styles.css?v=2">
+  <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
@@ -111,93 +111,6 @@
   <%- include('partials/loginModal') %>
 
   <!-- App Script -->
-  <script src="/app.js?v=2"></script>
-  <script>
-    // Ensure layout is correct immediately on page load
-    (function() {
-      // Hide nav if user section is visible (before JS loads)
-      const userSection = document.getElementById('userSection');
-      const nav = document.querySelector('.nav');
-      if (userSection && userSection.style.display !== 'none') {
-        if (nav) {
-          nav.classList.add('user-hidden');
-          nav.style.display = 'none';
-        }
-      }
-    })();
-    
-    // Load games asynchronously after page loads
-    document.addEventListener('DOMContentLoaded', async function() {
-      const trendingList = document.getElementById('trendingList');
-      const recentList = document.getElementById('recentList');
-      
-      // Show loading state
-      if (trendingList) {
-        trendingList.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i><h3>Loading trending games...</h3></div>';
-      }
-      if (recentList) {
-        recentList.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i><h3>Loading recent games...</h3></div>';
-      }
-      
-      // Function to render games
-      function renderGames(container, games) {
-        if (!container || !games || games.length === 0) {
-          container.innerHTML = '<div class="empty-state"><i class="fas fa-fire"></i><h3>No games available</h3><p>Check back later!</p></div>';
-          return;
-        }
-        
-        container.innerHTML = games.map(game => {
-          const imageUrl = game.background_image || game.backgroundImage || '';
-          const ratingHtml = game.rating ? `<span class="rating-badge"><i class="fas fa-star"></i> ${game.rating.toFixed(1)}</span>` : '';
-          const metacriticHtml = game.metacritic ? `<span class="metacritic-badge">M: ${game.metacritic}</span>` : '';
-          const ratingSection = (game.rating || game.metacritic) ? `<div class="game-card-rating">${ratingHtml}${metacriticHtml}</div>` : '';
-          
-          return `
-            <div class="game-card-simple" onclick="if(window.app) window.app.viewGameDetails(${game.id})">
-              <div class="game-image-simple" style="cursor: pointer;">
-                ${imageUrl ? `<img src="${imageUrl}" alt="${game.name}" class="game-image" loading="lazy">` : '<div class="no-image"><i class="fas fa-gamepad"></i></div>'}
-                ${ratingSection}
-              </div>
-              <div class="game-name-simple" style="cursor: pointer;">
-                <h3 class="game-title-simple">${game.name}</h3>
-              </div>
-            </div>
-          `;
-        }).join('');
-      }
-      
-      // Fetch trending games
-      try {
-        const trendingResponse = await fetch('/api/games/trending');
-        if (trendingResponse.ok) {
-          const trendingData = await trendingResponse.json();
-          if (trendingData.games && trendingData.games.length > 0) {
-            renderGames(trendingList, trendingData.games);
-          } else {
-            trendingList.innerHTML = '<div class="empty-state"><i class="fas fa-fire"></i><h3>No trending games available</h3><p>Check back later for the latest trending games!</p></div>';
-          }
-        }
-      } catch (error) {
-        console.error('Error loading trending games:', error);
-        trendingList.innerHTML = '<div class="empty-state"><i class="fas fa-fire"></i><h3>Error loading trending games</h3><p>Please refresh the page.</p></div>';
-      }
-      
-      // Fetch recent games
-      try {
-        const recentResponse = await fetch('/api/games/recent');
-        if (recentResponse.ok) {
-          const recentData = await recentResponse.json();
-          if (recentData.games && recentData.games.length > 0) {
-            renderGames(recentList, recentData.games);
-          } else {
-            recentList.innerHTML = '<div class="empty-state"><i class="fas fa-clock"></i><h3>No recent games available</h3><p>Check back later for the latest releases!</p></div>';
-          }
-        }
-      } catch (error) {
-        console.error('Error loading recent games:', error);
-        recentList.innerHTML = '<div class="empty-state"><i class="fas fa-clock"></i><h3>Error loading recent games</h3><p>Please refresh the page.</p></div>';
-      }
-    });
-  </script>
+  <script src="/app.js"></script>
 </body>
 </html>

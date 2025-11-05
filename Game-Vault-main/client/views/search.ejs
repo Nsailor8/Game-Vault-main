@@ -355,18 +355,18 @@
             }
         }
 
-        async function addToLibrary(gameId, gameName) {
+        async function addToWishlist(gameId, gameName) {
             // Check if user is logged in
             if (!window.app || !window.app.currentUser) {
                 if (window.app) {
-                    await window.app.showAlert('Please log in to add games to your library', 'Login Required', 'warning');
+                    await window.app.showAlert('Please log in to add games to your wishlist', 'Login Required', 'warning');
                 } else {
-                    alert('Please log in to add games to your library');
+                    alert('Please log in to add games to your wishlist');
                 }
                 return;
             }
 
-            // Get user's libraries
+            // Get user's wishlists
             try {
                 const response = await fetch(`/api/wishlists/${window.app.currentUser.username}`, {
                     credentials: 'include',
@@ -374,53 +374,37 @@
                 });
 
                 const data = await response.json();
-                const libraries = data.success ? (data.wishlists || []) : [];
+                const wishlists = data.success ? (data.wishlists || []) : [];
 
-                if (libraries.length === 0) {
-                    // No libraries, create default and add
+                if (wishlists.length === 0) {
+                    // No wishlists, create default and add
                     if (window.app) {
-                        await window.app.addToLibrary(gameId, gameName);
+                        await window.app.addToWishlist(gameId, gameName);
                     }
-                } else if (libraries.length === 1) {
-                    // Only one library, add directly
+                } else if (wishlists.length === 1) {
+                    // Only one wishlist, add directly
                     if (window.app) {
-                        await window.app.addToLibraryWithId(gameId, gameName, libraries[0].id);
+                        await window.app.addToWishlistWithId(gameId, gameName, wishlists[0].id);
                     }
                 } else {
-                    // Multiple libraries, show selection modal
-                    if (window.app && window.app.showLibrarySelectionModal) {
-                        window.app.showLibrarySelectionModal(gameId, gameName, libraries);
+                    // Multiple wishlists, show selection modal
+                    if (window.app && window.app.showWishlistSelectionModal) {
+                        window.app.showWishlistSelectionModal(gameId, gameName, wishlists);
                     } else {
-                        // Fallback: show simple selection
-                        showLibrarySelection(gameId, gameName, libraries);
+                        // Fallback: add to first wishlist
+                        if (window.app) {
+                            await window.app.addToWishlistWithId(gameId, gameName, wishlists[0].id);
+                        }
                     }
                 }
             } catch (error) {
-                console.error('Error adding to library:', error);
+                console.error('Error adding to wishlist:', error);
                 if (window.app) {
-                    window.app.showAlert('Error adding game to library', 'Error', 'error');
+                    window.app.showAlert('Error adding game to wishlist', 'Error', 'error');
                 } else {
-                    alert('Error adding game to library');
+                    alert('Error adding game to wishlist');
                 }
             }
-        }
-
-        function showLibrarySelection(gameId, gameName, libraries) {
-            const libraryNames = libraries.map(lib => lib.name).join('\n');
-            const libraryIds = libraries.map(lib => lib.id);
-            const selectedIndex = prompt(`Select a library to add "${gameName}" to:\n\n${libraries.map((lib, i) => `${i + 1}. ${lib.name} (${lib.gameCount || 0} games)`).join('\n')}\n\nEnter number (1-${libraries.length}):`);
-            
-            if (selectedIndex && !isNaN(selectedIndex) && selectedIndex >= 1 && selectedIndex <= libraries.length) {
-                const selectedLibrary = libraries[parseInt(selectedIndex) - 1];
-                if (window.app && window.app.addToLibraryWithId) {
-                    window.app.addToLibraryWithId(gameId, gameName, selectedLibrary.id);
-                }
-            }
-        }
-
-        // Backward compatibility
-        async function addToWishlist(gameId, gameName) {
-            return await addToLibrary(gameId, gameName);
         }
 
         function retrySearch() {
