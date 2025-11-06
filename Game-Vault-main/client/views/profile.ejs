@@ -27,7 +27,7 @@
           <div class="profile-info">
             <h2 id="profileUsername"><%= profile.username || 'Loading...' %></h2>
             <p id="profileEmail"><%= profile.email || 'Loading...' %></p>
-            <p id="profileJoinDate">Joined: <%= profile.joinDate ? new Date(profile.joinDate).toLocaleDateString() : 'Loading...' %></p>
+            <p id="profileJoinDate">Joined: <%= profile.joinDate ? new Date(profile.joinDate).toLocaleDateString('en-US', { year: 'numeric', month: 'numeric', day: 'numeric' }) : 'Loading...' %></p>
           </div>
           <div class="profile-actions">
             <button id="editProfileBtn" class="btn btn-secondary">Edit Profile</button>
@@ -75,10 +75,15 @@
               <% } else { %>
                 <p id="steamProfileUrl">Profile URL</p>
               <% } %>
+              <% if (profile.isCurrentUser) { %>
               <div class="steam-actions">
-                <button id="importSteamLibraryBtn" class="btn btn-secondary">Import Steam Library</button>
+                <button id="syncSteamGamesBtn" class="btn btn-primary">
+                  <i class="fas fa-sync-alt"></i> Sync Steam Games
+                </button>
+                <button id="importSteamLibraryBtn" class="btn btn-secondary" style="display: none;">Import Steam Library</button>
                 <button id="disconnectSteamBtn" class="btn btn-danger">Disconnect Steam</button>
               </div>
+              <% } %>
             </div>
           </div>
         </div>
@@ -132,31 +137,31 @@
             </div>
           </div>
           <div id="gamesListContainer" class="games-list-container">
-            <div class="games-grid" id="steamGamesGrid">
+            <div class="steam-games-grid" id="steamGamesGrid">
               <% profile.steam_games.forEach(function(game) { %>
-              <div class="game-card-modern" data-appid="<%= game.appid %>" data-name="<%= game.name.toLowerCase() %>" data-playtime="<%= game.playtime_forever || 0 %>" data-achievements="<%= game.achievements || 0 %>">
-                <a href="https://store.steampowered.com/app/<%= game.appid %>" target="_blank" class="game-link-modern">
-                  <div class="game-image-wrapper">
-                    <img class="game-header-image" 
-                         src="https://cdn.akamai.steamstatic.com/steam/apps/<%= game.appid %>/header.jpg" 
+              <div class="steam-game-card" data-appid="<%= game.appid %>" data-name="<%= game.name.toLowerCase() %>" data-playtime="<%= game.playtime_forever || 0 %>" data-achievements="<%= game.achievements || 0 %>">
+                <a href="https://store.steampowered.com/app/<%= game.appid %>" target="_blank" class="steam-game-link">
+                  <div class="steam-game-image-container">
+                    <img class="steam-game-image" 
+                         src="https://cdn.akamai.steamstatic.com/steam/apps/<%= game.appid %>/library_600x900.jpg" 
                          alt="<%= game.name %>"
-                         onerror="this.src='https://via.placeholder.com/460x215?text=<%= encodeURIComponent(game.name) %>';"
+                         onerror="this.src='https://cdn.akamai.steamstatic.com/steam/apps/<%= game.appid %>/header.jpg'; this.onerror=function(){this.src='https://via.placeholder.com/300x400?text=<%= encodeURIComponent(game.name) %>';};"
                          loading="lazy">
-                    <div class="game-badges">
+                    <div class="steam-game-badges">
                       <% if (game.rating && game.rating > 0) { %>
-                      <div class="rating-badge">
+                      <div class="steam-rating-badge">
                         <i class="fas fa-star"></i>
                         <span><%= game.rating.toFixed(1) %></span>
                       </div>
                       <% } %>
                       <% if (game.metacritic) { %>
-                      <div class="metacritic-badge">
+                      <div class="steam-metacritic-badge">
                         <span>M: <%= game.metacritic %></span>
                       </div>
                       <% } %>
                     </div>
                   </div>
-                  <div class="game-title-modern">
+                  <div class="steam-game-title">
                     <%= game.name %>
                   </div>
                   <div class="game-playtime" style="display: none;">
@@ -169,6 +174,101 @@
             </div>
           </div>
         </div>
+        <% } %>
+
+        <!-- Achievements Section -->
+        <% if (profile.steamLinked && profile.steam_games && profile.steam_games.length > 0) { %>
+          <% 
+            // Collect all achievements from games
+            let allAchievements = [];
+            let totalAchievements = 0;
+            let unlockedAchievements = 0;
+            
+            profile.steam_games.forEach(function(game) {
+              if (game.achievements && Array.isArray(game.achievements)) {
+                game.achievements.forEach(function(achievement) {
+                  if (achievement.achieved) {
+                    allAchievements.push({
+                      ...achievement,
+                      gameName: game.name,
+                      gameAppid: game.appid
+                    });
+                    unlockedAchievements++;
+                  }
+                  totalAchievements++;
+                });
+              } else if (game.unlockedAchievements !== undefined && game.achievementCount !== undefined) {
+                // If we have counts but not full achievement data
+                unlockedAchievements += game.unlockedAchievements || 0;
+                totalAchievements += game.achievementCount || 0;
+              }
+            });
+            
+            // Sort by unlock time (most recent first)
+            allAchievements.sort((a, b) => {
+              const timeA = a.unlocktime ? new Date(a.unlocktime * 1000) : new Date(0);
+              const timeB = b.unlocktime ? new Date(b.unlocktime * 1000) : new Date(0);
+              return timeB - timeA;
+            });
+          %>
+          
+          <% if (allAchievements.length > 0 || unlockedAchievements > 0) { %>
+          <div id="achievementsSection" class="achievements-section">
+            <div class="achievements-header">
+              <h3>
+                <i class="fas fa-trophy"></i> Achievements
+                <span class="achievement-stats">
+                  (<span id="unlockedCount"><%= unlockedAchievements %></span> / <span id="totalCount"><%= totalAchievements %></span> unlocked)
+                </span>
+              </h3>
+              <div class="achievements-controls">
+                <button id="toggleAchievementsList" class="btn btn-secondary collapse-btn">
+                  <i class="fas fa-chevron-up"></i> Collapse
+                </button>
+              </div>
+            </div>
+            <div id="achievementsListContainer" class="achievements-list-container">
+              <% if (allAchievements.length > 0) { %>
+                <div class="achievements-grid" id="achievementsGrid">
+                  <% allAchievements.slice(0, 50).forEach(function(achievement) { %>
+                  <div class="achievement-card" data-game="<%= achievement.gameName %>">
+                    <div class="achievement-icon">
+                      <% if (achievement.icon) { %>
+                        <img src="<%= achievement.icon %>" alt="<%= achievement.apiname || achievement.name %>" onerror="this.src='https://via.placeholder.com/64?text=🏆';">
+                      <% } else { %>
+                        <div class="achievement-icon-placeholder">
+                          <i class="fas fa-trophy"></i>
+                        </div>
+                      <% } %>
+                    </div>
+                    <div class="achievement-info">
+                      <h4 class="achievement-name"><%= achievement.name || achievement.apiname || 'Unknown Achievement' %></h4>
+                      <p class="achievement-game"><%= achievement.gameName %></p>
+                      <% if (achievement.description) { %>
+                        <p class="achievement-description"><%= achievement.description %></p>
+                      <% } %>
+                      <% if (achievement.unlocktime) { %>
+                        <p class="achievement-date">
+                          <i class="fas fa-calendar"></i> 
+                          <%= new Date(achievement.unlocktime * 1000).toLocaleDateString() %>
+                        </p>
+                      <% } %>
+                    </div>
+                  </div>
+                  <% }); %>
+                </div>
+                <% if (allAchievements.length > 50) { %>
+                  <p class="achievements-more">Showing 50 of <%= allAchievements.length %> achievements. <a href="https://steamcommunity.com/profiles/<%= profile.steam_id %>" target="_blank">View all on Steam</a></p>
+                <% } %>
+              <% } else { %>
+                <div class="achievements-summary">
+                  <p><%= unlockedAchievements %> achievements unlocked across <%= profile.steam_games.length %> games</p>
+                  <p><a href="https://steamcommunity.com/profiles/<%= profile.steam_id %>" target="_blank" class="btn btn-secondary">View Achievements on Steam</a></p>
+                </div>
+              <% } %>
+            </div>
+          </div>
+          <% } %>
         <% } %>
       </section>
     </main>
@@ -184,6 +284,29 @@
             </div>
             <div class="modal-body">
                 <form id="editProfileForm">
+                    <div class="form-group">
+                        <label for="editAvatar">Profile Picture</label>
+                        <div class="avatar-upload-section">
+                            <div class="avatar-preview-container">
+                                <img id="avatarPreview" src="" alt="Avatar Preview" class="avatar-preview-image">
+                                <div class="avatar-preview-placeholder" id="avatarPreviewPlaceholder">
+                                    <i class="fas fa-user"></i>
+                                    <span>No image selected</span>
+                                </div>
+                            </div>
+                            <div class="avatar-upload-controls">
+                                <label for="editAvatarInput" class="btn btn-secondary" style="cursor: pointer; display: inline-block;">
+                                    <i class="fas fa-camera"></i> Choose Image
+                                </label>
+                                <input type="file" id="editAvatarInput" name="avatar" accept="image/*" style="display: none;">
+                                <button type="button" id="removeAvatarBtn" class="btn btn-danger" style="display: none;">
+                                    <i class="fas fa-trash"></i> Remove
+                                </button>
+                            </div>
+                            <p class="avatar-upload-hint">Maximum file size: 5MB. Supported formats: JPG, PNG, GIF</p>
+                        </div>
+                    </div>
+                    
                     <div class="form-group">
                         <label for="editBio">Bio</label>
                         <textarea id="editBio" name="bio" rows="3" placeholder="Tell us about yourself..."></textarea>
@@ -218,6 +341,37 @@
     
   <script src="/app.js"></script>
   <script src="/profile.js"></script>
+  <script>
+    // If we're on /profile (without username) and have a logged-in user, redirect to username-specific route
+    (function() {
+      const pathParts = window.location.pathname.split('/').filter(p => p);
+      if (pathParts.length === 1 && pathParts[0] === 'profile') {
+        // We're on /profile - check if we have a user
+        setTimeout(() => {
+          if (window.app && window.app.currentUser && window.app.currentUser.username && !window.app.currentUser.isGuest) {
+            console.log('[Profile] Redirecting to username-specific profile:', window.app.currentUser.username);
+            window.location.href = `/profile/${window.app.currentUser.username}`;
+            return;
+          }
+          // Check auth status and redirect if logged in
+          fetch('/api/auth/check', {
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' }
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success && data.user && data.user.username) {
+              console.log('[Profile] Auth check found user, redirecting to:', data.user.username);
+              window.location.href = `/profile/${data.user.username}`;
+            }
+          })
+          .catch(error => {
+            console.error('[Profile] Error checking auth:', error);
+          });
+        }, 100);
+      }
+    })();
+  </script>
   <script>
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -282,12 +436,61 @@
       
       // Check for Steam auth error
       if (urlParams.get('error') === 'steam_auth_failed') {
-        console.error('Steam authentication failed');
-        alert('Failed to connect Steam account. Please try again.');
-        // Remove the error parameter from URL
+        const reason = urlParams.get('reason') || 'unknown';
+        const details = urlParams.get('details') || '';
+        const message = urlParams.get('message') || '';
+        
+        console.error('Steam authentication failed:', { reason, details, message });
+        
+        let errorMessage = 'Failed to connect Steam account.';
+        
+        // Provide specific error messages based on reason
+        switch(reason) {
+          case 'no_user_data':
+            errorMessage = 'Steam authentication failed: No user data received from Steam. Please try again.';
+            break;
+          case 'user_not_found':
+            errorMessage = 'Failed to connect Steam account: Your account was not found. Please log out and log back in, then try again.';
+            break;
+          case 'db_user_not_found':
+            errorMessage = 'Failed to connect Steam account: Database error. Please try again.';
+            break;
+          case 'link_failed':
+            errorMessage = `Failed to connect Steam account: ${details || 'Linking failed. Please try again.'}`;
+            break;
+          case 'link_exception':
+            errorMessage = `Failed to connect Steam account: ${details || 'An error occurred. Please try again.'}`;
+            break;
+          case 'database_error':
+            errorMessage = `Failed to connect Steam account: Database error. ${details || 'Please try again.'}`;
+            break;
+          case 'reload_failed':
+            errorMessage = 'Steam account connected, but there was an issue loading your profile. Please refresh the page.';
+            break;
+          case 'profile_creation_failed':
+            errorMessage = 'Failed to create Steam profile. Please try again.';
+            break;
+          case 'exception':
+            errorMessage = `Failed to connect Steam account: ${message || details || 'An unexpected error occurred. Please try again.'}`;
+            break;
+          default:
+            errorMessage = `Failed to connect Steam account: ${details || message || 'Please try again.'}`;
+        }
+        
+        alert(errorMessage);
+        
+        // Remove the error parameters from URL
         urlParams.delete('error');
+        urlParams.delete('reason');
+        urlParams.delete('details');
+        urlParams.delete('message');
         const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
         window.history.replaceState({}, '', newUrl);
+      }
+      
+      // Check for Steam auth success with warning
+      if (urlParams.get('steam_auth') === 'success' && urlParams.get('warning') === 'reload_failed') {
+        alert('Steam account connected successfully! However, there was an issue loading your full profile. The page will refresh to show your updated profile.');
       }
       
       // Set up Steam button event listeners
@@ -370,6 +573,49 @@
         });
       }
       
+      // Sync Steam Games button
+      const syncSteamGamesBtn = document.getElementById('syncSteamGamesBtn');
+      if (syncSteamGamesBtn) {
+        syncSteamGamesBtn.addEventListener('click', async () => {
+          // Disable button and show loading state
+          syncSteamGamesBtn.disabled = true;
+          const originalText = syncSteamGamesBtn.innerHTML;
+          syncSteamGamesBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Syncing...';
+          
+          try {
+            const response = await fetch('/api/steam/sync', {
+              method: 'POST',
+              credentials: 'include'
+            });
+            
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({ error: 'Failed to sync Steam games' }));
+              alert(errorData.error || `Error: ${response.status} ${response.statusText}`);
+              syncSteamGamesBtn.disabled = false;
+              syncSteamGamesBtn.innerHTML = originalText;
+              return;
+            }
+            
+            const data = await response.json();
+            if (data.success) {
+              alert(`Successfully synced ${data.gamesCount || 0} games from Steam!`);
+              // Reload page to show updated games
+              window.location.reload();
+            } else {
+              alert(data.error || 'Failed to sync Steam games');
+              syncSteamGamesBtn.disabled = false;
+              syncSteamGamesBtn.innerHTML = originalText;
+            }
+          } catch (error) {
+            console.error('Error syncing Steam games:', error);
+            alert('Failed to sync Steam games. Please try again.');
+            syncSteamGamesBtn.disabled = false;
+            syncSteamGamesBtn.innerHTML = originalText;
+          }
+        });
+      }
+      
+      // Keep importSteamLibraryBtn for backwards compatibility (hidden)
       const importSteamLibraryBtn = document.getElementById('importSteamLibraryBtn');
       if (importSteamLibraryBtn) {
         importSteamLibraryBtn.addEventListener('click', async () => {
@@ -400,6 +646,11 @@
           }
           
           try {
+            // Disable button and show loading state
+            disconnectSteamBtn.disabled = true;
+            disconnectSteamBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Disconnecting...';
+            
+            console.log('[Profile] Disconnecting Steam account...');
             const response = await fetch('/api/auth/steam/unlink', {
               method: 'POST',
               credentials: 'include',
@@ -409,6 +660,7 @@
             });
             
             const data = await response.json();
+            console.log('[Profile] Disconnect response:', data);
             
             if (response.ok && data.success) {
               alert('Steam account disconnected successfully!');
@@ -416,10 +668,16 @@
               window.location.reload();
             } else {
               alert(data.error || 'Failed to disconnect Steam account');
+              // Re-enable button
+              disconnectSteamBtn.disabled = false;
+              disconnectSteamBtn.innerHTML = 'Disconnect Steam';
             }
           } catch (error) {
-            console.error('Error disconnecting Steam account:', error);
-            alert('Failed to disconnect Steam account. Please try again.');
+            console.error('[Profile] Error disconnecting Steam account:', error);
+            alert('Failed to disconnect Steam account: ' + (error.message || 'Please try again.'));
+            // Re-enable button
+            disconnectSteamBtn.disabled = false;
+            disconnectSteamBtn.innerHTML = 'Disconnect Steam';
           }
         });
       }
@@ -438,15 +696,30 @@
         toggleGamesListBtn.addEventListener('click', () => {
           isCollapsed = !isCollapsed;
           gamesListContainer.classList.toggle('collapsed', isCollapsed);
-          const icon = toggleGamesListBtn.querySelector('i');
-          const text = toggleGamesListBtn.querySelector('i').nextSibling;
           
           if (isCollapsed) {
-            icon.className = 'fas fa-chevron-down';
             toggleGamesListBtn.innerHTML = '<i class="fas fa-chevron-down"></i> Expand';
           } else {
-            icon.className = 'fas fa-chevron-up';
             toggleGamesListBtn.innerHTML = '<i class="fas fa-chevron-up"></i> Collapse';
+          }
+        });
+      }
+      
+      // Achievements toggle functionality
+      const toggleAchievementsListBtn = document.getElementById('toggleAchievementsList');
+      const achievementsListContainer = document.getElementById('achievementsListContainer');
+      
+      if (toggleAchievementsListBtn && achievementsListContainer) {
+        let achievementsCollapsed = false;
+        
+        toggleAchievementsListBtn.addEventListener('click', () => {
+          achievementsCollapsed = !achievementsCollapsed;
+          achievementsListContainer.classList.toggle('collapsed', achievementsCollapsed);
+          
+          if (achievementsCollapsed) {
+            toggleAchievementsListBtn.innerHTML = '<i class="fas fa-chevron-down"></i> Expand';
+          } else {
+            toggleAchievementsListBtn.innerHTML = '<i class="fas fa-chevron-up"></i> Collapse';
           }
         });
       }
@@ -454,7 +727,7 @@
       // Sorting functionality
       if (gamesSortSelect && steamGamesGrid) {
         const showPlaytimeForSort = (sortValue) => {
-          const gameCards = steamGamesGrid.querySelectorAll('.game-card-modern');
+          const gameCards = steamGamesGrid.querySelectorAll('.steam-game-card');
           const shouldShow = sortValue === 'playtime-desc' || sortValue === 'playtime-asc';
           
           gameCards.forEach(card => {
@@ -467,7 +740,7 @@
         
         gamesSortSelect.addEventListener('change', () => {
           const sortValue = gamesSortSelect.value;
-          const gameCards = Array.from(steamGamesGrid.querySelectorAll('.game-card-modern'));
+          const gameCards = Array.from(steamGamesGrid.querySelectorAll('.steam-game-card'));
           
           if (gameCards.length === 0) {
             console.log('No game cards found for sorting');
