@@ -37,6 +37,11 @@ const Wishlist = sequelize.define('Wishlist', {
     type: DataTypes.ENUM('low', 'medium', 'high'),
     allowNull: false,
     defaultValue: 'medium'
+  },
+  type: {
+    type: DataTypes.ENUM('automatic', 'wishlist', 'custom'),
+    allowNull: false,
+    defaultValue: 'custom'
   }
 }, {
   tableName: 'wishlists',
