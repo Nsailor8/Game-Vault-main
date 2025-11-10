@@ -37,10 +37,9 @@ class DatabaseManager {
     }
   }
 
-  // User operations
   async saveUser(userData) {
     try {
-      // Build the data object, only including password_hash if it's provided
+
       const userDataToSave = {
         username: userData.username,
         email: userData.email,
@@ -57,7 +56,6 @@ class DatabaseManager {
         steam_last_sync: userData.steam_last_sync
       };
 
-      // Only include password_hash if it's provided and not null/undefined
       if (userData.password_hash !== undefined && userData.password_hash !== null) {
         userDataToSave.password_hash = userData.password_hash;
       } else if (userData.password !== undefined && userData.password !== null) {
@@ -97,9 +95,66 @@ class DatabaseManager {
 
   async getUserByUsername(username) {
     try {
-      const user = await User.findOne({ where: { username } });
+      // Include password_hash for authentication purposes
+      // Use raw query or explicitly include password_hash in attributes
+      // Note: avatar_path may not exist yet, so we handle it gracefully
+      const user = await User.findOne({ 
+        where: { username },
+        attributes: { 
+          exclude: [] // Don't exclude anything - we need password_hash
+        },
+        raw: false // Return Sequelize instance, not plain object
+      });
+      
+      if (user) {
+        // Check if avatar_path column exists by trying to access it
+        // If it doesn't exist, we'll handle it gracefully
+        try {
+          const hasAvatarPath = user.dataValues && 'avatar_path' in user.dataValues;
+          console.log('User found in database:', {
+            username: user.username,
+            hasPasswordHash: !!user.password_hash,
+            hasAvatarPath: hasAvatarPath,
+            fields: Object.keys(user.dataValues || user)
+          });
+        } catch (e) {
+          // Column might not exist yet - that's okay
+          console.log('User found in database:', {
+            username: user.username,
+            hasPasswordHash: !!user.password_hash,
+            note: 'avatar_path column may not exist yet'
+          });
+        }
+      }
+      
       return user;
     } catch (error) {
+      // If error is about missing avatar_path or profile_picture_path column, try query without it
+      if (error.message && (error.message.includes('avatar_path') || error.message.includes('profile_picture_path') || error.code === '42703')) {
+        console.log('⚠️ avatar_path or profile_picture_path column not found, querying without it...');
+        try {
+          const user = await User.findOne({ 
+            where: { username },
+            attributes: [
+              'user_id', 'username', 'email', 'password_hash', 'join_date', 
+              'is_active', 'is_admin', 'last_login', 'bio', 
+              'gaming_preferences', 'statistics', 
+              'steam_id', 'steam_profile', 'steam_linked_at', 'steam_games', 'steam_last_sync'
+              // Exclude avatar_path and profile_picture_path - will use placeholder image instead
+            ],
+            raw: false
+          });
+          // Set avatar_path and profile_picture_path to null since columns don't exist
+          if (user && user.dataValues) {
+            user.dataValues.avatar_path = null;
+            user.dataValues.profile_picture_path = null;
+          }
+          return user;
+        } catch (retryError) {
+          console.error('Error getting user by username (retry):', retryError);
+          return null;
+        }
+      }
       console.error('Error getting user by username:', error);
       return null;
     }
@@ -158,97 +213,6 @@ class DatabaseManager {
     }
   }
 
-  // Admin operations
-  async createAdmin(username, email, password) {
-    try {
-      const bcrypt = require('bcrypt');
-      const password_hash = await bcrypt.hash(password, 10);
-      
-      const [user, created] = await User.upsert({
-        username: username,
-        email: email,
-        password_hash: password_hash,
-        is_admin: true,
-        is_active: true,
-        join_date: new Date()
-      });
-      
-      if (created) {
-        console.log(`Admin ${username} created in database.`);
-      } else {
-        // Update existing user to be admin
-        await User.update({ is_admin: true }, { where: { username } });
-        console.log(`User ${username} promoted to admin in database.`);
-      }
-      
-      return user;
-    } catch (error) {
-      console.error('Error creating admin:', error);
-      throw error;
-    }
-  }
-
-  async getAdmins() {
-    try {
-      const admins = await User.findAll({
-        where: { is_admin: true, is_active: true },
-        attributes: ['user_id', 'username', 'email', 'join_date', 'is_admin'],
-        order: [['join_date', 'DESC']]
-      });
-      return admins;
-    } catch (error) {
-      console.error('Error getting admins:', error);
-      return [];
-    }
-  }
-
-  async isAdmin(username) {
-    try {
-      const user = await User.findOne({
-        where: { username, is_admin: true, is_active: true }
-      });
-      return user !== null;
-    } catch (error) {
-      console.error('Error checking admin status:', error);
-      return false;
-    }
-  }
-
-  async promoteToAdmin(username) {
-    try {
-      const [updatedRowsCount] = await User.update(
-        { is_admin: true },
-        { where: { username, is_active: true } }
-      );
-      if (updatedRowsCount > 0) {
-        console.log(`User ${username} promoted to admin.`);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error promoting user to admin:', error);
-      return false;
-    }
-  }
-
-  async demoteFromAdmin(username) {
-    try {
-      const [updatedRowsCount] = await User.update(
-        { is_admin: false },
-        { where: { username } }
-      );
-      if (updatedRowsCount > 0) {
-        console.log(`User ${username} demoted from admin.`);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error demoting user from admin:', error);
-      return false;
-    }
-  }
-
-  // Game operations
   async saveGame(gameData) {
     try {
       const [game, created] = await Game.upsert({
@@ -300,7 +264,6 @@ class DatabaseManager {
     }
   }
 
-  // Review operations
   async saveReview(reviewData) {
     try {
       const review = await Review.create({
@@ -347,7 +310,6 @@ class DatabaseManager {
     }
   }
 
-  // Library/Wishlist operations
   async createWishlist(wishlistData) {
     try {
       const wishlist = await Wishlist.create({
@@ -520,7 +482,6 @@ class DatabaseManager {
     }
   }
 
-  // Friendship operations
   async createFriendship(friendshipData) {
     try {
       const friendship = await Friendship.create({
@@ -571,7 +532,6 @@ class DatabaseManager {
     }
   }
 
-  // Achievement operations
   async saveAchievement(achievementData) {
     try {
       const achievement = await Achievement.create({
@@ -603,7 +563,6 @@ class DatabaseManager {
     }
   }
 
-  // Statistics
   async getUserStatistics() {
     try {
       const totalUsers = await User.count({ where: { is_active: true } });
@@ -630,7 +589,6 @@ class DatabaseManager {
     }
   }
 
-  // Close connection
   async close() {
     try {
       await sequelize.close();

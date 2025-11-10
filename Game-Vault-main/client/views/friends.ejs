@@ -6,7 +6,7 @@
 
   <div class="container">
     <main class="main-content">
-      <!-- Friends Section -->
+      
       <section id="friendsSection" class="content-section active">
         <div class="section-header">
           <h2>Friends</h2>
@@ -91,51 +91,10 @@
 
   <script src="/app.js"></script>
   <script>
-    document.addEventListener('DOMContentLoaded', async () => {
+
+    document.addEventListener('DOMContentLoaded', () => {
       console.log('Friends page - DOM Content Loaded');
 
-      const modal = document.getElementById('friendProfileModal');
-      const modalClose = modal.querySelector('.close');
-      const friendUsernameElem = document.getElementById('friendUsername');
-      const modalBody = modal.querySelector('.modal-body');
-
-      // Function to open modal with friend details
-      const openFriendModal = (friend) => {
-        friendUsernameElem.textContent = friend.username;
-        modalBody.innerHTML = `
-          <p>Friend profile will load here.</p>
-          <p>Username: ${friend.username}</p>
-          <p>Friends since: ${new Date(friend.friendshipDate).toLocaleDateString()}</p>
-          ${friend.bio ? `<p class="friend-bio">${friend.bio}</p>` : ''}
-        `;
-        modal.style.display = 'block';
-      };
-
-      // Close modal
-      modalClose.addEventListener('click', () => modal.style.display = 'none');
-      window.addEventListener('click', (e) => {
-        if (e.target === modal) modal.style.display = 'none';
-      });
-
-      // Wait for app initialization
-      if (window.app) {
-        await window.app.checkAuthStatus();
-        if (window.app.currentUser) {
-          // Call the already-defined updateFriends()
-          window.app.updateFriends();
-
-          // Attach modal function globally so displayFriends() can use it
-          window.app.viewFriendProfile = openFriendModal;
-        }
-      } else {
-        // Fallback if app isn’t ready yet
-        setTimeout(async () => {
-          if (window.app && window.app.currentUser) {
-            window.app.updateFriends();
-            window.app.viewFriendProfile = openFriendModal;
-          }
-        }, 500);
-      }
     });
   </script>
 </body>
