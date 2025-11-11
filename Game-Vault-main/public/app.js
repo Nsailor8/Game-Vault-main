@@ -49,7 +49,7 @@ class LoginScreen {
         this.title.textContent = 'Welcome to Game Vault';
         this.loginForm.style.display = 'block';
         this.signupForm.style.display = 'none';
-
+        
         document.getElementById('loginUsername').value = '';
         document.getElementById('loginPassword').value = '';
         document.getElementById('signupUsername').value = '';
@@ -125,6 +125,21 @@ class GameVaultApp {
         });
         }
 
+        // Steam sign-in buttons
+        const steamSignInBtn = document.getElementById('steamSignInBtn');
+        if (steamSignInBtn) {
+            steamSignInBtn.addEventListener('click', () => {
+                this.handleSteamSignIn();
+            });
+        }
+
+        const steamSignUpBtn = document.getElementById('steamSignUpBtn');
+        if (steamSignUpBtn) {
+            steamSignUpBtn.addEventListener('click', () => {
+                this.handleSteamSignIn(); // Same flow for sign-in and sign-up
+        });
+        }
+
         const guestBtnLogin = document.getElementById('guestBtnLogin');
         if (guestBtnLogin) {
             guestBtnLogin.addEventListener('click', () => {
@@ -152,6 +167,63 @@ class GameVaultApp {
             saveProfileBtn.addEventListener('click', () => {
             this.saveProfile();
         });
+        }
+
+        // Avatar upload preview
+        const editAvatarInput = document.getElementById('editAvatarInput');
+        if (editAvatarInput) {
+            editAvatarInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    // Validate file size (5MB)
+                    if (file.size > 5 * 1024 * 1024) {
+                        this.showAlert('File size must be less than 5MB', 'File Too Large', 'error');
+                        e.target.value = '';
+                        return;
+                    }
+
+                    // Validate file type
+                    if (!file.type.startsWith('image/')) {
+                        this.showAlert('Please select an image file', 'Invalid File Type', 'error');
+                        e.target.value = '';
+                        return;
+                    }
+
+                    // Show preview
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const avatarPreview = document.getElementById('avatarPreview');
+                        const avatarPreviewPlaceholder = document.getElementById('avatarPreviewPlaceholder');
+                        const removeAvatarBtn = document.getElementById('removeAvatarBtn');
+                        
+                        if (avatarPreview && avatarPreviewPlaceholder) {
+                            avatarPreview.src = e.target.result;
+                            avatarPreview.style.display = 'block';
+                            avatarPreviewPlaceholder.style.display = 'none';
+                            if (removeAvatarBtn) removeAvatarBtn.style.display = 'inline-block';
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        }
+
+        // Remove avatar button
+        const removeAvatarBtn = document.getElementById('removeAvatarBtn');
+        if (removeAvatarBtn) {
+            removeAvatarBtn.addEventListener('click', () => {
+                const avatarPreview = document.getElementById('avatarPreview');
+                const avatarPreviewPlaceholder = document.getElementById('avatarPreviewPlaceholder');
+                const editAvatarInput = document.getElementById('editAvatarInput');
+                
+                if (avatarPreview && avatarPreviewPlaceholder) {
+                    avatarPreview.src = '';
+                    avatarPreview.style.display = 'none';
+                    avatarPreviewPlaceholder.style.display = 'flex';
+                    removeAvatarBtn.style.display = 'none';
+                    if (editAvatarInput) editAvatarInput.value = '';
+                }
+            });
         }
 
         const sendFriendRequestBtn = document.getElementById('sendFriendRequestBtn');
@@ -381,7 +453,7 @@ class GameVaultApp {
         })
         .then(response => response.json())
         .then(data => {
-            if (data.success) {
+            if (data.success && data.user) {
                 // Hide error on success
                 if (loginError) {
                     loginError.style.display = 'none';
@@ -390,6 +462,38 @@ class GameVaultApp {
                 this.loginScreen.hide();
                 this.updateUI();
                 console.log('User logged in successfully:', data.user.username);
+                
+                // Update profile links immediately after login
+                if (this.currentUser.username) {
+                    const username = this.currentUser.username;
+                    const navProfileLink = document.querySelector('.nav .nav-btn[href="/profile"]');
+                    if (navProfileLink) {
+                        navProfileLink.href = `/profile/${username}`;
+                    }
+                    const dropdownProfileLink = document.querySelector('.profile-menu-item[href="/profile"]');
+                    if (dropdownProfileLink) {
+                        dropdownProfileLink.href = `/profile/${username}`;
+                    }
+                }
+                
+                // Force a re-check of auth status to ensure session is properly set
+                // Also wait a bit longer to ensure session cookie is set
+                setTimeout(() => {
+                    this.checkAuthStatus().then(() => {
+                        // After auth check, ensure profile links are updated
+                        if (this.currentUser && this.currentUser.username) {
+                            const username = this.currentUser.username;
+                            const navProfileLink = document.querySelector('.nav .nav-btn[href="/profile"], .nav .nav-btn[href*="/profile"]');
+                            if (navProfileLink) {
+                                navProfileLink.href = `/profile/${username}`;
+                            }
+                            const dropdownProfileLink = document.querySelector('.profile-menu-item[href="/profile"], .profile-menu-item[href*="/profile"]');
+                            if (dropdownProfileLink) {
+                                dropdownProfileLink.href = `/profile/${username}`;
+                            }
+                        }
+                    });
+                }, 200);
             } else {
                 // Show error inline
                 const errorMessage = data.error || 'Invalid credentials';
@@ -410,6 +514,40 @@ class GameVaultApp {
             } else {
                 this.showAlert(errorMessage, 'Error', 'error');
             }
+        });
+    }
+
+    handleSteamSignIn() {
+        console.log('[Steam Sign-In] Initiating Steam authentication...');
+        
+        // Store in session that this is a sign-in (not linking)
+        fetch('/api/auth/steam/signin', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                returnUrl: window.location.pathname
+            })
+        })
+        .then(response => {
+            if (response.ok) {
+                return response.json();
+            }
+            throw new Error('Failed to initiate Steam sign-in');
+        })
+        .then(data => {
+            if (data.redirectUrl) {
+                console.log('[Steam Sign-In] Redirecting to Steam OAuth:', data.redirectUrl);
+                window.location.href = data.redirectUrl;
+            } else {
+                throw new Error('No redirect URL received');
+            }
+        })
+        .catch(error => {
+            console.error('[Steam Sign-In] Error:', error);
+            this.showAlert('Failed to connect to Steam. Please try again.', 'Steam Sign-In Error', 'error');
         });
     }
 
@@ -461,7 +599,7 @@ class GameVaultApp {
         })
         .then(response => response.json())
         .then(data => {
-            if (data.success) {
+            if (data.success && data.user) {
                 // Hide error on success
                 if (signupError) {
                     signupError.style.display = 'none';
@@ -470,6 +608,24 @@ class GameVaultApp {
                 this.loginScreen.hide();
                 this.updateUI();
                 console.log('User created successfully on server:', data.user.username);
+                
+                // Update profile links immediately after signup
+                if (this.currentUser.username) {
+                    const username = this.currentUser.username;
+                    const navProfileLink = document.querySelector('.nav .nav-btn[href="/profile"]');
+                    if (navProfileLink) {
+                        navProfileLink.href = `/profile/${username}`;
+                    }
+                    const dropdownProfileLink = document.querySelector('.profile-menu-item[href="/profile"]');
+                    if (dropdownProfileLink) {
+                        dropdownProfileLink.href = `/profile/${username}`;
+                    }
+                }
+                
+                // Force a re-check of auth status to ensure session is properly set
+                setTimeout(() => {
+                    this.checkAuthStatus();
+                }, 100);
             } else {
                 // Show error inline
                 const errorMessage = data.error || 'Failed to create account';
@@ -495,19 +651,56 @@ class GameVaultApp {
 
     async checkAuthStatus() {
         try {
-            console.log('Checking auth status...');
-            console.log('Current URL:', window.location.href);
-            console.log('Document cookies:', document.cookie);
+            const currentPath = window.location.pathname;
+            const isProfilePage = currentPath.startsWith('/profile');
+            const isLibraryPage = currentPath.startsWith('/library') || currentPath.startsWith('/wishlist');
+            const isFriendsPage = currentPath.startsWith('/friends');
+            const isProtectedPage = isProfilePage || isLibraryPage || isFriendsPage;
             
+            console.log('[Auth Check] Checking auth status...');
+            console.log('[Auth Check] Current URL:', window.location.href);
+            console.log('[Auth Check] Current path:', currentPath);
+            console.log('[Auth Check] Is protected page:', isProtectedPage);
+            console.log('[Auth Check] Document cookies:', document.cookie);
+            console.log('[Auth Check] Current user before check:', this.currentUser ? this.currentUser.username : 'none');
+            
+            // Preserve current user state before checking
+            const previousUser = this.currentUser;
+            
+            // Always check auth status to refresh session if needed
             const response = await fetch('/api/auth/check', {
-                credentials: 'include',
+                method: 'GET',
+                credentials: 'include', // Important: include cookies for session
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache' // Prevent caching
                 }
             });
             
-            console.log('Auth check response status:', response.status);
-            console.log('Auth check response headers:', response.headers);
+            console.log('[Auth Check] Response status:', response.status);
+            
+            // Only parse JSON if response is OK
+            if (!response.ok) {
+                console.error('[Auth Check] Failed with status:', response.status);
+                // If we had a user before, keep them - don't clear on error
+                // Especially important on protected pages - don't clear user state
+                if (previousUser) {
+                    console.log('[Auth Check] Keeping previous user state due to error');
+                    this.currentUser = previousUser;
+                    this.updateUI();
+                    return;
+                }
+                // If no previous user, show login on home page only
+                // Never show login modal on protected pages
+                if (!isProtectedPage && (currentPath === '/' || currentPath === '/index.html')) {
+                    this.loginScreen.show();
+                    this.loginScreen.resetToInitialState();
+                }
+                if (!isProtectedPage) {
+                    this.showSignInButton();
+                }
+                return;
+            }
             
             const data = await response.json();
             console.log('Auth check response data:', data);
@@ -516,37 +709,106 @@ class GameVaultApp {
                 this.currentUser = data.user;
                 this.updateUI();
                 console.log('User already logged in:', data.user.username);
+                
+                // Update profile links when auth check confirms user
+                if (this.currentUser.username) {
+                    const username = this.currentUser.username;
+                    const navProfileLink = document.querySelector('.nav .nav-btn[href="/profile"]');
+                    if (navProfileLink) {
+                        navProfileLink.href = `/profile/${username}`;
+                    }
+                    const dropdownProfileLink = document.querySelector('.profile-menu-item[href="/profile"]');
+                    if (dropdownProfileLink) {
+                        dropdownProfileLink.href = `/profile/${username}`;
+                    }
+                }
 
                 this.loginScreen.hide();
-                    app.updateFriends();
-    console.log('updateFriends called for', app.currentUser.username);
+                if (this.updateFriends) {
+                    this.updateFriends();
+                    console.log('updateFriends called for', this.currentUser.username);
+                }
             } else {
-                console.log('No active session found');
-
-                if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
-                    console.log('On home page, showing login screen');
+                console.log('[Auth Check] No active session found');
+                
+                // If we have a guest user, preserve it
+                if (previousUser && (previousUser.isGuest === true || previousUser.username === 'Guest')) {
+                    console.log('[Auth Check] Preserving guest state');
+                    this.currentUser = previousUser;
+                    this.updateUI();
+                    return;
+                }
+                
+                // On protected pages (profile, library, wishlist, friends), never clear user state or show login modal
+                // These pages should preserve user state if it exists
+                if (isProtectedPage) {
+                    console.log('[Auth Check] On protected page - preserving user state if exists');
+                    if (previousUser) {
+                        this.currentUser = previousUser;
+                        this.updateUI();
+                        console.log('[Auth Check] Preserved user state on protected page:', previousUser.username);
+                    }
+                    // Don't show login modal on protected pages
+                    return;
+                }
+                
+                // Only clear user state if we're sure there's no session
+                // Don't clear if we had a user before (might be a temporary error)
+                if (!previousUser) {
+                    this.currentUser = null;
+                    
+                    // Only show login on home page, not on other pages
+                    if (currentPath === '/' || currentPath === '/index.html') {
+                        console.log('[Auth Check] On home page, showing login screen');
                     this.loginScreen.show();
                     this.loginScreen.resetToInitialState();
                 }
-
+                    
                 this.showSignInButton();
+                } else {
+                    // Keep previous user if check failed but we had one
+                    // This is important - if we just logged in, don't clear the user state
+                    console.log('[Auth Check] Keeping previous user state - session check returned no user but we had one before');
+                    this.currentUser = previousUser;
+                    this.updateUI();
+                    
+                    // Still update profile links even if session check failed
+                    if (this.currentUser && this.currentUser.username && !this.currentUser.isGuest) {
+                        const username = this.currentUser.username;
+                        const navProfileLink = document.querySelector('.nav .nav-btn[href="/profile"], .nav .nav-btn[href*="/profile"]');
+                        if (navProfileLink) {
+                            navProfileLink.href = `/profile/${username}`;
+                        }
+                        const dropdownProfileLink = document.querySelector('.profile-menu-item[href="/profile"], .profile-menu-item[href*="/profile"]');
+                        if (dropdownProfileLink) {
+                            dropdownProfileLink.href = `/profile/${username}`;
+                        }
+                    }
+                }
             }
         } catch (error) {
-            console.error('Error checking auth status:', error);
-            // Don't reset UI if there's an error - preserve existing state
-            // Only reset if we're on the home page and there's no existing user
-            if ((window.location.pathname === '/' || window.location.pathname === '/index.html') && !this.currentUser) {
+            console.error('[Auth Check] Error checking auth status:', error);
+            const currentPath = window.location.pathname;
+            const isProfilePage = currentPath.startsWith('/profile');
+            const isLibraryPage = currentPath.startsWith('/library') || currentPath.startsWith('/wishlist');
+            const isFriendsPage = currentPath.startsWith('/friends');
+            const isProtectedPage = isProfilePage || isLibraryPage || isFriendsPage;
+            
+            // Preserve existing user state on error
+            if (this.currentUser) {
+                console.log('[Auth Check] Error occurred but preserving current user state');
+                this.updateUI();
+                return;
+            }
+            
+            // Only reset UI if we don't have a current user
+            // Never show login modal on protected pages
+            if (!isProtectedPage && (currentPath === '/' || currentPath === '/index.html')) {
                 this.loginScreen.show();
                 this.loginScreen.resetToInitialState();
             }
-            // Only show sign-in button if we don't have a current user
-            if (!this.currentUser) {
-
-            if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
-                this.loginScreen.show();
-                this.loginScreen.resetToInitialState();
-            }
-
+            
+            if (!isProtectedPage) {
             this.showSignInButton();
             }
         }
@@ -565,17 +827,17 @@ class GameVaultApp {
             const data = await response.json();
             
             if (data.success) {
-                // Clear current user
-                this.currentUser = null;
-                
-                // Reset UI elements
-                this.resetUI();
-                
-                // Show login screen in initial state
-                this.loginScreen.show();
-                this.loginScreen.resetToInitialState();
-                
-                console.log('User logged out successfully');
+        // Clear current user
+        this.currentUser = null;
+        
+        // Reset UI elements
+        this.resetUI();
+        
+        // Show login screen in initial state
+        this.loginScreen.show();
+        this.loginScreen.resetToInitialState();
+        
+        console.log('User logged out successfully');
             } else {
                 console.error('Logout failed:', data.error);
             }
@@ -596,7 +858,6 @@ class GameVaultApp {
     }
 
     handleGuestLogin() {
-
         this.currentUser = {
             username: 'Guest',
             email: null,
@@ -620,17 +881,17 @@ class GameVaultApp {
             },
             achievements: [],
             avatar: null,
+            isGuest: true,
             privacySettings: {
                 profileVisibility: 'public',
                 showEmail: false,
                 showStatistics: true,
                 showFriendsList: true
-            },
-            isGuest: true
+            }
         };
 
         this.loginScreen.hide();
-
+        
         this.updateUI();
         
         // Explicitly ensure Sign In button is visible for guests
@@ -656,7 +917,7 @@ class GameVaultApp {
         if (loginBtnProfile) {
             loginBtnProfile.style.display = 'none';
         }
-
+        
         const profileUsername = document.getElementById('profileUsername');
         if (profileUsername) {
             profileUsername.textContent = 'Username';
@@ -682,6 +943,23 @@ class GameVaultApp {
         const logoutBtn = document.getElementById('logoutBtn');
         const loginBtnProfile = document.getElementById('loginBtnProfile');
         const adminMenuLink = document.getElementById('adminMenuLink');
+        
+        // Update profile links to use username-specific route if available
+        if (this.currentUser.username && !this.currentUser.isGuest) {
+            const username = this.currentUser.username;
+            
+            // Update nav profile link
+            const navProfileLink = document.querySelector('.nav .nav-btn[href="/profile"]');
+            if (navProfileLink) {
+                navProfileLink.href = `/profile/${username}`;
+            }
+            
+            // Update dropdown profile link
+            const dropdownProfileLink = document.querySelector('.profile-menu-item[href="/profile"]');
+            if (dropdownProfileLink) {
+                dropdownProfileLink.href = `/profile/${username}`;
+            }
+        }
         
         if (this.currentUser.isGuest) {
 
@@ -720,7 +998,7 @@ class GameVaultApp {
             profileBio.textContent = this.currentUser.isGuest ? 'Guest users cannot save data permanently' : (this.currentUser.bio || 'No bio set');
             profileBio.className = this.currentUser.bio ? 'detail-value' : 'detail-value empty';
         }
-
+        
         const totalGames = document.getElementById('totalGames');
         if (totalGames) {
             totalGames.textContent = this.currentUser.statistics.totalGamesPlayed;
@@ -832,6 +1110,23 @@ class GameVaultApp {
             userSection.style.display = 'block';
         }
         
+        // Update profile links to use username-specific route
+        if (this.currentUser && this.currentUser.username && !this.currentUser.isGuest) {
+            const username = this.currentUser.username;
+            
+            // Update nav profile link
+            const navProfileLink = document.querySelector('.nav .nav-btn[href="/profile"]');
+            if (navProfileLink) {
+                navProfileLink.href = `/profile/${username}`;
+            }
+            
+            // Update dropdown profile link
+            const dropdownProfileLink = document.querySelector('.profile-menu-item[href="/profile"]');
+            if (dropdownProfileLink) {
+                dropdownProfileLink.href = `/profile/${username}`;
+            }
+        }
+        
         // Show Sign In button for guests, hide for registered users
         if (signInBtnGuest) {
             // Check if user is a guest - check both isGuest flag and username
@@ -897,7 +1192,7 @@ class GameVaultApp {
         
         container.innerHTML = '';
 
-        if (this.currentUser.achievements.length === 0) {
+        if (!this.currentUser.achievements || !Array.isArray(this.currentUser.achievements) || this.currentUser.achievements.length === 0) {
             container.innerHTML = `
                 <div class="empty-state">
                     <i class="fas fa-trophy"></i>
@@ -908,6 +1203,7 @@ class GameVaultApp {
             return;
         }
 
+        if (this.currentUser.achievements && Array.isArray(this.currentUser.achievements)) {
         this.currentUser.achievements.forEach(achievement => {
             const achievementCard = document.createElement('div');
             achievementCard.className = 'achievement-card';
@@ -919,6 +1215,7 @@ class GameVaultApp {
             `;
             container.appendChild(achievementCard);
         });
+    }
     }
 
 async updateFriends() {
@@ -940,56 +1237,27 @@ async updateFriends() {
     }
 }
 
-        fetch(`/api/friends/${this.currentUser.username}`)
-        .then(response => response.json())
-        .then(data => {
-            const container = document.getElementById('friendsList');
-            const friends = data.friends || [];
-            const pendingRequests = data.pendingRequests || [];
+    async viewFriendProfile(friend) {
+        // Get modal elements
+        const modal = document.getElementById('friendProfileModal');
+        const usernameEl = document.getElementById('friendUsername');
+        const modalBody = modal.querySelector('.modal-body');
 
+        if (!modal || !modalBody) {
+            console.error('Friend profile modal not found');
+            return;
+        }
 
-async viewFriendProfile(friend) {
-  // Get modal elements
-  const modal = document.getElementById('friendProfileModal');
-  const usernameEl = document.getElementById('friendUsername');
-  const modalBody = modal.querySelector('.modal-body');
+        // Optional: show more info if available
+        modalBody.innerHTML = `
+            <p>Friend profile will load here.</p>
+            <p>Username: ${friend.username}</p>
+            <p>Friend since: ${friend.acceptedDate || 'N/A'}</p>
+        `;
 
-            const pendingContainer = document.getElementById('pendingRequests');
-            
-            if (pendingRequests.length === 0) {
-                pendingContainer.innerHTML = '<div class="empty-state"><i class="fas fa-clock"></i><h3>No Pending Requests</h3></div>';
-            } else {
-                pendingContainer.innerHTML = '';
-                pendingRequests.forEach(request => {
-                    const requestItem = document.createElement('div');
-                    requestItem.className = 'friend-item';
-                    requestItem.innerHTML = `
-                        <div>
-                            <strong>${request.targetUsername}</strong>
-                            <br>
-                            <small>Sent: ${new Date(request.sentDate).toLocaleDateString()}</small>
-                        </div>
-                        <button class="btn btn-primary" onclick="app.acceptFriendRequest('${request.targetId}')">Accept</button>
-                    `;
-                    pendingContainer.appendChild(requestItem);
-                });
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching friends:', error);
-        });
+        // Show the modal
+        modal.style.display = 'block';
     }
-
-  // Optional: show more info if available
-  modalBody.innerHTML = `
-    <p>Friend profile will load here.</p>
-    <p>Username: ${friend.username}</p>
-    <p>Friend since: ${friend.acceptedDate || 'N/A'}</p>
-  `;
-
-  // Show the modal
-  modal.style.display = 'block';
-}
 
 
     updateLibraries() {
@@ -998,20 +1266,45 @@ async viewFriendProfile(friend) {
             return;
         }
         
-        if (!this.currentUser) {
+        if (!this.currentUser || !this.currentUser.username) {
             container.innerHTML = '<div class="empty-state"><i class="fas fa-book"></i><h3>Login Required</h3><p>Please log in to view your libraries!</p></div>';
             return;
         }
 
-        fetch(`/api/wishlists/${this.currentUser.username}`)
-        .then(response => response.json())
+        console.log('Fetching libraries for user:', this.currentUser.username);
+        
+        fetch(`/api/wishlists/${this.currentUser.username}`, {
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(async response => {
+            console.log('Libraries API response status:', response.status);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Libraries API error response:', errorText);
+                let errorData;
+                try {
+                    errorData = JSON.parse(errorText);
+                } catch (e) {
+                    errorData = { error: errorText || 'Failed to load libraries' };
+                }
+                throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            return response.json();
+        })
         .then(data => {
+            console.log('Libraries API response data:', data);
+            
             const container = document.getElementById('libraryContainer');
             if (!container) {
                 return;
             }
             
-            if (data.success && data.wishlists) {
+            if (data.success && Array.isArray(data.wishlists)) {
                 const libraries = data.wishlists || [];
                 
                 container.innerHTML = '';
@@ -1060,14 +1353,21 @@ async viewFriendProfile(friend) {
                     });
                 }
             } else {
-                container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load libraries. Please try again.</p></div>';
+                console.error('Invalid response format:', data);
+                const errorMsg = data.error || 'Failed to load libraries. Please try again.';
+                container.innerHTML = `<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>${errorMsg}</p></div>`;
             }
         })
         .catch(error => {
             console.error('Error fetching libraries:', error);
+            console.error('Error details:', {
+                message: error.message,
+                stack: error.stack
+            });
             const container = document.getElementById('libraryContainer');
             if (container) {
-                container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load libraries. Please try again.</p></div>';
+                const errorMsg = error.message || 'Failed to load libraries. Please try again.';
+                container.innerHTML = `<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>${errorMsg}</p></div>`;
             }
         });
     }
@@ -1190,13 +1490,38 @@ async viewFriendProfile(friend) {
         document.getElementById('editPreferredPlatforms').value = this.currentUser.gamingPreferences.preferredPlatforms.join(', ');
         document.getElementById('editPlayStyle').value = this.currentUser.gamingPreferences.playStyle;
 
+        // Set current avatar preview
+        const avatarPreview = document.getElementById('avatarPreview');
+        const avatarPreviewPlaceholder = document.getElementById('avatarPreviewPlaceholder');
+        const removeAvatarBtn = document.getElementById('removeAvatarBtn');
+        const editAvatarInput = document.getElementById('editAvatarInput');
+        
+        if (avatarPreview && avatarPreviewPlaceholder) {
+            const currentAvatar = this.currentUser.avatar_path || (document.getElementById('profileAvatarImg')?.src || '');
+            if (currentAvatar && !currentAvatar.includes('ui-avatars.com')) {
+                avatarPreview.src = currentAvatar;
+                avatarPreview.style.display = 'block';
+                avatarPreviewPlaceholder.style.display = 'none';
+                if (removeAvatarBtn) removeAvatarBtn.style.display = 'inline-block';
+            } else {
+                avatarPreview.style.display = 'none';
+                avatarPreviewPlaceholder.style.display = 'flex';
+                if (removeAvatarBtn) removeAvatarBtn.style.display = 'none';
+            }
+        }
+        
+        // Reset file input
+        if (editAvatarInput) {
+            editAvatarInput.value = '';
+        }
+
         const editProfileModal = document.getElementById('editProfileModal');
         if (editProfileModal) {
             editProfileModal.style.display = 'block';
         }
     }
 
-    saveProfile() {
+    async saveProfile() {
         if (!this.currentUser) return;
 
         const bio = document.getElementById('editBio').value;
@@ -1213,22 +1538,84 @@ async viewFriendProfile(friend) {
             }
         };
 
+        // Upload avatar first if a new file is selected
+        const editAvatarInput = document.getElementById('editAvatarInput');
+        const removeAvatarBtn = document.getElementById('removeAvatarBtn');
+
+        // Check if avatar should be removed
+        let shouldRemoveAvatar = false;
+        if (removeAvatarBtn && removeAvatarBtn.style.display === 'inline-block') {
+            const avatarPreview = document.getElementById('avatarPreview');
+            if (avatarPreview && avatarPreview.style.display === 'none') {
+                shouldRemoveAvatar = true;
+            }
+        }
+
+        // Upload avatar first if a new file is selected
+        if (editAvatarInput && editAvatarInput.files && editAvatarInput.files.length > 0) {
+            try {
+                const formData = new FormData();
+                formData.append('avatar', editAvatarInput.files[0]);
+
+                const avatarResponse = await fetch('/api/profile/avatar', {
+                    method: 'POST',
+                    credentials: 'include',
+                    body: formData
+                });
+
+                const avatarData = await avatarResponse.json();
+                
+                if (!avatarResponse.ok || !avatarData.success) {
+                    this.showAlert(avatarData.error || 'Failed to upload avatar', 'Upload Failed', 'error');
+                    return;
+                }
+
+                // Update current user with new avatar path
+                if (avatarData.avatar_path) {
+                    this.currentUser.avatar_path = avatarData.avatar_path;
+                    // Update session if available
+                    if (window.app && window.app.currentUser) {
+                        window.app.currentUser.avatar_path = avatarData.avatar_path;
+                    }
+                }
+            } catch (error) {
+                console.error('Error uploading avatar:', error);
+                this.showAlert('Failed to upload avatar. Please try again.', 'Upload Failed', 'error');
+                return;
+            }
+        }
+
+        // Update profile information
         fetch(`/api/profile/${this.currentUser.username}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
             },
+            credentials: 'include',
             body: JSON.stringify(updates)
         })
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-
                 this.currentUser.bio = bio;
                 this.currentUser.gamingPreferences = updates.gamingPreferences;
                 
+                // Update avatar image on page if it was changed
+                if (this.currentUser.avatar_path) {
+                    const profileAvatarImg = document.getElementById('profileAvatarImg');
+                    if (profileAvatarImg) {
+                        profileAvatarImg.src = this.currentUser.avatar_path;
+                    }
+                }
+                
                 this.closeModal(document.getElementById('editProfileModal'));
                 this.updateUI();
+                this.showAlert('Profile updated successfully!', 'Success', 'success');
+                
+                // Reload page to show updated avatar
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
             } else {
                 this.showAlert(data.error || 'Failed to update profile', 'Update Failed', 'error');
             }
@@ -1538,13 +1925,30 @@ async viewFriendProfile(friend) {
         }
 
         try {
-            const response = await fetch(`/api/wishlists/${this.currentUser.username}/${libraryId}/games/${gameId}`, {
+            // Try to remove by gameId first, then by steamId if gameId doesn't work
+            let response = await fetch(`/api/wishlists/${this.currentUser.username}/${libraryId}/games/${gameId}`, {
                 method: 'DELETE',
                 credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json'
                 }
             });
+
+            // If that fails, try removing by steamId
+            if (!response.ok && gameId) {
+                response = await fetch(`/api/wishlists/${this.currentUser.username}/remove-game`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        wishlistId: libraryId,
+                        gameId: gameId,
+                        steamId: gameId // Try steamId as well
+                    })
+                });
+            }
 
             const data = await response.json();
 
@@ -2282,22 +2686,34 @@ async viewFriendProfile(friend) {
 
     async searchGames(query, page = 1) {
         try {
-
             this.showSearchLoading();
 
             console.log('Searching for:', query);
-            const response = await fetch(`/api/games/search?q=${encodeURIComponent(query)}&page=${page}&pageSize=20`);
+            const response = await fetch(`/api/games/search?q=${encodeURIComponent(query)}&page=${page}&pageSize=20`, {
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
             console.log('Response status:', response.status);
             
             if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Search API error:', errorText);
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             
             const data = await response.json();
             console.log('Search response:', data);
 
-            if (data.success) {
-                this.displaySearchResults(data.games, data.totalResults, data.currentPage, data.totalPages, query);
+            if (data.success && data.games) {
+                this.displaySearchResults(
+                    data.games, 
+                    data.totalResults || data.games.length, 
+                    data.currentPage || page, 
+                    data.totalPages || Math.ceil((data.totalResults || data.games.length) / 20) || 1, 
+                    query
+                );
             } else {
                 this.showSearchError(data.error || 'Failed to search games');
             }
@@ -2417,7 +2833,7 @@ async viewFriendProfile(friend) {
         games.forEach(game => {
             const gameCard = document.createElement('div');
             gameCard.className = 'game-card';
-
+            
             const steamBadge = game.steamOwned ? '<span class="steam-game-badge"><i class="fab fa-steam"></i> Owned on Steam</span>' : '';
             
             gameCard.innerHTML = `
@@ -2506,10 +2922,54 @@ async viewFriendProfile(friend) {
         paginationContainer.appendChild(pagination);
     }
 
-    viewGameDetails(gameId) {
+    async viewGameDetails(gameId) {
+        try {
+            // Show loading state
+            this.showGameDetailsLoading();
+            
+            // Fetch game details from API
+            const response = await fetch(`/api/games/${gameId}`, {
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.success && data.game) {
+                this.showGameDetailsModal(data.game);
+            } else {
+                this.showAlert(data.error || 'Failed to load game details', 'Error', 'error');
+            }
+        } catch (error) {
+            console.error('Error fetching game details:', error);
+            this.showAlert('Error loading game details. Please try again.', 'Error', 'error');
+        }
+    }
 
-        alert(`Viewing details for game ID: ${gameId}`);
-
+    showGameDetailsLoading() {
+        // Create or show loading modal
+        let loadingModal = document.getElementById('gameDetailsLoading');
+        if (!loadingModal) {
+            loadingModal = document.createElement('div');
+            loadingModal.id = 'gameDetailsLoading';
+            loadingModal.className = 'modal';
+            loadingModal.innerHTML = `
+                <div class="modal-content">
+                    <div class="loading-spinner">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>Loading game details...</p>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(loadingModal);
+        }
+        loadingModal.style.display = 'block';
     }
 
     showGameDetailsModal(gameData) {
@@ -3466,7 +3926,7 @@ class SteamIntegration {
                 console.error('Username not found in URL');
                 return;
             }
-
+            
             const response = await fetch(`/api/auth/steam/status/${username}`);
             const status = await response.json();
             
@@ -3475,13 +3935,13 @@ class SteamIntegration {
                 this.steamProfile = status.steam_profile;
                 this.showSteamProfile();
                 this.loadSteamGames();
-
+                
                 const urlParams = new URLSearchParams(window.location.search);
                 if (urlParams.get('steam_auth') === 'success') {
 
                     const newUrl = window.location.pathname + window.location.search.replace(/[?&]steam_auth=success/, '');
                     window.history.replaceState({}, '', newUrl);
-
+                    
                     console.log('Steam auth completed, auto-importing library...');
                     await this.importSteamLibrary();
                 }
@@ -3500,7 +3960,7 @@ class SteamIntegration {
         if (steamProfileSection && steamConnectSection) {
             steamProfileSection.style.display = 'block';
             steamConnectSection.style.display = 'none';
-
+            
             if (this.steamProfile) {
                 const steamAvatar = document.getElementById('steamAvatar');
                 const steamUsername = document.getElementById('steamUsername');
@@ -3535,7 +3995,7 @@ class SteamIntegration {
                 }
                 return;
             }
-
+            
             const currentUrl = window.location.pathname + window.location.search;
             sessionStorage.setItem('preSteamUrl', currentUrl);
             
@@ -3626,7 +4086,7 @@ class SteamIntegration {
     async importSteamLibrary() {
         try {
             console.log('Importing Steam library...');
-
+            
             const username = this.getUsernameFromUrl();
             if (!username) {
                 if (window.app) {
@@ -3650,7 +4110,7 @@ class SteamIntegration {
             
             if (result.success) {
                 const gamesCount = result.gamesCount || 0;
-                alert(`Successfully imported ${gamesCount} games from Steam!`);
+                    alert(`Successfully imported ${gamesCount} games from Steam!`);
 
                 const currentUrl = window.location.href;
                 window.location.href = currentUrl;
@@ -3690,8 +4150,29 @@ class SteamIntegration {
                 return;
             }
             
-            const response = await fetch(`/api/steam/games/${username}`);
+            console.log('[App] Fetching Steam games for:', username);
+            const response = await fetch(`/api/steam/games/${username}`, {
+                credentials: 'include'
+            });
+            
+            console.log('[App] Steam games response status:', response.status);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('[App] Error fetching Steam games:', errorText);
+                let errorData;
+                try {
+                    errorData = JSON.parse(errorText);
+                } catch (e) {
+                    errorData = { error: errorText || 'Failed to fetch Steam games' };
+                }
+                console.error('[App] Steam games error:', errorData.error || errorData.message);
+                // Don't throw - just log the error and continue
+                return;
+            }
+            
             const result = await response.json();
+            console.log('[App] Steam games result:', result);
             
             if (result.success) {
 
@@ -3740,7 +4221,7 @@ class SteamIntegration {
 
                 const ratings = result.reviews.filter(review => review.rating > 0).map(review => review.rating);
                 const avgRating = ratings.length > 0 ? (ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length).toFixed(1) : 0;
-
+                
                 const avgRatingElement = document.getElementById('avgRating');
                 if (avgRatingElement) {
                     avgRatingElement.textContent = avgRating;
@@ -3781,16 +4262,16 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM Content Loaded - Initializing GameVaultApp');
     app = new GameVaultApp();
     window.app = app;
-
+    
     steamIntegration = new SteamIntegration();
     window.steamIntegration = steamIntegration;
-
+    
     setTimeout(() => {
         console.log('Testing search elements after initialization:');
         console.log('Search button:', document.getElementById("gameSearchBtn"));
         console.log('Search input:', document.getElementById("gameSearchInput"));
         console.log('Global functions available:', typeof window.performSearch, typeof window.testSearch);
-
+        
         if (steamIntegration) {
             steamIntegration.initializeSteamIntegration();
         }

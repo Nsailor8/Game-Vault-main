@@ -8,30 +8,24 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="app-container">
-        
+    <div class="container">
         <%- include('partials/header', { activePage: 'search', homeLink: '/' }) %>
-
         
         <main class="main-content">
             <!-- Search Results Section -->
-            <section class="section">
+            <section class="content-section active">
                 <div class="section-header">
-                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                        <div>
-                            <h2 id="searchTitle">🔍 Search Results</h2>
-                            <p id="searchSubtitle">Loading search results...</p>
-                        </div>
-                        <div style="display: flex; gap: 10px; align-items: center;">
-                            <button class="btn btn-secondary" onclick="showAdvancedSearch()" id="advancedSearchBtn">
-                                <i class="fas fa-sliders-h"></i> Filters
-                            </button>
-                            <button class="btn btn-secondary" onclick="goBack()">
-                                <i class="fas fa-arrow-left"></i> Back
-                            </button>
-                        </div>
+                    <h2 id="searchTitle">🔍 Search Results</h2>
+                    <div class="library-actions">
+                        <button class="btn btn-secondary" onclick="showAdvancedSearch()" id="advancedSearchBtn">
+                            <i class="fas fa-sliders-h"></i> Filters
+                        </button>
+                        <button class="btn btn-secondary" onclick="goBack()">
+                            <i class="fas fa-arrow-left"></i> Back
+                        </button>
                     </div>
                 </div>
+                <p id="searchSubtitle" style="margin-top: 10px; margin-bottom: 20px; color: #666;">Loading search results...</p>
 
                 <!-- Advanced Search / Filters Panel -->
                 <div id="advancedSearchPanel" class="advanced-search-panel" style="display: none; margin-bottom: 20px; padding: 20px; background: #f8f9ff; border-radius: 15px; border: 1px solid rgba(102, 126, 234, 0.2);">
@@ -195,15 +189,28 @@
                 }, 500);
             }
 
-            // Load search history
-            loadSearchHistory();
+            // Load search history (don't let errors block search)
+            try {
+                loadSearchHistory();
+            } catch (error) {
+                console.error('Error in loadSearchHistory (non-fatal):', error);
+            }
 
-        document.addEventListener('DOMContentLoaded', function() {
+            // Perform search if query exists
             if (query) {
-                // Add to search history
-                addToSearchHistory(query);
+                console.log('🔍 [CLIENT] Query found in URL:', query);
+                // Add to search history (don't let errors block search)
+                try {
+                    addToSearchHistory(query);
+                } catch (error) {
+                    console.error('Error in addToSearchHistory (non-fatal):', error);
+                }
+                
+                // Perform the search - this is the critical part
+                console.log('🔍 [CLIENT] Calling performSearch now...');
                 performSearch(query, page);
             } else {
+                console.log('🔍 [CLIENT] No query found, showing error');
                 showError('No search query provided');
             }
         });
@@ -211,9 +218,13 @@
         async function performSearch(searchQuery, pageNum = 1) {
             try {
                 showLoading();
-                console.log('Searching for:', searchQuery);
+                console.log('🔍 [CLIENT] Starting search for:', searchQuery);
+                console.log('🔍 [CLIENT] Making API call to: /api/games/search?q=' + encodeURIComponent(searchQuery));
 
-                const response = await fetch(`/api/games/search?q=${encodeURIComponent(searchQuery)}&page=${pageNum}&pageSize=20`, {
+                const apiUrl = `/api/games/search?q=${encodeURIComponent(searchQuery)}&page=${pageNum}&pageSize=20`;
+                console.log('🔍 [CLIENT] Full URL:', apiUrl);
+                
+                const response = await fetch(apiUrl, {
                     credentials: 'include', // Important: include session cookies
                     headers: {
                         'Content-Type': 'application/json'
@@ -222,19 +233,28 @@
                 console.log('Response status:', response.status);
                 
                 if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Search API error:', errorText);
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
                 const data = await response.json();
                 console.log('Search response:', data);
+                console.log('Search success:', data.success);
+                console.log('Games count:', data.games?.length || 0);
+                console.log('Error:', data.error);
 
-                if (data.success) {
-                    displaySearchResults(data.games, data.totalResults, data.currentPage, data.totalPages, searchQuery);
+                if (data.success && data.games && Array.isArray(data.games)) {
+                    displaySearchResults(data.games, data.totalResults || data.games.length, data.currentPage || pageNum, data.totalPages || 1, searchQuery);
                     if (data.isMockData) {
                         showMockDataNotice();
                     }
                 } else {
-                    showError(data.error || 'Failed to search games');
+                    // Handle error from API
+                    const errorMessage = data.error || 'Failed to search games';
+                    console.error('Search failed:', errorMessage);
+                    console.error('Full response:', data);
+                    showError(errorMessage);
                 }
             } catch (error) {
                 console.error('Error searching games:', error);
@@ -339,13 +359,19 @@
         }
 
         function viewGameDetails(gameId) {
-            alert(`Viewing details for game ID: ${gameId}`);
-
+            if (window.app && window.app.viewGameDetails) {
+                window.app.viewGameDetails(gameId);
+            } else {
+                console.error('App not initialized or viewGameDetails not available');
+            }
         }
 
         function addToWishlist(gameId, gameName) {
-            alert(`Added "${gameName}" to wishlist!`);
-
+            if (window.app && window.app.handleAddToLibrary) {
+                window.app.handleAddToLibrary(gameId, gameName);
+            } else {
+                console.error('App not initialized or handleAddToLibrary not available');
+            }
         }
 
         function retrySearch() {
@@ -557,6 +583,19 @@
                 <div class="game-name-simple">
                     <h3 class="game-title-simple">${escapedName}</h3>
                 </div>
+                <div class="game-card-actions" style="padding: 10px; display: flex; gap: 8px; justify-content: center;">
+                    <button class="btn btn-primary" onclick="event.stopPropagation(); viewGameDetails(${game.id || game.appid || 0})">
+                        <i class="fas fa-info-circle"></i> View Details
+                    </button>
+                    ${game.steamOwned ? 
+                        `<a href="steam://run/${game.id || game.appid || 0}" class="btn btn-steam" onclick="event.stopPropagation();">
+                            <i class="fab fa-steam"></i> Play on Steam
+                        </a>` : 
+                        `<button class="btn btn-secondary" onclick="event.stopPropagation(); addToWishlist(${game.id || game.appid || 0}, '${escapedName.replace(/'/g, "\\'")}')">
+                            <i class="fas fa-book"></i> Add to Library
+                        </button>`
+                    }
+                </div>
             `;
             
             return gameCard;
@@ -586,21 +625,34 @@
         }
 
         function loadSearchHistory() {
-            const history = JSON.parse(localStorage.getItem('gameVaultSearchHistory') || '[]');
-            const container = document.getElementById('searchHistory');
-            const historyContainer = document.getElementById('searchHistoryContainer');
-            
-            if (history.length === 0) {
-                historyContainer.style.display = 'none';
-                return;
+            try {
+                const history = JSON.parse(localStorage.getItem('gameVaultSearchHistory') || '[]');
+                const container = document.getElementById('searchHistory');
+                const historyContainer = document.getElementById('searchHistoryContainer');
+                
+                // Check if elements exist before using them
+                if (!historyContainer) {
+                    console.log('Search history container not found, skipping...');
+                    return;
+                }
+                
+                if (history.length === 0) {
+                    historyContainer.style.display = 'none';
+                    return;
+                }
+                
+                historyContainer.style.display = 'block';
+                if (container) {
+                    container.innerHTML = history.map(item => `
+                        <button class="history-item btn btn-sm btn-secondary" onclick="searchHistoryItem('${item.replace(/'/g, "\\'")}')">
+                            <i class="fas fa-history"></i> ${item}
+                        </button>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Error loading search history:', error);
+                // Don't block search if history fails
             }
-            
-            historyContainer.style.display = 'block';
-            container.innerHTML = history.map(item => `
-                <button class="history-item btn btn-sm btn-secondary" onclick="searchHistoryItem('${item.replace(/'/g, "\\'")}')">
-                    <i class="fas fa-history"></i> ${item}
-                </button>
-            `).join('');
         }
 
         function clearSearchHistory() {

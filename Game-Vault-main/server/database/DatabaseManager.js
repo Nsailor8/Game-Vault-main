@@ -126,6 +126,50 @@ class DatabaseManager {
       } else if (gameIdResults.length > 0 && gameIdResults[0].is_nullable === 'YES') {
         console.log('✅ "gameId" column is already nullable in wishlist_games table');
       }
+
+      // Check if 'avatar_path' column exists in users table
+      const [avatarResults] = await sequelize.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'avatar_path';
+      `);
+      
+      if (avatarResults.length === 0) {
+        console.log('🔄 Adding "avatar_path" column to users table...');
+        try {
+          await sequelize.query(`
+            ALTER TABLE users 
+            ADD COLUMN avatar_path VARCHAR(255) DEFAULT NULL;
+          `);
+          console.log('✅ Successfully added "avatar_path" column to users table');
+        } catch (migrationError) {
+          console.error('❌ Error adding "avatar_path" column:', migrationError.message);
+        }
+      } else {
+        console.log('✅ "avatar_path" column already exists in users table');
+      }
+
+      // Check if 'profile_picture_path' column exists in users table
+      const [profilePicResults] = await sequelize.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'profile_picture_path';
+      `);
+      
+      if (profilePicResults.length === 0) {
+        console.log('🔄 Adding "profile_picture_path" column to users table...');
+        try {
+          await sequelize.query(`
+            ALTER TABLE users 
+            ADD COLUMN profile_picture_path VARCHAR(255) DEFAULT '';
+          `);
+          console.log('✅ Successfully added "profile_picture_path" column to users table');
+        } catch (migrationError) {
+          console.error('❌ Error adding "profile_picture_path" column:', migrationError.message);
+        }
+      } else {
+        console.log('✅ "profile_picture_path" column already exists in users table');
+      }
     } catch (error) {
       console.error('❌ Error running migrations:', error);
       // Don't throw - allow server to continue, but log the error
@@ -206,13 +250,99 @@ class DatabaseManager {
       // Include password_hash for authentication purposes
       // Use raw query or explicitly include password_hash in attributes
       // Note: avatar_path may not exist yet, so we handle it gracefully
+      // Query with explicit attributes to ensure user_id is included
       const user = await User.findOne({ 
         where: { username },
-        attributes: { 
-          exclude: [] // Don't exclude anything - we need password_hash
-        },
+        attributes: [
+          'user_id', 'username', 'email', 'password_hash', 'join_date', 
+          'is_active', 'is_admin', 'last_login', 'bio', 
+          'gaming_preferences', 'statistics', 
+          'steam_id', 'steam_profile', 'steam_linked_at', 'steam_games', 'steam_last_sync',
+          'avatar_path', 'profile_picture_path'
+        ],
         raw: false // Return Sequelize instance, not plain object
       });
+      
+      // Ensure user_id is accessible - explicitly set it in multiple places
+      if (user) {
+        try {
+          // Try to get user_id from the instance
+          let userId = null;
+          
+          // Method 1: getDataValue
+          if (user.getDataValue) {
+            try {
+              userId = user.getDataValue('user_id');
+            } catch (e) {
+              // Ignore
+            }
+          }
+          
+          // Method 2: dataValues
+          if (!userId && user.dataValues && user.dataValues.user_id) {
+            userId = user.dataValues.user_id;
+          }
+          
+          // Method 3: Primary key attribute
+          if (!userId) {
+            try {
+              // Sequelize stores primary key in a special way
+              const pk = user[User.primaryKeyAttribute] || user._modelOptions?.primaryKeyAttribute;
+              if (pk && user[pk]) {
+                userId = user[pk];
+              }
+            } catch (e) {
+              // Ignore
+            }
+          }
+          
+          // If we found user_id, ensure it's accessible everywhere
+          if (userId) {
+            if (user.dataValues) {
+              user.dataValues.user_id = userId;
+            }
+            user.user_id = userId;
+            // Also set as id for compatibility
+            user.id = userId;
+          } else {
+            // Fallback: Use raw query to get user_id directly from database
+            console.warn(`⚠️ Could not extract user_id from Sequelize instance, trying raw query...`);
+            try {
+              const { QueryTypes } = require('sequelize');
+              const results = await sequelize.query(
+                `SELECT user_id FROM users WHERE username = :username LIMIT 1`,
+                {
+                  replacements: { username },
+                  type: QueryTypes.SELECT
+                }
+              );
+              
+              // QueryTypes.SELECT returns an array of objects directly
+              if (results && Array.isArray(results) && results.length > 0) {
+                const firstRow = results[0];
+                if (firstRow && firstRow.user_id) {
+                  userId = firstRow.user_id;
+                  // Set it on the user object
+                  if (user.dataValues) {
+                    user.dataValues.user_id = userId;
+                  }
+                  user.user_id = userId;
+                  user.id = userId;
+                  console.log(`✅ Successfully retrieved user_id via raw query: ${userId}`);
+                } else {
+                  console.error(`❌ Raw query returned row but no user_id field. Row:`, firstRow);
+                }
+              } else {
+                console.error(`❌ Raw query returned no results for username: ${username}`);
+              }
+            } catch (rawQueryError) {
+              console.error(`❌ Raw query error:`, rawQueryError.message, rawQueryError.stack);
+            }
+          }
+        } catch (e) {
+          console.warn('Error ensuring user_id is accessible:', e.message);
+        }
+      }
       
       if (user) {
         // Check if avatar_path column exists by trying to access it
@@ -545,32 +675,29 @@ class DatabaseManager {
 
   async addGameToWishlist(wishlistId, gameData) {
     try {
-      // Check if game exists in local games table
-      let localGameId = null;
-      if (gameData.gameId) {
-        const localGame = await Game.findByPk(gameData.gameId);
-        if (localGame) {
-          localGameId = gameData.gameId;
-        }
-      }
+      // Only use Steam games - treat gameId as Steam ID
+      // gameId from Steam API is the Steam app ID
+      const steamId = gameData.gameId || gameData.steamId || null;
       
-      // If gameId looks like a Steam ID (large number) and game doesn't exist locally,
-      // treat it as a Steam ID
-      const steamId = (!localGameId && gameData.gameId && gameData.gameId > 10000) 
-        ? gameData.gameId 
-        : gameData.steamId || null;
+      // Don't check local games table - all games are Steam games
+      // gameId will be null since we're not using local games
+      const localGameId = null;
+      
+      if (!steamId) {
+        throw new Error('Steam ID is required');
+      }
       
       const wishlistGame = await WishlistGame.create({
         wishlistId: wishlistId,
-        gameId: localGameId,  // Can be null if game doesn't exist locally
-        steamId: steamId,  // Store Steam ID separately
-        gameTitle: gameData.title,
-        platform: gameData.platform,
-        priority: gameData.priority,
-        notes: gameData.notes
+        gameId: localGameId,  // Always null - we only use Steam games
+        steamId: steamId,  // Store Steam ID (app ID)
+        gameTitle: gameData.title || gameData.name || 'Unknown Game',
+        platform: gameData.platform || 'PC',
+        priority: gameData.priority || 'medium',
+        notes: gameData.notes || ''
       });
       
-      console.log(`Game ${gameData.title} added to library (gameId: ${localGameId || 'N/A'}, steamId: ${steamId || 'N/A'})`);
+      console.log(`Game ${gameData.title || gameData.name} added to library (steamId: ${steamId})`);
       return wishlistGame;
     } catch (error) {
       console.error('Error adding game to library:', error);
