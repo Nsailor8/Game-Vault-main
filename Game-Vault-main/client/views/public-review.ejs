@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+  <%- include('partials/head', { pageTitle: review ? `${review.gameTitle} Review` : 'Review Not Available' }) %>
+<body>
+  <%- include('partials/header', { activePage: 'reviews' }) %>
+
+  <div class="container">
+    <main class="main-content public-review">
+      <% if (error) { %>
+        <div class="reviews-empty" style="display: flex;">
+          <div class="empty-illustration"><i class="fas fa-exclamation-triangle"></i></div>
+          <h3>Review unavailable</h3>
+          <p><%= error %></p>
+          <a href="/reviews" class="btn btn-primary"><i class="fas fa-arrow-left"></i> Back to Reviews</a>
+        </div>
+      <% } else if (review) { %>
+        <section class="review-highlight">
+          <header class="section-header" style="margin-bottom: 20px;">
+            <div>
+              <h2><%= review.gameTitle %></h2>
+              <p class="section-subtitle">A community review shared from Game Vault</p>
+            </div>
+            <div class="section-actions">
+              <a href="/reviews" class="btn btn-secondary btn-outline"><i class="fas fa-arrow-left"></i> Explore Reviews</a>
+            </div>
+          </header>
+
+          <article class="review-card">
+            <header class="review-card-header">
+              <div>
+                <h3 class="review-game-title"><%= review.gameTitle %></h3>
+                <div class="review-rating">
+                  <span class="rating-stars"><%= '★'.repeat(review.rating) + '☆'.repeat(5 - review.rating) %></span>
+                  <span class="rating-number"><%= review.rating %>/5</span>
+                </div>
+              </div>
+              <div class="review-card-actions">
+                <span class="filter-chip"><i class="fas fa-user"></i> <%= review.author %></span>
+              </div>
+            </header>
+            <div class="review-text"><%= review.reviewText %></div>
+            <% if (review.tags && review.tags.length) { %>
+              <div class="review-tags">
+                <% review.tags.forEach(tag => { %>
+                  <span class="tag-chip">#<%= tag %></span>
+                <% }) %>
+              </div>
+            <% } %>
+            <div class="review-meta">
+              <span><i class="far fa-calendar"></i> Published <%= new Date(review.createdAt).toLocaleDateString() %></span>
+              <span><i class="fas fa-thumbs-up"></i> <%= review.helpfulVotes %> helpful</span>
+            </div>
+          </article>
+
+          <div class="public-review-footer">
+            <p>Want to keep track of your own experiences? Join Game Vault and start publishing reviews.</p>
+            <a href="/" class="btn btn-primary"><i class="fas fa-play"></i> Launch Game Vault</a>
+          </div>
+        </section>
+      <% } else { %>
+        <div class="reviews-empty" style="display: flex;">
+          <div class="empty-illustration"><i class="fas fa-exclamation-circle"></i></div>
+          <h3>Review unavailable</h3>
+          <p>This review may have been removed or set to private.</p>
+          <a href="/reviews" class="btn btn-primary"><i class="fas fa-arrow-left"></i> Back to Reviews</a>
+        </div>
+      <% } %>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

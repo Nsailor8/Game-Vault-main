@@ -7,12 +7,14 @@ const Wishlist = require('./Wishlist');
 const WishlistGame = require('./WishlistGame');
 const Friendship = require('./Friendship');
 const Achievement = require('./Achievement');
+const ReviewHelpfulVote = require('./ReviewHelpfulVote');
 
 const setupAssociations = () => {
 
   User.hasMany(Review, { foreignKey: 'userId', as: 'reviews' });
   User.hasMany(Wishlist, { foreignKey: 'userId', as: 'wishlists' });
   User.hasMany(Achievement, { foreignKey: 'userId', as: 'achievements' });
+  User.hasMany(ReviewHelpfulVote, { foreignKey: 'userId', as: 'reviewHelpfulVotes', onDelete: 'CASCADE' });
 
   User.belongsToMany(User, {
     through: Friendship,
@@ -28,6 +30,10 @@ const setupAssociations = () => {
   // Review associations
   Review.belongsTo(User, { foreignKey: 'userId', as: 'user' });
   Review.belongsTo(Game, { foreignKey: 'gameId', as: 'game' });
+  Review.hasMany(ReviewHelpfulVote, { foreignKey: 'reviewId', as: 'helpfulVotesRecords', onDelete: 'CASCADE' });
+
+  ReviewHelpfulVote.belongsTo(Review, { foreignKey: 'reviewId', as: 'review' });
+  ReviewHelpfulVote.belongsTo(User, { foreignKey: 'userId', as: 'voter' });
 
   Game.hasMany(Review, { foreignKey: 'gameId', as: 'reviews' });
   Game.belongsToMany(Wishlist, { 
@@ -71,5 +77,6 @@ module.exports = {
   WishlistGame,
   Friendship,
   Achievement,
+  ReviewHelpfulVote,
   syncDatabase
 };
