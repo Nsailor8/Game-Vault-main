@@ -77,6 +77,22 @@ class GameVaultApp {
     constructor() {
         this.loginScreen = new LoginScreen();
         this.currentUser = null;
+        this.reviewState = {
+            allReviews: [],
+            filteredReviews: [],
+            filters: {
+                search: '',
+                rating: 'all',
+                visibility: 'all',
+                tags: [],
+                sort: 'newest'
+            },
+            page: 1,
+            pageSize: 6,
+            totalPages: 1,
+            initialized: false,
+            loading: false
+        };
         this.init();
     }
 
@@ -344,6 +360,8 @@ class GameVaultApp {
                 }
             });
         }
+
+        this.initializeReviewsPage();
     }
 
     setupSearchListeners() {
@@ -655,7 +673,8 @@ class GameVaultApp {
             const isProfilePage = currentPath.startsWith('/profile');
             const isLibraryPage = currentPath.startsWith('/library') || currentPath.startsWith('/wishlist');
             const isFriendsPage = currentPath.startsWith('/friends');
-            const isProtectedPage = isProfilePage || isLibraryPage || isFriendsPage;
+            const isReviewsPage = currentPath.startsWith('/reviews');
+            const isProtectedPage = isProfilePage || isLibraryPage || isFriendsPage || isReviewsPage;
             
             console.log('[Auth Check] Checking auth status...');
             console.log('[Auth Check] Current URL:', window.location.href);
@@ -2065,10 +2084,13 @@ async updateFriends() {
                     // Populate the edit form
                     document.getElementById('editReviewId').value = review.id;
                     document.getElementById('editGameTitle').value = review.gameTitle;
+                    document.getElementById('editGameTitle').dataset.appid = review.gameId || '';
                     document.getElementById('editRating').value = review.rating;
                     document.getElementById('editReviewText').value = review.reviewText;
                     document.getElementById('editTags').value = review.tags ? review.tags.join(', ') : '';
                     document.getElementById('editReviewPublic').checked = review.isPublic;
+                    
+                    this.loadPublicReviewsForGame(review.gameTitle);
                     
                     // Update star rating display
                     this.updateStarRating('editStarRating', review.rating);
@@ -3909,6 +3931,805 @@ async updateFriends() {
         if (suggestionsContainer) {
             suggestionsContainer.style.display = 'none';
         }
+    }
+
+    initializeReviewsPage() {
+        const section = document.getElementById('reviewsSection');
+        if (!section) {
+            return;
+        }
+
+        if (this.reviewState.initialized) {
+            return;
+        }
+
+        this.reviewState.initialized = true;
+        this.reviewState.page = 1;
+        this.reviewState.filters = {
+            search: '',
+            rating: 'all',
+            visibility: 'all',
+            tags: [],
+            sort: 'newest'
+        };
+
+        const searchInput = document.getElementById('reviewsSearch');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                this.reviewState.filters.search = e.target.value.trim();
+                this.reviewState.page = 1;
+                this.applyReviewFilters();
+            });
+        }
+
+        const sortSelect = document.getElementById('reviewsSort');
+        if (sortSelect) {
+            sortSelect.addEventListener('change', (e) => {
+                this.reviewState.filters.sort = e.target.value;
+                this.reviewState.page = 1;
+                this.applyReviewFilters();
+            });
+        }
+
+        const ratingFilter = document.getElementById('reviewsRatingFilter');
+        if (ratingFilter) {
+            ratingFilter.addEventListener('change', (e) => {
+                this.reviewState.filters.rating = e.target.value;
+                this.reviewState.page = 1;
+                this.applyReviewFilters();
+            });
+        }
+
+        const visibilityFilter = document.getElementById('reviewsVisibilityFilter');
+        if (visibilityFilter) {
+            visibilityFilter.addEventListener('change', (e) => {
+                this.reviewState.filters.visibility = e.target.value;
+                this.reviewState.page = 1;
+                this.applyReviewFilters();
+            });
+        }
+
+        const tagInput = document.getElementById('reviewsTagFilter');
+        if (tagInput) {
+            tagInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const value = e.target.value.trim();
+                    if (value) {
+                        const normalized = value.toLowerCase();
+                        if (!this.reviewState.filters.tags.includes(normalized)) {
+                            this.reviewState.filters.tags.push(normalized);
+                            this.reviewState.page = 1;
+                            this.applyReviewFilters();
+                        }
+                        e.target.value = '';
+                    }
+                }
+            });
+        }
+
+        const resetFiltersBtn = document.getElementById('reviewsResetFilters');
+        if (resetFiltersBtn) {
+            resetFiltersBtn.addEventListener('click', () => {
+                this.resetReviewFilters();
+            });
+        }
+
+        const publicClearBtn = document.getElementById('publicReviewsClear');
+        if (publicClearBtn) {
+            publicClearBtn.addEventListener('click', () => {
+                this.clearPublicReviewPreview();
+            });
+        }
+
+        const prevPageBtn = document.getElementById('reviewsPrevPage');
+        if (prevPageBtn) {
+            prevPageBtn.addEventListener('click', () => {
+                if (this.reviewState.page > 1) {
+                    this.reviewState.page -= 1;
+                    this.renderReviewPagination();
+                    this.renderReviewList();
+                }
+            });
+        }
+
+        const nextPageBtn = document.getElementById('reviewsNextPage');
+        if (nextPageBtn) {
+            nextPageBtn.addEventListener('click', () => {
+                if (this.reviewState.page < this.reviewState.totalPages) {
+                    this.reviewState.page += 1;
+                    this.renderReviewPagination();
+                    this.renderReviewList();
+                }
+            });
+        }
+
+        this.setupReviewAutocomplete('reviewGameTitle', 'addReviewGameSuggestions');
+        this.setupReviewAutocomplete('editGameTitle', 'editReviewGameSuggestions');
+
+        this.updateReviews();
+    }
+
+    resetReviewFilters() {
+        this.reviewState.filters = {
+            search: '',
+            rating: 'all',
+            visibility: 'all',
+            tags: [],
+            sort: 'newest'
+        };
+
+        const searchInput = document.getElementById('reviewsSearch');
+        if (searchInput) searchInput.value = '';
+        const sortSelect = document.getElementById('reviewsSort');
+        if (sortSelect) sortSelect.value = 'newest';
+        const ratingFilter = document.getElementById('reviewsRatingFilter');
+        if (ratingFilter) ratingFilter.value = 'all';
+        const visibilityFilter = document.getElementById('reviewsVisibilityFilter');
+        if (visibilityFilter) visibilityFilter.value = 'all';
+        const tagInput = document.getElementById('reviewsTagFilter');
+        if (tagInput) tagInput.value = '';
+
+        this.reviewState.page = 1;
+        this.applyReviewFilters();
+    }
+
+    setReviewsLoading(isLoading) {
+        this.reviewState.loading = isLoading;
+        const loadingState = document.getElementById('reviewsLoadingState');
+        const list = document.getElementById('reviewsList');
+        const emptyState = document.getElementById('reviewsEmptyState');
+        if (loadingState) {
+            loadingState.style.display = isLoading ? 'flex' : 'none';
+        }
+        if (list && isLoading) {
+            list.innerHTML = '';
+        }
+        if (emptyState && isLoading) {
+            emptyState.style.display = 'none';
+        }
+    }
+
+    applyReviewFilters() {
+        if (!this.reviewState.initialized) {
+            return;
+        }
+
+        const { search, rating, visibility, tags, sort } = this.reviewState.filters;
+        const searchLower = search.toLowerCase();
+        let filtered = Array.from(this.reviewState.allReviews || []);
+
+        if (search) {
+            filtered = filtered.filter(review =>
+                (review.gameTitle && review.gameTitle.toLowerCase().includes(searchLower)) ||
+                (review.reviewText && review.reviewText.toLowerCase().includes(searchLower))
+            );
+        }
+
+        if (rating !== 'all') {
+            const minRating = parseInt(rating, 10);
+            filtered = filtered.filter(review => review.rating >= minRating);
+        }
+
+        if (visibility === 'public') {
+            filtered = filtered.filter(review => review.isPublic);
+        } else if (visibility === 'private') {
+            filtered = filtered.filter(review => !review.isPublic);
+        }
+
+        if (tags && tags.length > 0) {
+            filtered = filtered.filter(review => {
+                if (!review.tags || review.tags.length === 0) return false;
+                const reviewTags = review.tags.map(tag => tag.toLowerCase());
+                return tags.every(tag => reviewTags.includes(tag));
+            });
+        }
+
+        switch (sort) {
+            case 'oldest':
+                filtered.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+                break;
+            case 'rating-desc':
+                filtered.sort((a, b) => b.rating - a.rating);
+                break;
+            case 'rating-asc':
+                filtered.sort((a, b) => a.rating - b.rating);
+                break;
+            case 'helpful':
+                filtered.sort((a, b) => (b.helpfulVotes || 0) - (a.helpfulVotes || 0));
+                break;
+            case 'alpha':
+                filtered.sort((a, b) => (a.gameTitle || '').localeCompare(b.gameTitle || ''));
+                break;
+            case 'newest':
+            default:
+                filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                break;
+        }
+
+        this.reviewState.filteredReviews = filtered;
+        this.reviewState.totalPages = Math.max(1, Math.ceil(filtered.length / this.reviewState.pageSize));
+
+        if (this.reviewState.page > this.reviewState.totalPages) {
+            this.reviewState.page = this.reviewState.totalPages;
+        }
+        if (this.reviewState.page < 1) {
+            this.reviewState.page = 1;
+        }
+
+        this.renderActiveFilterChips();
+        this.renderReviewPagination();
+        this.renderReviewList();
+        this.updateReviewStats();
+    }
+
+    renderReviewList() {
+        const list = document.getElementById('reviewsList');
+        const emptyState = document.getElementById('reviewsEmptyState');
+        const pagination = document.getElementById('reviewsPagination');
+        const loadingState = document.getElementById('reviewsLoadingState');
+
+        if (!list) {
+            return;
+        }
+
+        if (loadingState) {
+            loadingState.style.display = this.reviewState.loading ? 'flex' : 'none';
+        }
+
+        if (this.reviewState.loading) {
+            return;
+        }
+
+        list.innerHTML = '';
+
+        const filtered = this.reviewState.filteredReviews || [];
+        if (filtered.length === 0) {
+            if (emptyState) emptyState.style.display = 'flex';
+            if (pagination) pagination.style.display = 'none';
+            return;
+        }
+
+        if (emptyState) emptyState.style.display = 'none';
+
+        const startIndex = (this.reviewState.page - 1) * this.reviewState.pageSize;
+        const endIndex = startIndex + this.reviewState.pageSize;
+        const reviewsForPage = filtered.slice(startIndex, endIndex);
+
+        reviewsForPage.forEach(review => {
+            const card = document.createElement('article');
+            card.className = 'review-card';
+            card.innerHTML = this.buildReviewCard(review);
+            list.appendChild(card);
+        });
+    }
+
+    buildReviewCard(review) {
+        const ratingStars = '★'.repeat(review.rating) + '☆'.repeat(5 - review.rating);
+        const tags = review.tags && review.tags.length > 0
+            ? `<div class="review-tags">${review.tags.map(tag => `<span class="tag-chip">${this.escapeHtml(tag)}</span>`).join('')}</div>`
+            : '';
+        const visibilityBadge = review.isPublic ? '' : '<span class="filter-chip"><i class="fas fa-lock"></i> Private</span>';
+        const helpfulLabel = review.helpfulVotes === 1 ? 'helpful vote' : 'helpful votes';
+        const helpfulActive = review.userHasVoted ? ' active' : '';
+        const helpfulText = (review.helpfulVotes || 0) > 0 ? `${review.helpfulVotes} ${helpfulLabel}` : 'Be the first to mark helpful';
+
+        return `
+            <header class="review-card-header">
+                <div>
+                    <h3 class="review-game-title">${this.escapeHtml(review.gameTitle)}</h3>
+                    <div class="review-rating">
+                        <span class="rating-stars">${ratingStars}</span>
+                        <span class="rating-number">${review.rating}/5</span>
+                    </div>
+                </div>
+                <div class="review-card-actions">
+                    ${visibilityBadge}
+                </div>
+            </header>
+            <div class="review-text">${this.escapeHtml(review.reviewText)}</div>
+            ${tags}
+            <div class="review-meta">
+                <span><i class="far fa-calendar"></i> ${this.formatDate(review.createdAt)}</span>
+                <span><i class="far fa-clock"></i> Updated ${this.formatRelativeDate(review.updatedAt)}</span>
+            </div>
+            <footer class="review-card-actions">
+                <div class="review-action-group">
+                    <button class="btn-icon${helpfulActive}" onclick="app.toggleHelpfulVote(${review.id}, this)">
+                        <i class="fas fa-thumbs-up"></i> ${this.escapeHtml(helpfulText)}
+                    </button>
+                </div>
+                <div class="review-footer-buttons">
+                    <button class="btn-icon secondary" onclick="app.copyReviewLink(${review.id})">
+                        <i class="fas fa-share-alt"></i> Share
+                    </button>
+                    <button class="btn-icon" onclick="app.editReview(${review.id})">
+                        <i class="fas fa-edit"></i> Edit
+                    </button>
+                    <button class="btn-icon danger" onclick="app.deleteReview(${review.id})">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+            </footer>
+        `;
+    }
+
+    renderActiveFilterChips() {
+        const container = document.getElementById('reviewsActiveFilters');
+        const tagChipRow = document.getElementById('activeTagChips');
+        if (!container) {
+            return;
+        }
+
+        const chips = [];
+        const { search, rating, visibility, tags } = this.reviewState.filters;
+
+        if (search) {
+            chips.push(`<span class="filter-chip">Search: ${this.escapeHtml(search)} <i class="fas fa-times remove-chip" onclick="app.removeReviewFilter('search')"></i></span>`);
+        }
+
+        if (rating !== 'all') {
+            chips.push(`<span class="filter-chip">Rating ≥ ${rating}★ <i class="fas fa-times remove-chip" onclick="app.removeReviewFilter('rating')"></i></span>`);
+        }
+
+        if (visibility !== 'all') {
+            chips.push(`<span class="filter-chip">${visibility === 'public' ? 'Public only' : 'Private only'} <i class="fas fa-times remove-chip" onclick="app.removeReviewFilter('visibility')"></i></span>`);
+        }
+
+        if (tags && tags.length > 0) {
+            tags.forEach(tag => {
+                chips.push(`<span class="filter-chip">#${this.escapeHtml(tag)} <i class="fas fa-times remove-chip" onclick="app.removeReviewFilter('tag','${tag}')"></i></span>`);
+            });
+        }
+
+        if (chips.length === 0) {
+            container.style.display = 'none';
+            container.innerHTML = '';
+        } else {
+            container.style.display = 'flex';
+            container.innerHTML = chips.join('');
+        }
+
+        if (tagChipRow) {
+            if (tags && tags.length > 0) {
+                tagChipRow.innerHTML = tags.map(tag => `<span class="tag-chip">#${this.escapeHtml(tag)} <i class="fas fa-times remove-chip" onclick="app.removeReviewFilter('tag','${tag}')"></i></span>`).join('');
+            } else {
+                tagChipRow.innerHTML = '';
+            }
+        }
+    }
+
+    setupReviewAutocomplete(inputId, suggestionsId) {
+        const input = document.getElementById(inputId);
+        const suggestionsContainer = document.getElementById(suggestionsId);
+        if (!input || !suggestionsContainer) {
+            return;
+        }
+
+        let debounceTimer = null;
+        input.setAttribute('autocomplete', 'off');
+
+        const hideSuggestions = () => {
+            suggestionsContainer.style.display = 'none';
+            suggestionsContainer.innerHTML = '';
+        };
+
+        const fetchSuggestions = (query) => {
+            if (!query || query.length < 2) {
+                hideSuggestions();
+                return;
+            }
+
+            fetch(`/api/games/search?q=${encodeURIComponent(query)}&pageSize=6`, {
+                method: 'GET',
+                credentials: 'include'
+            })
+                .then(response => response.json())
+                .then(result => {
+                    if (!result || !result.success || !Array.isArray(result.games)) {
+                        hideSuggestions();
+                        return;
+                    }
+                    if (result.games.length === 0) {
+                        hideSuggestions();
+                        return;
+                    }
+                    this.renderGameSuggestions(suggestionsContainer, result.games, (game) => {
+                        input.value = game.name;
+                        input.dataset.appid = game.id || game.appid || '';
+                        hideSuggestions();
+                        this.loadPublicReviewsForGame(game.name);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching game suggestions:', error);
+                    hideSuggestions();
+                });
+        };
+
+        input.addEventListener('input', (event) => {
+            const value = event.target.value.trim();
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => fetchSuggestions(value), 250);
+        });
+
+        input.addEventListener('focus', () => {
+            if (input.value.trim()) {
+                fetchSuggestions(input.value.trim());
+            }
+        });
+
+        input.addEventListener('blur', () => {
+            setTimeout(() => hideSuggestions(), 180);
+        });
+    }
+
+    renderGameSuggestions(container, games, onSelect) {
+        container.innerHTML = games.map(game => {
+            const meta = [];
+            if (game.release_date || game.released) {
+                meta.push(game.release_date || game.released);
+            }
+            if (game.platforms && game.platforms.length) {
+                meta.push(game.platforms.map(p => p.name || p).join(', '));
+            }
+            return `
+                <div class="suggestion-item" data-id="${game.id || game.appid || ''}" data-name="${this.escapeHtml(game.name)}">
+                    <span class="suggestion-title">${this.escapeHtml(game.name)}</span>
+                    <span class="suggestion-meta">${meta.map(item => this.escapeHtml(item)).join(' • ')}</span>
+                </div>
+            `;
+        }).join('');
+
+        Array.from(container.querySelectorAll('.suggestion-item')).forEach(item => {
+            item.addEventListener('mousedown', (event) => {
+                event.preventDefault();
+                const game = {
+                    id: item.dataset.id,
+                    name: item.dataset.name
+                };
+                onSelect(game);
+            });
+        });
+
+        container.style.display = 'block';
+    }
+
+    loadPublicReviewsForGame(gameName) {
+        if (!gameName) {
+            this.clearPublicReviewPreview();
+            return;
+        }
+
+        const preview = document.getElementById('publicReviewsPreview');
+        const list = document.getElementById('publicReviewsList');
+        const title = document.getElementById('publicReviewsGameName');
+
+        if (title) {
+            title.textContent = gameName;
+        }
+        if (list) {
+            list.innerHTML = '<p class="loading-text">Loading community feedback...</p>';
+        }
+        if (preview) {
+            preview.style.display = 'flex';
+        }
+
+        fetch(`/api/reviews/public?game=${encodeURIComponent(gameName)}&pageSize=4`, {
+            method: 'GET',
+            credentials: 'include'
+        })
+            .then(response => response.json())
+            .then(result => {
+                if (!result || !result.success || !Array.isArray(result.reviews)) {
+                    throw new Error(result && result.error ? result.error : 'No public reviews found');
+                }
+                this.renderPublicReviewPreview(gameName, result.reviews);
+            })
+            .catch(error => {
+                console.error('Error loading public reviews:', error);
+                if (list) {
+                    list.innerHTML = `<p class="error-text">${this.escapeHtml(error.message || 'Failed to load community reviews.')}</p>`;
+                }
+            });
+    }
+
+    renderPublicReviewPreview(gameName, reviews) {
+        const preview = document.getElementById('publicReviewsPreview');
+        const list = document.getElementById('publicReviewsList');
+        const title = document.getElementById('publicReviewsGameName');
+
+        if (!preview || !list) {
+            return;
+        }
+
+        if (title) {
+            title.textContent = gameName;
+        }
+
+        if (!reviews || reviews.length === 0) {
+            list.innerHTML = `<p class="empty-note">No public reviews available yet. Be the first to share your thoughts!</p>`;
+            preview.style.display = 'flex';
+            return;
+        }
+
+        list.innerHTML = reviews.map(review => {
+            const ratingStars = '★'.repeat(review.rating) + '☆'.repeat(5 - review.rating);
+            return `
+                <article class="public-review-card">
+                    <header>
+                        <div>
+                            <strong>${this.escapeHtml(review.gameTitle)}</strong>
+                            <div class="rating-stars">${ratingStars}</div>
+                        </div>
+                        <span><i class="far fa-user"></i> ${this.escapeHtml(review.user ? review.user.username : 'Anonymous')}</span>
+                    </header>
+                    <div class="review-text">${this.escapeHtml(review.reviewText)}</div>
+                    <footer>
+                        <span>${new Date(review.createdAt).toLocaleDateString()}</span>
+                        <span><i class="fas fa-thumbs-up"></i> ${review.helpfulVotes || 0}</span>
+                    </footer>
+                </article>
+            `;
+        }).join('');
+
+        preview.style.display = 'flex';
+    }
+
+    clearPublicReviewPreview() {
+        const preview = document.getElementById('publicReviewsPreview');
+        const list = document.getElementById('publicReviewsList');
+        const title = document.getElementById('publicReviewsGameName');
+        if (preview) {
+            preview.style.display = 'none';
+        }
+        if (list) {
+            list.innerHTML = '';
+        }
+        if (title) {
+            title.textContent = '';
+        }
+    }
+
+    removeReviewFilter(type, value = '') {
+        switch (type) {
+            case 'search':
+                this.reviewState.filters.search = '';
+                const searchInput = document.getElementById('reviewsSearch');
+                if (searchInput) searchInput.value = '';
+                break;
+            case 'rating':
+                this.reviewState.filters.rating = 'all';
+                const ratingFilter = document.getElementById('reviewsRatingFilter');
+                if (ratingFilter) ratingFilter.value = 'all';
+                break;
+            case 'visibility':
+                this.reviewState.filters.visibility = 'all';
+                const visibilityFilter = document.getElementById('reviewsVisibilityFilter');
+                if (visibilityFilter) visibilityFilter.value = 'all';
+                break;
+            case 'tag':
+                this.reviewState.filters.tags = this.reviewState.filters.tags.filter(tag => tag !== value);
+                break;
+            default:
+                break;
+        }
+        this.reviewState.page = 1;
+        this.applyReviewFilters();
+    }
+
+    renderReviewPagination() {
+        const pagination = document.getElementById('reviewsPagination');
+        const pageInfo = document.getElementById('reviewsPageInfo');
+
+        if (!pagination || !pageInfo) {
+            return;
+        }
+
+        if (this.reviewState.filteredReviews.length === 0) {
+            pagination.style.display = 'none';
+            return;
+        }
+
+        pagination.style.display = this.reviewState.totalPages > 1 ? 'flex' : 'none';
+        pageInfo.textContent = `Page ${this.reviewState.page} of ${this.reviewState.totalPages}`;
+    }
+
+    updateReviewStats() {
+        const totalEl = document.getElementById('reviewsTotal');
+        const avgEl = document.getElementById('reviewsAverage');
+        const publicEl = document.getElementById('reviewsPublicCount');
+        const lastUpdatedEl = document.getElementById('reviewsLastUpdated');
+
+        const reviews = this.reviewState.allReviews || [];
+
+        if (totalEl) totalEl.textContent = reviews.length;
+
+        const rated = reviews.filter(r => typeof r.rating === 'number');
+        const avgRating = rated.length ? rated.reduce((sum, r) => sum + r.rating, 0) / rated.length : 0;
+        if (avgEl) avgEl.textContent = avgRating.toFixed(1);
+
+        const publicCount = reviews.filter(r => r.isPublic).length;
+        if (publicEl) publicEl.textContent = publicCount;
+
+        if (lastUpdatedEl) {
+            if (reviews.length === 0) {
+                lastUpdatedEl.textContent = '—';
+            } else {
+                const latest = reviews.reduce((latest, current) => {
+                    const currentDate = new Date(current.updatedAt || current.createdAt);
+                    return currentDate > latest ? currentDate : latest;
+                }, new Date(0));
+                lastUpdatedEl.textContent = latest > new Date(0) ? latest.toLocaleDateString() : '—';
+            }
+        }
+    }
+
+    formatDate(dateValue) {
+        if (!dateValue) return 'Unknown';
+        const date = new Date(dateValue);
+        if (Number.isNaN(date.getTime())) return 'Unknown';
+        return date.toLocaleDateString();
+    }
+
+    formatRelativeDate(dateValue) {
+        if (!dateValue) return 'Unknown';
+        const date = new Date(dateValue);
+        if (Number.isNaN(date.getTime())) return 'Unknown';
+        const diffMs = Date.now() - date.getTime();
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (diffDays <= 0) return 'today';
+        if (diffDays === 1) return 'yesterday';
+        if (diffDays < 7) return `${diffDays} days ago`;
+        const diffWeeks = Math.floor(diffDays / 7);
+        if (diffWeeks < 5) return `${diffWeeks} week${diffWeeks > 1 ? 's' : ''} ago`;
+        return date.toLocaleDateString();
+    }
+
+    escapeHtml(text) {
+        if (!text && text !== 0) return '';
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    copyReviewLink(reviewId) {
+        if (!reviewId) return;
+        const shareUrl = `${window.location.origin}/reviews/public/${reviewId}`;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(shareUrl)
+                .then(() => {
+                    this.showNotification('Review link copied to clipboard!', 'success');
+                })
+                .catch(() => {
+                    this.showAlert('Unable to copy link. Please try again.', 'Copy Failed', 'error');
+                });
+        } else {
+            const tempInput = document.createElement('input');
+            tempInput.value = shareUrl;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+            this.showNotification('Review link copied to clipboard!', 'success');
+        }
+    }
+
+    toggleHelpfulVote(reviewId, button = null) {
+        if (!this.currentUser) {
+            this.showAlert('Please log in to mark reviews helpful.', 'Login Required', 'warning');
+            return;
+        }
+
+        const review = this.reviewState.allReviews.find(r => r.id === reviewId);
+        if (!review) return;
+
+        const hasVoted = !!review.userHasVoted;
+        const method = hasVoted ? 'DELETE' : 'POST';
+
+        if (button) {
+            button.disabled = true;
+        }
+
+        fetch(`/api/reviews/${reviewId}/helpful`, {
+            method,
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+            .then(async response => {
+                const result = await response.json();
+                if (!response.ok || !result.success) {
+                    throw new Error(result.error || 'Unable to update helpful vote.');
+                }
+                review.userHasVoted = !hasVoted;
+                review.helpfulVotes = result.helpfulVotes !== undefined
+                    ? result.helpfulVotes
+                    : (review.helpfulVotes || 0) + (hasVoted ? -1 : 1);
+                this.applyReviewFilters();
+                this.showNotification(result.message || 'Thanks for your feedback!', 'success');
+            })
+            .catch(error => {
+                console.error('Error toggling helpful vote:', error);
+                this.showAlert(error.message || 'Unable to update helpful vote. Please try again.', 'Error', 'error');
+            })
+            .finally(() => {
+                if (button) {
+                    button.disabled = false;
+                }
+            });
+    }
+
+    updateReviews() {
+        const section = document.getElementById('reviewsSection');
+        if (!section) {
+            return;
+        }
+
+        if (!this.currentUser) {
+            const list = document.getElementById('reviewsList');
+            const emptyState = document.getElementById('reviewsEmptyState');
+            const pagination = document.getElementById('reviewsPagination');
+            if (list) list.innerHTML = '';
+            if (emptyState) {
+                emptyState.style.display = 'flex';
+                const heading = emptyState.querySelector('h3');
+                const description = emptyState.querySelector('p');
+                if (heading) heading.textContent = 'Login Required';
+                if (description) description.textContent = 'Please sign in to see and manage your reviews.';
+            }
+            if (pagination) pagination.style.display = 'none';
+            this.clearPublicReviewPreview();
+            return;
+        }
+
+        this.setReviewsLoading(true);
+
+        fetch('/api/reviews', {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+            .then(response => response.json())
+            .then(data => {
+                this.setReviewsLoading(false);
+
+                if (!data || !data.success) {
+                    throw new Error(data && data.error ? data.error : 'Failed to load reviews');
+                }
+
+                const reviews = (data.reviews || []).map(review => ({
+                    ...review,
+                    tags: Array.isArray(review.tags) ? review.tags : [],
+                    userHasVoted: !!review.userHasVoted
+                }));
+
+                this.reviewState.allReviews = reviews;
+                this.reviewState.page = 1;
+                this.applyReviewFilters();
+            })
+            .catch(error => {
+                console.error('Error fetching reviews:', error);
+                const list = document.getElementById('reviewsList');
+                const emptyState = document.getElementById('reviewsEmptyState');
+                this.setReviewsLoading(false);
+                if (list) list.innerHTML = '';
+                if (emptyState) {
+                    emptyState.style.display = 'flex';
+                    const heading = emptyState.querySelector('h3');
+                    const description = emptyState.querySelector('p');
+                    if (heading) heading.textContent = 'Error loading reviews';
+                    if (description) description.textContent = error.message || 'Failed to load reviews. Please try again.';
+                }
+                const pagination = document.getElementById('reviewsPagination');
+                if (pagination) pagination.style.display = 'none';
+            });
     }
 }
 

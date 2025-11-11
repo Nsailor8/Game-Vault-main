@@ -12,7 +12,7 @@ const GameSearchService = require('./server/services/GameSearchService');
 const SteamService = require('./server/services/SteamService');
 
 // Load database models once at startup
-const { User, Game, Review, Wishlist, WishlistGame, Friendship, Achievement } = require('./server/models/index');
+const { User, Game, Review, Wishlist, WishlistGame, Friendship, Achievement, ReviewHelpfulVote } = require('./server/models/index');
 const { sequelize } = require('./server/config/database');
 const { Op, QueryTypes } = require('sequelize');
 
@@ -505,7 +505,7 @@ app.get('/profile', async (req, res) => {
         
         // Try to get username from session
         let username = null;
-        if (req.session.user && req.session.user.username) {
+    if (req.session.user && req.session.user.username) {
             username = req.session.user.username;
             console.log('[Profile Route] Found username in session:', username);
             return res.redirect(`/profile/${username}`);
@@ -1128,12 +1128,12 @@ app.get('/api/auth/steam/return', (req, res, next) => {
             console.log('[Steam Return] Is Steam sign-in:', isSteamSignIn);
             
             // First, check if Steam ID is already linked to an account
-            const existingUser = await profileManager.getUserBySteamId(req.user.steamId);
-            if (existingUser) {
+                            const existingUser = await profileManager.getUserBySteamId(req.user.steamId);
+                            if (existingUser) {
                 console.log('[Steam Return] Found existing user with Steam ID:', existingUser.username);
-                const userData = await profileManager.getUserByUsername(existingUser.username);
+                                const userData = await profileManager.getUserByUsername(existingUser.username);
                 if (userData) {
-                    req.session.user = {
+                                req.session.user = {
                         username: userData.username || userData.getDataValue?.('username') || userData.dataValues?.username,
                         email: userData.email || userData.getDataValue?.('email') || userData.dataValues?.email,
                         joinDate: userData.joinDate || userData.getDataValue?.('join_date') || userData.dataValues?.join_date,
@@ -1196,9 +1196,9 @@ app.get('/api/auth/steam/return', (req, res, next) => {
                     is_active: true,
                     is_admin: false,
                     gaming_preferences: {
-                        playStyle: 'casual',
-                        favoriteGenres: [],
-                        preferredPlatforms: ['PC']
+                                    playStyle: 'casual',
+                                    favoriteGenres: [],
+                                    preferredPlatforms: ['PC']
                     },
                     statistics: {},
                     bio: ''
@@ -1217,7 +1217,7 @@ app.get('/api/auth/steam/return', (req, res, next) => {
                         // Reload user to get synced data
                         const updatedUser = await profileManager.getUserByUsername(username);
                         if (updatedUser) {
-                            req.session.user = {
+                                    req.session.user = {
                                 username: updatedUser.username || updatedUser.getDataValue?.('username') || updatedUser.dataValues?.username,
                                 email: updatedUser.email || updatedUser.getDataValue?.('email') || updatedUser.dataValues?.email,
                                 joinDate: updatedUser.joinDate || updatedUser.getDataValue?.('join_date') || updatedUser.dataValues?.join_date,
@@ -1235,10 +1235,10 @@ app.get('/api/auth/steam/return', (req, res, next) => {
                     } catch (linkError) {
                         console.error('[Steam Return] Error linking Steam to new account:', linkError);
                         // Still create session even if sync fails
-                        req.session.user = {
+                                    req.session.user = {
                             username: newUser.username || newUser.getDataValue?.('username') || newUser.dataValues?.username,
                             email: newUser.email || newUser.getDataValue?.('email') || newUser.dataValues?.email,
-                            steam_id: req.user.steamId,
+                                        steam_id: req.user.steamId,
                             steam_profile: steamProfile
                         };
                     }
@@ -1304,8 +1304,8 @@ app.get('/api/auth/steam/return', (req, res, next) => {
                                 steam_last_sync: updatedUser.steam_last_sync || updatedUser.getDataValue?.('steam_last_sync') || updatedUser.dataValues?.steam_last_sync
                             };
                         }
-                    }
-                } else {
+                }
+            } else {
                     // No matching user found and not a sign-in - redirect to profile
                     console.log('[Steam Return] No matching user found - redirecting to profile');
                     delete req.session.steamSignIn;
@@ -1516,14 +1516,14 @@ app.post('/api/auth/steam/unlink', async (req, res) => {
         console.log('[Steam Unlink] User saved successfully');
 
         // Update session
-        req.session.user.steam_id = null;
-        req.session.user.steam_profile = null;
+            req.session.user.steam_id = null;
+            req.session.user.steam_profile = null;
         req.session.user.steam_games = null;
         req.session.user.steam_last_sync = null;
         await req.session.save();
         console.log('[Steam Unlink] Session updated');
 
-        res.json({ success: true, message: 'Steam account unlinked successfully' });
+            res.json({ success: true, message: 'Steam account unlinked successfully' });
     } catch (error) {
         console.error('[Steam Unlink] Error unlinking Steam account:', error);
         console.error('[Steam Unlink] Error stack:', error.stack);
@@ -1985,7 +1985,22 @@ app.get('/api/reviews/current-user', async (req, res) => {
         
         if (reviewManager) {
             const reviews = reviewManager.getReviews();
-            res.json({ success: true, reviews: reviews });
+            const reviewIds = reviews.map(review => review.id);
+            let userVotes = [];
+            if (reviewIds.length > 0) {
+                userVotes = await ReviewHelpfulVote.findAll({
+                    where: {
+                        reviewId: reviewIds,
+                        userId: req.session.user.id
+                    }
+                });
+            }
+            const votedSet = new Set(userVotes.map(vote => vote.reviewId));
+            const enrichedReviews = reviews.map(review => ({
+                ...review,
+                userHasVoted: votedSet.has(review.id)
+            }));
+            res.json({ success: true, reviews: enrichedReviews });
         } else {
             res.json({ success: true, reviews: [] });
         }
@@ -2011,7 +2026,7 @@ app.get('/api/test/users', async (req, res) => {
 
 app.get('/api/profile/:username', async (req, res) => {
     try {
-        const { username } = req.params;
+    const { username } = req.params;
         
         // Get user from database
         const user = await profileManager.getUserByUsername(username);
@@ -2040,16 +2055,16 @@ app.get('/api/profile/:username', async (req, res) => {
 
 app.put('/api/profile/:username', async (req, res) => {
     try {
-        const { username } = req.params;
-        const updates = req.body;
+    const { username } = req.params;
+    const updates = req.body;
 
         if (!req.session.user || req.session.user.username !== username) {
             return res.status(401).json({ error: 'Unauthorized - can only update your own profile' });
         }
 
-        if (!profileManager.isInitialized) {
-            return res.status(503).json({ error: 'Database not ready yet, please try again' });
-        }
+    if (!profileManager.isInitialized) {
+        return res.status(503).json({ error: 'Database not ready yet, please try again' });
+    }
 
         // Get user from database
         const user = await User.findOne({ where: { username } });
@@ -3194,25 +3209,41 @@ app.get('/api/reviews', async (req, res) => {
             order: [['createdAt', 'DESC']]
         });
 
-        const averageRating = reviews.length > 0 
-            ? (reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length).toFixed(1)
-            : 0;
+        const reviewIds = reviews.map(review => review.id);
+        let userVotes = [];
+        if (reviewIds.length > 0) {
+            userVotes = await ReviewHelpfulVote.findAll({
+                where: {
+                    reviewId: reviewIds,
+                    userId: userId
+                }
+            });
+        }
 
-        res.json({
-            success: true,
-            reviews: reviews.map(review => ({
+        const votedSet = new Set(userVotes.map(vote => vote.reviewId));
+
+        const serializedReviews = reviews.map(review => ({
                 id: review.id,
                 gameTitle: review.gameTitle,
                 rating: review.rating,
                 reviewText: review.reviewText,
-                tags: review.tags || [],
-                helpfulVotes: review.helpfulVotes,
+            tags: Array.isArray(review.tags) ? review.tags : [],
+            helpfulVotes: review.helpfulVotes || 0,
                 isPublic: review.isPublic,
                 createdAt: review.createdAt,
-                updatedAt: review.updatedAt
-            })),
+            updatedAt: review.updatedAt,
+            userHasVoted: votedSet.has(review.id)
+        }));
+
+        const averageRating = serializedReviews.length > 0
+            ? (serializedReviews.reduce((sum, review) => sum + review.rating, 0) / serializedReviews.length).toFixed(1)
+            : 0;
+
+        res.json({
+            success: true,
+            reviews: serializedReviews,
             averageRating: parseFloat(averageRating),
-            totalReviews: reviews.length
+            totalReviews: serializedReviews.length
         });
     } catch (error) {
         console.error('Error fetching reviews:', error);
@@ -3229,28 +3260,31 @@ app.post('/api/reviews', async (req, res) => {
         const { gameTitle, rating, reviewText, tags, isPublic } = req.body;
         const userId = req.session.user.id;
 
-        // Validate required fields
-        if (!gameTitle || !rating || !reviewText) {
+        const safeTitle = typeof gameTitle === 'string' ? gameTitle.trim() : '';
+        const parsedRating = parseInt(rating, 10);
+        const safeReviewText = typeof reviewText === 'string' ? reviewText.trim() : '';
+        const normalizedTags = normalizeReviewTags(tags);
+        const visibility = !(isPublic === false || isPublic === 'false');
+
+        if (!safeTitle || Number.isNaN(parsedRating) || !safeReviewText) {
             return res.status(400).json({ error: 'Game title, rating, and review text are required' });
         }
 
-        // Validate rating
-        if (rating < 1 || rating > 5) {
+        if (parsedRating < 1 || parsedRating > 5) {
             return res.status(400).json({ error: 'Rating must be between 1 and 5' });
         }
 
-        // Validate review text length
-        if (reviewText.length < 10 || reviewText.length > 5000) {
+        if (safeReviewText.length < 10 || safeReviewText.length > 5000) {
             return res.status(400).json({ error: 'Review text must be between 10 and 5000 characters' });
         }
 
         const review = await Review.create({
             userId: userId,
-            gameTitle: gameTitle,
-            rating: rating,
-            reviewText: reviewText,
-            tags: tags || [],
-            isPublic: isPublic !== false, // Default to true
+            gameTitle: safeTitle,
+            rating: parsedRating,
+            reviewText: safeReviewText,
+            tags: normalizedTags,
+            isPublic: visibility,
             helpfulVotes: 0
         });
 
@@ -3283,6 +3317,12 @@ app.put('/api/reviews/:reviewId', async (req, res) => {
         const { gameTitle, rating, reviewText, tags, isPublic } = req.body;
         const userId = req.session.user.id;
 
+        const safeTitle = typeof gameTitle === 'string' ? gameTitle.trim() : '';
+        const parsedRating = parseInt(rating, 10);
+        const safeReviewText = typeof reviewText === 'string' ? reviewText.trim() : '';
+        const normalizedTags = normalizeReviewTags(tags);
+        const visibility = !(isPublic === false || isPublic === 'false');
+
         const review = await Review.findOne({
             where: { id: reviewId, userId: userId }
         });
@@ -3291,28 +3331,25 @@ app.put('/api/reviews/:reviewId', async (req, res) => {
             return res.status(404).json({ error: 'Review not found' });
         }
 
-        // Validate required fields
-        if (!gameTitle || !rating || !reviewText) {
+        if (!safeTitle || Number.isNaN(parsedRating) || !safeReviewText) {
             return res.status(400).json({ error: 'Game title, rating, and review text are required' });
         }
 
-        // Validate rating
-        if (rating < 1 || rating > 5) {
+        if (parsedRating < 1 || parsedRating > 5) {
             return res.status(400).json({ error: 'Rating must be between 1 and 5' });
         }
 
-        // Validate review text length
-        if (reviewText.length < 10 || reviewText.length > 5000) {
+        if (safeReviewText.length < 10 || safeReviewText.length > 5000) {
             return res.status(400).json({ error: 'Review text must be between 10 and 5000 characters' });
         }
 
-        await review.update({
-            gameTitle: gameTitle,
-            rating: rating,
-            reviewText: reviewText,
-            tags: tags || [],
-            isPublic: isPublic !== false
-        });
+        review.gameTitle = safeTitle;
+        review.rating = parsedRating;
+        review.reviewText = safeReviewText;
+        review.tags = normalizedTags;
+        review.isPublic = visibility;
+
+        await review.save();
 
         res.json({
             success: true,
@@ -3883,5 +3920,254 @@ app.listen(PORT, async () => {
         }
     }, 10000);
 });
+
+app.get('/api/reviews/public', async (req, res) => {
+    try {
+        const rawPage = parseInt(req.query.page, 10);
+        const rawPageSize = parseInt(req.query.pageSize, 10);
+        const page = Number.isNaN(rawPage) || rawPage < 1 ? 1 : rawPage;
+        const pageSize = Number.isNaN(rawPageSize) || rawPageSize < 1 ? 12 : Math.min(rawPageSize, 30);
+        const minRating = parseInt(req.query.minRating, 10);
+        const tagFilter = req.query.tag ? String(req.query.tag).toLowerCase() : null;
+        const gameFilter = req.query.game ? String(req.query.game).toLowerCase() : null;
+        const sortOption = req.query.sort || 'newest';
+
+        const reviews = await Review.findAll({
+            where: { isPublic: true },
+            include: [{ model: User, as: 'user', attributes: ['id', 'username'] }]
+        });
+
+        let filtered = reviews;
+
+        if (!Number.isNaN(minRating) && minRating >= 1 && minRating <= 5) {
+            filtered = filtered.filter(review => review.rating >= minRating);
+        }
+
+        if (tagFilter) {
+            filtered = filtered.filter(review => {
+                if (!review.tags || review.tags.length === 0) return false;
+                return review.tags.map(tag => tag.toLowerCase()).includes(tagFilter);
+            });
+        }
+
+        if (gameFilter) {
+            filtered = filtered.filter(review => {
+                if (!review.gameTitle) return false;
+                return review.gameTitle.toLowerCase().includes(gameFilter);
+            });
+        }
+
+        switch (sortOption) {
+            case 'oldest':
+                filtered.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+                break;
+            case 'rating-desc':
+                filtered.sort((a, b) => b.rating - a.rating);
+                break;
+            case 'rating-asc':
+                filtered.sort((a, b) => a.rating - b.rating);
+                break;
+            case 'helpful':
+                filtered.sort((a, b) => (b.helpfulVotes || 0) - (a.helpfulVotes || 0));
+                break;
+            case 'alpha':
+                filtered.sort((a, b) => (a.gameTitle || '').localeCompare(b.gameTitle || ''));
+                break;
+            case 'newest':
+            default:
+                filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                break;
+        }
+
+        const total = filtered.length;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+        const currentPage = Math.min(page, totalPages);
+        const startIndex = (currentPage - 1) * pageSize;
+        const pageReviews = filtered.slice(startIndex, startIndex + pageSize);
+
+        res.json({
+            success: true,
+            page: currentPage,
+            pageSize,
+            total,
+            totalPages,
+            reviews: pageReviews.map(review => ({
+                id: review.id,
+                gameTitle: review.gameTitle,
+                rating: review.rating,
+                reviewText: review.reviewText,
+                tags: Array.isArray(review.tags) ? review.tags : [],
+                helpfulVotes: review.helpfulVotes || 0,
+                isPublic: review.isPublic,
+                createdAt: review.createdAt,
+                updatedAt: review.updatedAt,
+                user: review.user ? { id: review.user.id, username: review.user.username } : null
+            }))
+        });
+    } catch (error) {
+        console.error('Error fetching public reviews:', error);
+        res.status(500).json({ error: 'Failed to fetch public reviews' });
+    }
+});
+
+app.post('/api/reviews/:reviewId/helpful', async (req, res) => {
+    try {
+        if (!req.session.user) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        const reviewId = parseInt(req.params.reviewId, 10);
+        if (Number.isNaN(reviewId)) {
+            return res.status(400).json({ error: 'Invalid review ID' });
+        }
+
+        const review = await Review.findByPk(reviewId);
+        if (!review) {
+            return res.status(404).json({ error: 'Review not found' });
+        }
+
+        if (review.userId === req.session.user.id) {
+            return res.status(400).json({ error: 'You cannot mark your own review as helpful' });
+        }
+
+        const [vote, created] = await ReviewHelpfulVote.findOrCreate({
+            where: {
+                reviewId: reviewId,
+                userId: req.session.user.id
+            }
+        });
+
+        if (!created) {
+            return res.status(400).json({ error: 'You have already marked this review as helpful' });
+        }
+
+        await review.increment('helpfulVotes', { by: 1 });
+        await review.reload();
+
+        res.json({ success: true, message: 'Thanks for your feedback!', helpfulVotes: review.helpfulVotes });
+    } catch (error) {
+        console.error('Error adding helpful vote:', error);
+        res.status(500).json({ error: 'Failed to update helpful vote' });
+    }
+});
+
+app.delete('/api/reviews/:reviewId/helpful', async (req, res) => {
+    try {
+        if (!req.session.user) {
+            return res.status(401).json({ error: 'Authentication required' });
+        }
+
+        const reviewId = parseInt(req.params.reviewId, 10);
+        if (Number.isNaN(reviewId)) {
+            return res.status(400).json({ error: 'Invalid review ID' });
+        }
+
+        const vote = await ReviewHelpfulVote.findOne({
+            where: {
+                reviewId: reviewId,
+                userId: req.session.user.id
+            }
+        });
+
+        if (!vote) {
+            return res.status(400).json({ error: 'You have not marked this review as helpful yet' });
+        }
+
+        const review = await Review.findByPk(reviewId);
+        if (!review) {
+            return res.status(404).json({ error: 'Review not found' });
+        }
+
+        await vote.destroy();
+        if (review.helpfulVotes > 0) {
+            await review.decrement('helpfulVotes', { by: 1 });
+        }
+        await review.reload();
+
+        res.json({ success: true, message: 'Helpful vote removed', helpfulVotes: Math.max(review.helpfulVotes, 0) });
+    } catch (error) {
+        console.error('Error removing helpful vote:', error);
+        res.status(500).json({ error: 'Failed to update helpful vote' });
+    }
+});
+
+app.get('/reviews', (req, res) => res.render('reviews'));
+app.get('/reviews/public/:reviewId', async (req, res) => {
+    try {
+        const reviewId = parseInt(req.params.reviewId, 10);
+        if (Number.isNaN(reviewId)) {
+            return res.status(400).render('public-review', { review: null, error: 'Invalid review ID provided.' });
+        }
+
+        const review = await Review.findOne({
+            where: {
+                id: reviewId,
+                isPublic: true
+            },
+            include: [{ model: User, as: 'user', attributes: ['id', 'username'] }]
+        });
+
+        if (!review) {
+            return res.status(404).render('public-review', { review: null, error: 'This review could not be found or is private.' });
+        }
+
+        res.render('public-review', {
+            review: {
+                id: review.id,
+                gameTitle: review.gameTitle,
+                rating: review.rating,
+                reviewText: review.reviewText,
+                tags: Array.isArray(review.tags) ? review.tags : [],
+                helpfulVotes: review.helpfulVotes || 0,
+                createdAt: review.createdAt,
+                updatedAt: review.updatedAt,
+                author: review.user ? review.user.username : 'Unknown Player'
+            },
+            error: null
+        });
+    } catch (error) {
+        console.error('Error rendering public review page:', error);
+        res.status(500).render('public-review', { review: null, error: 'An unexpected error occurred while loading this review.' });
+    }
+});
+app.get('/admin', (req, res) => res.render('admin'));
+
+const normalizeReviewTags = (tagsInput) => {
+    if (!tagsInput) {
+        return [];
+    }
+
+    let rawTags = [];
+    if (Array.isArray(tagsInput)) {
+        rawTags = tagsInput;
+    } else if (typeof tagsInput === 'string') {
+        rawTags = tagsInput.split(',');
+    } else {
+        return [];
+    }
+
+    const seen = new Set();
+    const cleaned = [];
+
+    rawTags.forEach(tag => {
+        if (tag === undefined || tag === null) {
+            return;
+        }
+        let trimmed = String(tag).trim();
+        if (!trimmed) {
+            return;
+        }
+        if (trimmed.length > 40) {
+            trimmed = trimmed.substring(0, 40);
+        }
+        const key = trimmed.toLowerCase();
+        if (!seen.has(key)) {
+            seen.add(key);
+            cleaned.push(trimmed);
+        }
+    });
+
+    return cleaned.slice(0, 12);
+};
 
 module.exports = app;
