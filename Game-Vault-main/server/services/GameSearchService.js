@@ -141,43 +141,33 @@ class GameSearchService {
 
             console.log(`📊 [Steam Search] Fetched details for ${gamesWithDetails.length} games`);
 
-            // Filter games with ratings, but be lenient - include games without ratings if we don't have enough
-            let gamesWithRatings = gamesWithDetails.filter(g => {
+            // Filter games with ratings, but be lenient - include all games if we don't have enough with ratings
+            const ratedGames = gamesWithDetails.filter(g => {
                 if (!g) return false;
                 const hasMetacritic = g.metacritic !== null && g.metacritic !== undefined && g.metacritic > 0;
                 const hasRating = g.rating !== null && g.rating !== undefined && g.rating > 0;
-                return (hasMetacritic || hasRating);
+                return hasMetacritic || hasRating;
             });
 
-            // If we have enough games with ratings, use those; otherwise use all games
-            let gamesToReturn = gamesWithRatings.length >= pageSize ? gamesWithRatings : gamesWithDetails;
+            // Use rated games if we have enough, otherwise use all games
+            let gamesToSort = ratedGames.length >= pageSize ? ratedGames : gamesWithDetails;
 
-            // Sort by rating (games with ratings first, then others)
-            gamesToReturn.sort((a, b) => {
-                const aHasRating = (a.metacritic || 0) > 0 || (a.rating || 0) > 0;
-                const bHasRating = (b.metacritic || 0) > 0 || (b.rating || 0) > 0;
-                
-                if (aHasRating && !bHasRating) return -1;
-                if (!aHasRating && bHasRating) return 1;
-                
-                const scoreA = (a.metacritic || 0) * 10 + (a.rating || 0) * 2;
-                const scoreB = (b.metacritic || 0) * 10 + (b.rating || 0) * 2;
+            // Sort by rating score (highest first) - prioritize metacritic, then user rating, then review count
+            gamesToSort.sort((a, b) => {
+                const scoreA = (a.metacritic || 0) * 10 + (a.rating || 0) * 3 + Math.min(a.ratingsCount || 0, 50000) / 1000;
+                const scoreB = (b.metacritic || 0) * 10 + (b.rating || 0) * 3 + Math.min(b.ratingsCount || 0, 50000) / 1000;
                 return scoreB - scoreA;
             });
 
-            // Paginate
-            const startIndex = (page - 1) * pageSize;
-            const endIndex = startIndex + pageSize;
-            const paginatedGames = gamesToReturn.slice(startIndex, endIndex);
-
-            console.log(`✅ [Steam Search] Returning ${paginatedGames.length} games (page ${page}, ${pageSize} per page)`);
+            const topGames = gamesToSort.slice(0, pageSize);
+            console.log(`✅ [Steam Search] Returning ${topGames.length} games (page ${page}, ${pageSize} per page)`);
 
             return {
                 success: true,
-                games: paginatedGames,
-                totalResults: gamesToReturn.length,
+                games: topGames,
+                totalResults: gamesToSort.length,
                 currentPage: page,
-                totalPages: Math.ceil(gamesToReturn.length / pageSize) || 1,
+                totalPages: Math.ceil(gamesToSort.length / pageSize) || 1,
                 isMockData: false
             };
         } catch (error) {
@@ -506,13 +496,34 @@ class GameSearchService {
     formatSteamGameData(game, details) {
         // Use details if available, otherwise use basic app list data
         if (details) {
+            const releaseInfo = details.release_date || {};
+            const rawReleaseDate = typeof releaseInfo.date === 'string' ? releaseInfo.date.trim() : '';
+            const comingSoon = !!releaseInfo.coming_soon;
+            let releaseDisplay = rawReleaseDate && rawReleaseDate.length > 0 ? rawReleaseDate : (comingSoon ? 'Coming Soon' : 'TBA');
+            let releaseTimestamp = null;
+
+            if (!comingSoon && rawReleaseDate) {
+                const parsed = Date.parse(rawReleaseDate);
+                if (!Number.isNaN(parsed)) {
+                    releaseTimestamp = parsed;
+                } else {
+                    const parsedUtc = Date.parse(`${rawReleaseDate} UTC`);
+                    if (!Number.isNaN(parsedUtc)) {
+                        releaseTimestamp = parsedUtc;
+                    }
+                }
+            }
+
             return {
                 id: game.appid,
                 name: details.name || game.name,
                 slug: details.name ? details.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : '',
                 description: details.short_description || details.detailed_description || 'No description available',
                 description_raw: details.detailed_description || details.short_description || 'No description available',
-                released: details.release_date && details.release_date.date ? details.release_date.date : 'TBA',
+                released: releaseDisplay,
+                releaseDate: releaseDisplay,
+                releaseTimestamp,
+                comingSoon,
                 rating: details.metacritic ? (details.metacritic.score / 100) * 5 : null,
                 ratingTop: 5,
                 ratingsCount: details.recommendations ? details.recommendations.total : 0,
@@ -557,6 +568,9 @@ class GameSearchService {
                 description: 'No description available',
                 description_raw: 'No description available',
                 released: 'TBA',
+                releaseDate: 'TBA',
+                releaseTimestamp: null,
+                comingSoon: false,
                 rating: null,
                 ratingTop: 5,
                 ratingsCount: 0,
@@ -926,169 +940,162 @@ class GameSearchService {
         }
     }
 
-    // Get trending games (most played games from Steam)
+    // Enhanced getTrendingGames method for GameSearchService.js
+    // Replace the existing getTrendingGames method with this improved version
+
     async getTrendingGames(limit = 8) {
         try {
-            console.log(`🔍 [Trending] Fetching most played games from Steam...`);
+            console.log(`🔍 [Trending] Fetching trending games from Steam...`);
             
             // Check if Steam API is blocked - use fallback
             if (this.steamApiBlocked) {
-                console.log('⚠️ [Trending] Steam API blocked, using fallback method');
-                return await this.getPopularGamesFallback(limit);
+                console.log('⚠️ [Trending] Steam API blocked, using curated list');
+                return this.getCuratedTrendingGames(limit);
             }
             
-            // Get Steam app list (cached)
-            const appList = await this.getSteamAppList();
+            // Strategy: Use a curated list of known popular game app IDs
+            // These are consistently popular games that will have good data
+            const popularGameIds = [
+                // Top competitive/multiplayer games
+                730,    // Counter-Strike 2
+                570,    // Dota 2
+                1172470, // Apex Legends
+                1938090, // Call of Duty: Modern Warfare III
+                271590,  // Grand Theft Auto V
+                252490,  // Rust
+                578080,  // PUBG: BATTLEGROUNDS
+                
+                // Popular single-player games
+                1245620, // Elden Ring
+                2358720, // Black Myth: Wukong
+                1091500, // Cyberpunk 2077
+                1174180, // Red Dead Redemption 2
+                292030,  // The Witcher 3
+                
+                // Recent popular releases
+                2050650, // Elden Ring DLC
+                1817070, // Marvel's Spider-Man Remastered
+                1144200, // Ready or Not
+                
+                // Consistently popular games
+                381210,  // Dead by Daylight
+                322330,  // Don't Starve Together
+                601150,  // Devil May Cry 5
+                814380,  // Sekiro
+                
+                // More variety
+                1086940, // Baldur's Gate 3
+                1506830, // The First Descendant
+                1966720, // Starfield
+                1203220, // Naraka: Bladepoint
+                
+                // Additional popular titles
+                1449850, // Yu-Gi-Oh! Master Duel
+                1551360, // Forza Horizon 5
+                1919590, // Palworld
+                2399830, // Helldivers 2
+            ];
             
-            if (!appList || appList.length === 0) {
-                console.log('⚠️ [Trending] No Steam app list available, using fallback');
-                return await this.getPopularGamesFallback(limit);
-            }
-
-            // Start with first 200 games (typically most established/popular)
-            // We'll sample from this list to get player counts
-            const sampleSize = Math.min(200, appList.length);
-            const sampleGames = appList.slice(0, sampleSize);
+            // Shuffle the list for variety each time
+            const shuffledIds = [...popularGameIds].sort(() => Math.random() - 0.5);
             
-            // Fetch details and player counts in batches
-            const batchSize = 5; // Reduced batch size to avoid rate limits
-            const gamesWithPlayerCounts = [];
-            const targetGames = limit * 5; // Fetch 5x the limit to ensure we get good results
+            // Fetch details for games in batches
+            const batchSize = 3;
+            const delayBetweenRequests = 400;
+            const delayBetweenBatches = 1500;
+            const gamesWithDetails = [];
             
-            for (let i = 0; i < Math.min(sampleGames.length, targetGames); i += batchSize) {
-                // Check circuit breaker during loop
+            // Try to get more games than needed to filter for best ones
+            const targetGames = Math.min(limit * 4, shuffledIds.length);
+            
+            for (let i = 0; i < targetGames; i += batchSize) {
+                // Check circuit breaker
                 if (this.steamApiBlocked) {
-                    console.log('⚠️ [Trending] Steam API blocked during fetch, using fallback');
-                    return await this.getPopularGamesFallback(limit);
-                }
-                
-                const batch = sampleGames.slice(i, i + batchSize);
-                const batchResults = await Promise.all(
-                    batch.map(async (game) => {
-                        try {
-                            const details = await this.getSteamGameDetails(game.appid);
-                            if (details) {
-                                const formattedGame = this.formatSteamGameData(game, details);
-                                // Try to get current player count, but don't fail if it doesn't work
-                                try {
-                                    const playerCount = await this.getCurrentPlayerCount(game.appid);
-                                    formattedGame.currentPlayers = playerCount;
-                                } catch (e) {
-                                    formattedGame.currentPlayers = 0; // Default to 0 if player count fails
-                                }
-                                return formattedGame;
-                            }
-                            return null;
-                        } catch (error) {
-                            return null;
-                        }
-                    })
-                );
-                
-                const validGames = batchResults.filter(g => g !== null);
-                gamesWithPlayerCounts.push(...validGames);
-                
-                // Add delay between batches to avoid rate limiting
-                if (i + batchSize < Math.min(sampleGames.length, targetGames)) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                }
-                
-                // Sort what we have so far by player count
-                gamesWithPlayerCounts.sort((a, b) => (b.currentPlayers || 0) - (a.currentPlayers || 0));
-                
-                // If we have enough games with significant player counts, stop early
-                const gamesWithPlayers = gamesWithPlayerCounts.filter(g => (g.currentPlayers || 0) > 0);
-                if (gamesWithPlayers.length >= limit * 2) {
-                    console.log(`✅ [Trending] Found ${gamesWithPlayers.length} games with players, stopping early`);
+                    console.log('⚠️ [Trending] Steam API blocked during fetch, using curated list');
                     break;
                 }
+                
+                const batch = shuffledIds.slice(i, i + batchSize);
+                
+                // Process batch sequentially with delays
+                for (const appId of batch) {
+                    try {
+                        const details = await this.getSteamGameDetails(appId);
+                        if (details) {
+                            const formattedGame = this.formatSteamGameData(
+                                { appid: appId, name: details.name || 'Unknown' },
+                                details
+                            );
+                            
+                            // Only include if it has good data
+                            if (formattedGame.name && formattedGame.name !== 'Unknown') {
+                                gamesWithDetails.push(formattedGame);
+                                // Reset error counter on success
+                                this.consecutive403Errors = 0;
+                            }
+                        }
+                        
+                        // Delay between requests
+                        await new Promise(resolve => setTimeout(resolve, delayBetweenRequests));
+                    } catch (error) {
+                        console.error(`Error fetching details for app ${appId}:`, error.message);
+                    }
+                }
+                
+                // Stop if we have enough games
+                if (gamesWithDetails.length >= limit * 2) break;
+                
+                // Delay between batches
+                if (i + batchSize < targetGames) {
+                    await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+                }
             }
 
-            // Filter to games with ratings OR players (be more lenient)
-            const ratedGames = gamesWithPlayerCounts.filter(g => {
+            console.log(`📊 [Trending] Fetched details for ${gamesWithDetails.length} games`);
+
+            // Filter for games with good ratings/scores
+            const gamesWithRatings = gamesWithDetails.filter(g => {
                 if (!g) return false;
                 const hasMetacritic = g.metacritic !== null && g.metacritic !== undefined && g.metacritic > 0;
                 const hasRating = g.rating !== null && g.rating !== undefined && g.rating > 0;
-                const hasPlayers = (g.currentPlayers || 0) > 0;
-                // Include games with ratings OR players
-                return (hasMetacritic || hasRating || hasPlayers);
+                return (hasMetacritic || hasRating);
             });
 
-            // If we still don't have enough, include all games we found (no strict filtering)
-            if (ratedGames.length < limit && gamesWithPlayerCounts.length > 0) {
-                const remainingGames = gamesWithPlayerCounts.filter(g => !ratedGames.includes(g));
-                ratedGames.push(...remainingGames.slice(0, limit - ratedGames.length));
-            }
+            // Use games with ratings if we have enough, otherwise use all
+            const gamesToSort = gamesWithRatings.length >= limit ? gamesWithRatings : gamesWithDetails;
 
-            // Sort by player count (highest first), then by rating
-            ratedGames.sort((a, b) => {
-                const playerDiff = (b.currentPlayers || 0) - (a.currentPlayers || 0);
-                if (playerDiff !== 0) return playerDiff;
-                const aRating = (a.metacritic || 0) + (a.rating || 0) * 10;
-                const bRating = (b.metacritic || 0) + (b.rating || 0) * 10;
-                return bRating - aRating;
+            // Sort by quality score (metacritic + rating)
+            gamesToSort.sort((a, b) => {
+                const scoreA = (a.metacritic || 0) * 10 + (a.rating || 0) * 2;
+                const scoreB = (b.metacritic || 0) * 10 + (b.rating || 0) * 2;
+                return scoreB - scoreA;
             });
 
-            let topGames = ratedGames.slice(0, limit);
+            const topGames = gamesToSort.slice(0, limit);
             
-            // If we still don't have enough games, include any games we found (even without ratings)
-            if (topGames.length < limit && gamesWithPlayerCounts.length > 0) {
-                const remainingGames = gamesWithPlayerCounts
-                    .filter(g => g && !topGames.some(tg => (tg.id || tg.appid) === (g.id || g.appid)))
-                    .slice(0, limit - topGames.length);
-                topGames.push(...remainingGames);
-            }
-            
-            // If we still don't have enough games, use fallback
+            // If we still don't have enough, use curated list
             if (topGames.length < limit) {
-                console.log(`⚠️ [Trending] Only found ${topGames.length} games, using fallback for remaining`);
-                const fallback = await this.getPopularGamesFallback(limit - topGames.length);
-                if (fallback.games && fallback.games.length > 0) {
-                    topGames.push(...fallback.games.slice(0, limit - topGames.length));
-                }
-            }
-            
-            console.log(`✅ [Trending] Found ${topGames.length} most played games from Steam (checked ${gamesWithPlayerCounts.length} games)`);
-            
-            // Log top games for debugging
-            if (topGames.length > 0) {
-                topGames.forEach((g, idx) => {
-                    console.log(`  ${idx + 1}. ${g.name}: ${g.currentPlayers || 0} players, rating: ${g.metacritic || g.rating || 'N/A'}`);
-                });
-            } else {
-                console.log('⚠️ [Trending] No games found, will use fallback');
+                console.log(`⚠️ [Trending] Only found ${topGames.length} games, using curated list`);
+                return this.getCuratedTrendingGames(limit);
             }
 
-            // If still no games, use fallback
-            if (topGames.length === 0) {
-                console.log('⚠️ [Trending] No games found, using fallback method');
-                const fallback = await this.getPopularGamesFallback(limit);
-                return fallback;
-            }
+            console.log(`✅ [Trending] Returning ${topGames.length} trending games`);
 
             return {
                 success: true,
-                games: topGames.slice(0, limit)
+                games: topGames
             };
         } catch (error) {
-            console.error('❌ [Trending] Error fetching trending games:', error.message);
-            // Try fallback on error
-            try {
-                return await this.getPopularGamesFallback(limit);
-            } catch (fallbackError) {
-                console.error('❌ [Trending] Fallback also failed:', fallbackError.message);
-                console.log('⚠️ [Trending] Using mock data as final fallback');
-                return this.getMockTrendingGames(limit);
-            }
+            console.error(`❌ [Trending] Error:`, error.message);
+            return this.getCuratedTrendingGames(limit);
         }
     }
 
     // Get popular/highest-rated games from Steam
     async getPopularGamesFallback(limit = 8) {
         try {
-            console.log(`🔍 [Trending] Fetching highest-rated games from Steam...`);
+            console.log(`🔍 [Trending] Fetching highest-rated recent games from Steam...`);
             
-            // Get Steam app list (cached)
             const appList = await this.getSteamAppList();
             
             if (!appList || appList.length === 0) {
@@ -1096,18 +1103,34 @@ class GameSearchService {
                 return this.getMockTrendingGames(limit);
             }
 
-            // Focus on the first portion of the app list - these are typically more established/popular games
-            // Steam's app list is roughly sorted by popularity/age (older, more popular games first)
-            // Check first 2000 games for best selection
-            const sampleSize = Math.min(2000, appList.length);
-            const sampleGames = appList.slice(0, sampleSize);
-            
-            // Fetch details in batches
+            const combinedMap = new Map();
+            const addGame = (game) => {
+                if (!game || !game.appid) return;
+                if (!combinedMap.has(game.appid)) {
+                    combinedMap.set(game.appid, game);
+                }
+            };
+
+            const topSliceSize = Math.min(2000, appList.length);
+            appList.slice(0, topSliceSize).forEach(addGame);
+
+            const recentWindowSize = Math.min(5000, appList.length);
+            const recentPool = appList.slice(appList.length - recentWindowSize);
+            const recentSampleSize = Math.min(recentPool.length, Math.max(limit * 25, 200));
+            this.getRandomSample(recentPool, recentSampleSize).forEach(addGame);
+
+            let sampleGames = Array.from(combinedMap.values());
+            if (sampleGames.length === 0) {
+                sampleGames = recentPool.slice(-Math.min(200, recentPool.length));
+            }
+
+            sampleGames.sort((a, b) => (b.appid || 0) - (a.appid || 0));
+
             const batchSize = 10;
             const gamesWithDetails = [];
-            const targetGames = limit * 15; // Fetch even more to ensure we get enough with high ratings
+            const targetGames = Math.min(sampleGames.length, Math.max(limit * 15, batchSize));
             
-            for (let i = 0; i < Math.min(sampleGames.length, targetGames); i += batchSize) {
+            for (let i = 0; i < targetGames; i += batchSize) {
                 const batch = sampleGames.slice(i, i + batchSize);
                 const batchResults = await Promise.all(
                     batch.map(async (game) => {
@@ -1125,48 +1148,78 @@ class GameSearchService {
                 
                 gamesWithDetails.push(...batchResults.filter(g => g !== null));
                 
-                // Count how many games we have with ratings so far
-                const ratedCount = gamesWithDetails.filter(g => {
-                    if (!g) return false;
-                    const hasMetacritic = g.metacritic !== null && g.metacritic !== undefined && g.metacritic > 0;
-                    const hasRating = g.rating !== null && g.rating !== undefined && g.rating > 0;
-                    return hasMetacritic || hasRating;
-                }).length;
-                
-                // Stop if we have enough highly-rated games (at least 3x the limit to ensure quality)
-                if (ratedCount >= limit * 3) break;
-                
-                // Also stop if we've fetched enough games overall (even if not all have ratings)
-                if (gamesWithDetails.length >= targetGames) break;
+                if (i + batchSize < targetGames) {
+                    await new Promise(resolve => setTimeout(resolve, 400));
+                }
+
+                if (gamesWithDetails.length >= limit * 6) {
+                    break;
+                }
             }
 
-            // Filter games with ratings, but be lenient - include all games if we don't have enough with ratings
-            const ratedGames = gamesWithDetails.filter(g => {
+            if (gamesWithDetails.length === 0) {
+                console.log('⚠️ [Trending] No fallback games found, using mock data');
+                return this.getMockTrendingGames(limit);
+            }
+
+            let candidatePool = this.filterRecentGames(gamesWithDetails, [6, 12, 18], limit);
+            if (candidatePool.length === 0) {
+                candidatePool = gamesWithDetails;
+            }
+
+            let ratedGames = candidatePool.filter(g => {
                 if (!g) return false;
                 const hasMetacritic = g.metacritic !== null && g.metacritic !== undefined && g.metacritic > 0;
                 const hasRating = g.rating !== null && g.rating !== undefined && g.rating > 0;
                 return hasMetacritic || hasRating;
             });
 
-            // Use rated games if we have enough, otherwise use all games
-            let gamesToSort = ratedGames.length >= limit ? ratedGames : gamesWithDetails;
+            if (ratedGames.length < limit && candidatePool.length > ratedGames.length) {
+                const remainder = candidatePool.filter(g => g && !ratedGames.includes(g));
+                ratedGames = ratedGames.concat(remainder);
+            }
 
-            // Sort by rating score (highest first) - prioritize metacritic, then user rating, then review count
-            gamesToSort.sort((a, b) => {
-                const scoreA = (a.metacritic || 0) * 10 + (a.rating || 0) * 3 + Math.min(a.ratingsCount || 0, 50000) / 1000;
-                const scoreB = (b.metacritic || 0) * 10 + (b.rating || 0) * 3 + Math.min(b.ratingsCount || 0, 50000) / 1000;
-                return scoreB - scoreA;
-            });
+            ratedGames.sort((a, b) => this.compareByRecencyPopularity(a, b));
 
-            const topGames = gamesToSort.slice(0, limit);
-            console.log(`✅ [Trending] Found ${topGames.length} highest-rated games from Steam (checked ${gamesWithDetails.length} games, ${ratedGames.length} had ratings)`);
+            let topGames = ratedGames.slice(0, limit);
+            const seenIds = new Set(topGames.map(g => g ? (g.id || g.appid) : null).filter(Boolean));
 
-            // If we still don't have enough games, use mock data as fallback
+            const fillFromPool = (pool) => {
+                if (!pool || pool.length === 0 || topGames.length >= limit) {
+                    return;
+                }
+                const sortedPool = [...pool].sort((a, b) => this.compareByRecencyPopularity(a, b));
+                for (const game of sortedPool) {
+                    if (!game) continue;
+                    const id = game.id || game.appid;
+                    if (!id || seenIds.has(id)) continue;
+                    topGames.push(game);
+                    seenIds.add(id);
+                    if (topGames.length >= limit) break;
+                }
+            };
+
             if (topGames.length < limit) {
-                console.log(`⚠️ [Trending] Only found ${topGames.length} games, using mock data for remaining ${limit - topGames.length} games`);
+                const remainderCandidate = candidatePool.filter(g => g && !seenIds.has(g.id || g.appid));
+                fillFromPool(remainderCandidate);
+            }
+
+            if (topGames.length < limit) {
+                const remainderAll = gamesWithDetails.filter(g => g && !seenIds.has(g.id || g.appid));
+                fillFromPool(remainderAll);
+            }
+
+            if (topGames.length < limit) {
+                console.log(`⚠️ [Trending] Only found ${topGames.length} fallback games, using mock data for remaining ${limit - topGames.length} games`);
                 const mockGames = this.getMockTrendingGames(limit - topGames.length);
                 if (mockGames.games && mockGames.games.length > 0) {
-                    topGames.push(...mockGames.games.slice(0, limit - topGames.length));
+                    for (const game of mockGames.games) {
+                        const id = game.id || game.appid;
+                        if (!id || seenIds.has(id)) continue;
+                        topGames.push(game);
+                        seenIds.add(id);
+                        if (topGames.length >= limit) break;
+                    }
                 }
             }
 
@@ -1181,143 +1234,92 @@ class GameSearchService {
         }
     }
 
-    // Get recent games (newly released)
+    // Enhanced getRecentGames method - focuses on 2024-2025 releases only
     async getRecentGames(limit = 8) {
         try {
             console.log(`🔍 [Recent] Fetching recent games from Steam...`);
             
-            // Check if Steam API is blocked - use fallback
+            // Check if Steam API is blocked
             if (this.steamApiBlocked) {
-                console.log('⚠️ [Recent] Steam API blocked, using fallback method');
-                // Use popular games as fallback for recent games
-                return await this.getPopularGamesFallback(limit);
+                console.log('⚠️ [Recent] Steam API blocked, using curated list');
+                return this.getCuratedRecentGames(limit);
             }
             
-            // Get Steam app list (cached)
-            const appList = await this.getSteamAppList();
-            
-            if (!appList || appList.length === 0) {
-                console.log('⚠️ [Recent] No Steam app list available, using mock data');
-                return this.getMockRecentGames(limit);
-            }
-
-            // Take games from the end of the list (newer games typically have higher app IDs)
-            // Also take some from middle for variety
-            const recentSampleSize = Math.min(200, appList.length);
-            const recentIndices = [
-                ...Array.from({ length: recentSampleSize }, (_, i) => appList.length - 1 - i), // Last N games
-                ...Array.from({ length: recentSampleSize }, (_, i) => Math.floor(appList.length * 0.8) + i) // Games from 80% through list
+            // Curated list of RECENT (2024-2025) popular releases only
+            // These are games released in the last 12 months that were highly anticipated/popular
+            const recentGameIds = [
+                // 2024-2025 Major Releases
+                2358720, // Black Myth: Wukong (Aug 2024)
+                2399830, // Helldivers 2 (Feb 2024)
+                1623730, // Palworld (Jan 2024)
+                2369390, // Tekken 8 (Jan 2024)
+                2161700, // Dragon's Dogma 2 (Mar 2024)
+                2050650, // Elden Ring Shadow of the Erdtree (Jun 2024)
+                2552430, // Indiana Jones and the Great Circle (Dec 2024)
+                2379780, // Marvel's Spider-Man 2 (Nov 2024 - PC)
+                2050650, // Elden Ring DLC (Jun 2024)
+                1938090, // Call of Duty: Modern Warfare III (Nov 2023)
+                2933120, // Hades II (May 2024 - Early Access)
+                2239550, // Senua's Saga: Hellblade II (May 2024)
+                2186680, // Prince of Persia: The Lost Crown (Jan 2024)
+                2677660, // Last Epoch (Feb 2024)
+                2302670, // The Outlast Trials (Mar 2024)
+                1627720, // Baldur's Gate 3 (Aug 2023 - still very relevant)
             ];
             
-            const sampleGames = recentIndices
-                .filter(idx => idx >= 0 && idx < appList.length)
-                .map(idx => appList[idx]);
-
-            // Fetch details in batches
-            const batchSize = 5; // Reduced batch size to avoid rate limits
+            const shuffledIds = [...recentGameIds].sort(() => Math.random() - 0.5);
+            
+            // Fetch details with rate limiting
+            const batchSize = 3;
             const gamesWithDetails = [];
             
-            for (let i = 0; i < Math.min(recentSampleSize * 2, sampleGames.length); i += batchSize) {
-                // Check circuit breaker during loop
-                if (this.steamApiBlocked) {
-                    console.log('⚠️ [Recent] Steam API blocked during fetch, using fallback');
-                    return await this.getPopularGamesFallback(limit);
-                }
+            for (let i = 0; i < Math.min(shuffledIds.length, limit * 3); i += batchSize) {
+                if (this.steamApiBlocked) break;
                 
-                const batch = sampleGames.slice(i, i + batchSize);
-                const batchResults = await Promise.all(
-                    batch.map(async (game) => {
-                        try {
-                            const details = await this.getSteamGameDetails(game.appid);
-                            if (details) {
-                                return this.formatSteamGameData(game, details);
+                const batch = shuffledIds.slice(i, i + batchSize);
+                
+                for (const appId of batch) {
+                    try {
+                        const details = await this.getSteamGameDetails(appId);
+                        if (details) {
+                            const formattedGame = this.formatSteamGameData(
+                                { appid: appId, name: details.name || 'Unknown' },
+                                details
+                            );
+                            if (formattedGame.name && formattedGame.name !== 'Unknown') {
+                                gamesWithDetails.push(formattedGame);
                             }
-                            return null;
-                        } catch (error) {
-                            return null;
                         }
-                    })
-                );
-                
-                gamesWithDetails.push(...batchResults.filter(g => g !== null));
-                
-                // Add delay between batches to avoid rate limiting
-                if (i + batchSize < Math.min(recentSampleSize * 2, sampleGames.length)) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                }
-                
-                if (gamesWithDetails.length >= limit * 3) break;
-            }
-
-            // Filter games with release dates - be more lenient
-            let gamesWithDates = gamesWithDetails.filter(g => {
-                if (!g) return false;
-                // Include games with release dates OR just games we found (if no dates available)
-                if (g.released && g.released !== 'TBA' && g.released !== 'No release date') {
-                    return true;
-                }
-                // If no release date, still include if it has other info
-                return g.name && g.name.length > 0;
-            });
-            
-            // Prefer games with ratings if we have enough
-            const gamesWithRatingsAndDates = gamesWithDates.filter(g => {
-                const hasMetacritic = g.metacritic !== null && g.metacritic !== undefined && g.metacritic > 0;
-                const hasRating = g.rating !== null && g.rating !== undefined && g.rating > 0;
-                return hasMetacritic || hasRating;
-            });
-            
-            // Use games with ratings if we have enough, otherwise use all games with dates
-            if (gamesWithRatingsAndDates.length >= limit) {
-                gamesWithDates = gamesWithRatingsAndDates;
-            }
-            
-            // If we still don't have enough, use all games we found
-            if (gamesWithDates.length < limit && gamesWithDetails.length > 0) {
-                const remainingGames = gamesWithDetails.filter(g => !gamesWithDates.includes(g));
-                gamesWithDates.push(...remainingGames.slice(0, limit - gamesWithDates.length));
-            }
-
-            // Sort by release date (newest first), but prioritize games with ratings
-            gamesWithDates.sort((a, b) => {
-                // First, prioritize games with ratings
-                const aHasRating = (a.metacritic > 0) || (a.rating > 0);
-                const bHasRating = (b.metacritic > 0) || (b.rating > 0);
-                if (aHasRating && !bHasRating) return -1;
-                if (!aHasRating && bHasRating) return 1;
-                
-                // Then sort by release date (newest first)
-                if (a.released && b.released) {
-                    const dateA = new Date(a.released);
-                    const dateB = new Date(b.released);
-                    if (!isNaN(dateA.getTime()) && !isNaN(dateB.getTime())) {
-                        return dateB - dateA; // Newest first
+                        await new Promise(resolve => setTimeout(resolve, 400));
+                    } catch (error) {
+                        console.error(`Error fetching details for app ${appId}:`, error.message);
                     }
                 }
-                return 0;
+                
+                if (gamesWithDetails.length >= limit * 2) break;
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            }
+
+            // Sort by release date (newest first) and quality
+            gamesWithDetails.sort((a, b) => {
+                const dateA = new Date(a.released || '2020-01-01');
+                const dateB = new Date(b.released || '2020-01-01');
+                return dateB - dateA;
             });
 
-            const recentGames = gamesWithDates.slice(0, limit);
+            const recentGames = gamesWithDetails.slice(0, limit);
             
-            // If we still don't have enough games, use mock data as fallback
             if (recentGames.length < limit) {
-                console.log(`⚠️ [Recent] Only found ${recentGames.length} games, using mock data for remaining ${limit - recentGames.length} games`);
-                const mockGames = this.getMockRecentGames(limit - recentGames.length);
-                if (mockGames.games && mockGames.games.length > 0) {
-                    recentGames.push(...mockGames.games.slice(0, limit - recentGames.length));
-                }
+                return this.getCuratedRecentGames(limit);
             }
-            
-            console.log(`✅ [Recent] Found ${recentGames.length} recent games (with ratings where available)`);
 
             return {
                 success: true,
-                games: recentGames.slice(0, limit)
+                games: recentGames
             };
         } catch (error) {
-            console.error('❌ [Recent] Error fetching recent games:', error.message);
-            console.log('⚠️ [Recent] Using mock data as fallback');
-            return this.getMockRecentGames(limit);
+            console.error(`❌ [Recent] Error:`, error.message);
+            return this.getCuratedRecentGames(limit);
         }
     }
 
@@ -1649,6 +1651,291 @@ class GameSearchService {
             totalResults: mockRecentGames.length
         };
     }
+
+    getRandomSample(array, size) {
+        if (!Array.isArray(array) || array.length === 0 || size <= 0) {
+            return [];
+        }
+        const sample = array.slice();
+        const maxIndex = sample.length - 1;
+        for (let i = maxIndex; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [sample[i], sample[j]] = [sample[j], sample[i]];
+        }
+        return sample.slice(0, Math.min(size, sample.length));
+    }
+
+    getMonthsAgoTimestamp(months) {
+        const date = new Date();
+        date.setMonth(date.getMonth() - months);
+        return date.getTime();
+    }
+
+    filterRecentGames(games, monthWindows = [6, 12], minimum = 0) {
+        if (!Array.isArray(games) || games.length === 0) {
+            return [];
+        }
+
+        for (const months of monthWindows) {
+            const threshold = this.getMonthsAgoTimestamp(months);
+            const filtered = games.filter(game => {
+                if (!game) return false;
+                if (game.comingSoon) return false;
+                if (!game.releaseTimestamp) return false;
+                return game.releaseTimestamp >= threshold;
+            });
+            if (filtered.length >= Math.max(minimum, 1)) {
+                return filtered;
+            }
+        }
+
+        return games.filter(game => game && game.releaseTimestamp && !game.comingSoon);
+    }
+
+    compareByRecencyPopularity(a, b) {
+        const releaseDiff = (b?.releaseTimestamp || 0) - (a?.releaseTimestamp || 0);
+        if (releaseDiff !== 0) {
+            return releaseDiff;
+        }
+
+        const playerDiff = (b?.currentPlayers || 0) - (a?.currentPlayers || 0);
+        if (playerDiff !== 0) {
+            return playerDiff;
+        }
+
+        const scoreA = (a?.metacritic || 0) * 10 + (a?.rating || 0) * 3 + Math.min(a?.ratingsCount || 0, 50000) / 1000;
+        const scoreB = (b?.metacritic || 0) * 10 + (b?.rating || 0) * 3 + Math.min(b?.ratingsCount || 0, 50000) / 1000;
+        return scoreB - scoreA;
+    }
+
+    getCuratedRecentGames(limit = 8) {
+        const recentGames = [
+            {
+                id: 2399830,
+                name: "Helldivers 2",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2399830/header.jpg",
+                description: "The Galaxy's Last Line of Offence. Enlist in the Helldivers and join the fight for freedom across a hostile galaxy in a fast, frantic, and ferocious third-person shooter.",
+                released: "2024-02-08",
+                rating: 4.7,
+                metacritic: 82,
+                platforms: [{ name: "PC" }, { name: "PlayStation" }],
+                genres: [{ name: "Action" }, { name: "Shooter" }]
+            },
+            {
+                id: 2358720,
+                name: "Black Myth: Wukong",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2358720/header.jpg",
+                description: "Black Myth: Wukong is an action RPG rooted in Chinese mythology. You shall set out as the Destined One to venture into the challenges and marvels ahead, to uncover the obscured truth beneath the veil of a glorious legend from the past.",
+                released: "2024-08-20",
+                rating: 4.8,
+                metacritic: 82,
+                platforms: [{ name: "PC" }, { name: "PlayStation" }],
+                genres: [{ name: "Action" }, { name: "RPG" }]
+            },
+            {
+                id: 1623730,
+                name: "Palworld",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1623730/header.jpg",
+                description: "Fight, farm, build and work alongside mysterious creatures called 'Pals' in this completely new multiplayer, open-world survival and crafting game!",
+                released: "2024-01-19",
+                rating: 4.5,
+                metacritic: 75,
+                platforms: [{ name: "PC" }, { name: "Xbox" }],
+                genres: [{ name: "Survival" }, { name: "Adventure" }]
+            },
+            {
+                id: 2369390,
+                name: "Tekken 8",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2369390/header.jpg",
+                description: "Get ready for the next chapter in the legendary fighting game franchise, Tekken 8.",
+                released: "2024-01-26",
+                rating: 4.6,
+                metacritic: 90,
+                platforms: [{ name: "PC" }, { name: "PlayStation" }, { name: "Xbox" }],
+                genres: [{ name: "Fighting" }, { name: "Action" }]
+            },
+            {
+                id: 1966720,
+                name: "Starfield",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1966720/header.jpg",
+                description: "Starfield is the first new universe in 25 years from Bethesda Game Studios, the award-winning creators of The Elder Scrolls V: Skyrim and Fallout 4.",
+                released: "2023-09-06",
+                rating: 4.2,
+                metacritic: 83,
+                platforms: [{ name: "PC" }, { name: "Xbox" }],
+                genres: [{ name: "RPG" }, { name: "Sci-Fi" }]
+            },
+            {
+                id: 1817070,
+                name: "Marvel's Spider-Man Remastered",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1817070/header.jpg",
+                description: "In Marvel's Spider-Man Remastered, the worlds of Peter Parker and Spider-Man collide in an original action-packed story.",
+                released: "2022-08-12",
+                rating: 4.8,
+                metacritic: 87,
+                platforms: [{ name: "PC" }, { name: "PlayStation" }],
+                genres: [{ name: "Action" }, { name: "Adventure" }]
+            },
+            {
+                id: 2161700,
+                name: "Dragon's Dogma 2",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2161700/header.jpg",
+                description: "Dragon's Dogma 2 is a single player, narrative driven action-RPG that challenges the players to choose their own experience – from the appearance of their Arisen, their vocation, their party, how to approach different situations and more.",
+                released: "2024-03-22",
+                rating: 4.3,
+                metacritic: 86,
+                platforms: [{ name: "PC" }, { name: "PlayStation" }, { name: "Xbox" }],
+                genres: [{ name: "RPG" }, { name: "Action" }]
+            }
+        ];
+
+        return {
+            success: true,
+            games: recentGames.slice(0, limit).map(game => ({
+                id: game.id,
+                name: game.name,
+                slug: game.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+                description: game.description,
+                description_raw: game.description,
+                released: game.released,
+                rating: game.rating,
+                ratingTop: 5,
+                ratingsCount: 1000,
+                metacritic: game.metacritic,
+                playtime: null,
+                platforms: game.platforms,
+                genres: game.genres,
+                developers: [],
+                publishers: [],
+                backgroundImage: game.backgroundImage,
+                backgroundImageAdditional: null,
+                website: null,
+                screenshots: []
+            }))
+        };
+    }
+
+    // Add this new method to provide curated trending games as fallback
+    getCuratedTrendingGames(limit = 8) {
+        // Curated list of consistently popular games with verified data
+        const curatedGames = [
+            {
+                id: 730,
+                name: "Counter-Strike 2",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/730/header.jpg",
+                description: "For over two decades, Counter-Strike has offered an elite competitive experience, one shaped by millions of players from across the globe. And now the next chapter in the CS story is about to begin. This is Counter-Strike 2.",
+                released: "2023-09-27",
+                rating: 4.5,
+                metacritic: 87,
+                platforms: [{ name: "PC" }],
+                genres: [{ name: "Action" }, { name: "FPS" }]
+            },
+            {
+                id: 1245620,
+                name: "Elden Ring",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1245620/header.jpg",
+                description: "THE NEW FANTASY ACTION RPG. Rise, Tarnished, and be guided by grace to brandish the power of the Elden Ring and become an Elden Lord in the Lands Between.",
+                released: "2022-02-25",
+                rating: 4.8,
+                metacritic: 96,
+                platforms: [{ name: "PC" }, { name: "PlayStation" }, { name: "Xbox" }],
+                genres: [{ name: "RPG" }, { name: "Action" }]
+            },
+            {
+                id: 1086940,
+                name: "Baldur's Gate 3",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1086940/header.jpg",
+                description: "Gather your party and return to the Forgotten Realms in a tale of fellowship and betrayal, sacrifice and survival, and the lure of absolute power.",
+                released: "2023-08-03",
+                rating: 4.9,
+                metacritic: 96,
+                platforms: [{ name: "PC" }, { name: "PlayStation" }],
+                genres: [{ name: "RPG" }, { name: "Strategy" }]
+            },
+            {
+                id: 271590,
+                name: "Grand Theft Auto V",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/271590/header.jpg",
+                description: "Grand Theft Auto V for PC offers players the option to explore the award-winning world of Los Santos and Blaine County in resolutions of up to 4k and beyond, as well as the chance to experience the game running at 60 frames per second.",
+                released: "2015-04-14",
+                rating: 4.7,
+                metacritic: 96,
+                platforms: [{ name: "PC" }, { name: "PlayStation" }, { name: "Xbox" }],
+                genres: [{ name: "Action" }, { name: "Adventure" }]
+            },
+            {
+                id: 1091500,
+                name: "Cyberpunk 2077",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1091500/header.jpg",
+                description: "Cyberpunk 2077 is an open-world, action-adventure RPG set in the dark future of Night City — a dangerous megalopolis obsessed with power, glamor, and ceaseless body modification.",
+                released: "2020-12-10",
+                rating: 4.3,
+                metacritic: 86,
+                platforms: [{ name: "PC" }, { name: "PlayStation" }, { name: "Xbox" }],
+                genres: [{ name: "RPG" }, { name: "Action" }]
+            },
+            {
+                id: 1174180,
+                name: "Red Dead Redemption 2",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/1174180/header.jpg",
+                description: "Winner of over 175 Game of the Year Awards and recipient of over 250 perfect scores, RDR2 is the epic tale of outlaw Arthur Morgan and the infamous Van der Linde gang, on the run across America at the dawn of the modern age.",
+                released: "2019-11-05",
+                rating: 4.8,
+                metacritic: 97,
+                platforms: [{ name: "PC" }, { name: "PlayStation" }, { name: "Xbox" }],
+                genres: [{ name: "Action" }, { name: "Adventure" }]
+            },
+            {
+                id: 570,
+                name: "Dota 2",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/570/header.jpg",
+                description: "Every day, millions of players worldwide enter battle as one of over a hundred Dota heroes. And no matter if it's their 10th hour of play or 1,000th, there's always something new to discover.",
+                released: "2013-07-09",
+                rating: 4.4,
+                metacritic: 90,
+                platforms: [{ name: "PC" }],
+                genres: [{ name: "MOBA" }, { name: "Strategy" }]
+            },
+            {
+                id: 292030,
+                name: "The Witcher 3: Wild Hunt",
+                backgroundImage: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/292030/header.jpg",
+                description: "As war rages on throughout the Northern Realms, you take on the greatest contract of your life — tracking down the Child of Prophecy, a living weapon that can alter the shape of the world.",
+                released: "2015-05-18",
+                rating: 4.9,
+                metacritic: 93,
+                platforms: [{ name: "PC" }, { name: "PlayStation" }, { name: "Xbox" }],
+                genres: [{ name: "RPG" }, { name: "Action" }]
+            }
+        ];
+
+        return {
+            success: true,
+            games: curatedGames.slice(0, limit).map(game => ({
+                id: game.id,
+                name: game.name,
+                slug: game.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
+                description: game.description,
+                description_raw: game.description,
+                released: game.released,
+                rating: game.rating,
+                ratingTop: 5,
+                ratingsCount: 1000,
+                metacritic: game.metacritic,
+                playtime: null,
+                platforms: game.platforms,
+                genres: game.genres,
+                developers: [],
+                publishers: [],
+                backgroundImage: game.backgroundImage,
+                backgroundImageAdditional: null,
+                website: null,
+                screenshots: []
+            }))
+        };
+    }
 }
 
 module.exports = GameSearchService;
+
+
