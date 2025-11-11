@@ -4,9 +4,8 @@
  * This does not connect to AWS — it mocks the API response.
  */
 
-import 'regenerator-runtime/runtime'; // for async/await
+require('regenerator-runtime/runtime');
 
-// simplified version of your updateFriends function
 async function updateFriends(fetchFn = fetch) {
   const list = document.getElementById('friendsList');
   const count = document.getElementById('friendsCount');
@@ -14,10 +13,9 @@ async function updateFriends(fetchFn = fetch) {
 
   const res = await fetchFn('/api/friends/testuser');
   const data = await res.json();
-
   const friends = data.friends || [];
   count.textContent = friends.length;
-
+  
   friends.forEach(friend => {
     const div = document.createElement('div');
     div.className = 'friend-item';
@@ -29,20 +27,16 @@ async function updateFriends(fetchFn = fetch) {
     list.appendChild(div);
   });
 }
-
-// test case
 test('renders friend and shows formatted date', async () => {
   document.body.innerHTML = `
     <div id="friendsList"></div>
     <span id="friendsCount"></span>
   `;
-
   const mockData = {
     friends: [
       { username: 'alex', acceptedDate: '2025-11-07T12:00:00.000Z' }
     ]
   };
-
   const mockFetch = jest.fn().mockResolvedValue({
     ok: true,
     json: async () => mockData
