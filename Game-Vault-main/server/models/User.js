@@ -61,7 +61,20 @@ const User = sequelize.define('User', {
     allowNull: true,
     defaultValue: ''
   },
-
+  // Profile picture path
+  profile_picture_path: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    field: 'profile_picture_path',
+    defaultValue: ''
+  },
+  avatar_path: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    field: 'avatar_path',
+    defaultValue: null
+  },
+  // Gaming preferences as JSON
   gaming_preferences: {
     type: DataTypes.JSONB,
     allowNull: true,

@@ -1,3 +1,7 @@
+// Import bcrypt at the top for password hashing
+const bcrypt = require('bcrypt');
+
+// User Profile Class
 class UserProfile {
   constructor(username, email, password, joinDate, gamingPreferences = {}) {
     this.username = username;
@@ -441,7 +445,6 @@ class AdminManager {
 }
 
 const RealDatabaseManager = require('../server/database/DatabaseManager');
-const bcrypt = require('bcrypt');
 
 class ProfileManager {
   constructor() {
@@ -560,16 +563,52 @@ class ProfileManager {
   }
 
   async login(username, password) {
-    const profile = this.profiles.find(p => p.username === username);
-    if (profile) {
-      if (await profile.login(password)) {
-        this.currentProfile = profile;
-
-        this.updateLastLogin(username);
-        return profile;
+    try {
+      // First try to find in local profiles array
+      let profile = this.profiles.find(p => p.username === username);
+      
+      // If found but not a UserProfile instance, remove it and reload from database
+      if (profile && !(profile instanceof UserProfile)) {
+        console.log('Profile in cache is not a UserProfile instance, removing and reloading...');
+        this.profiles = this.profiles.filter(p => p.username !== username);
+        profile = null;
       }
+      
+      // If not found locally and database is initialized, load from database
+      if (!profile && this.isInitialized) {
+        profile = await this.getUserByUsername(username);
+      }
+      
+      if (profile) {
+        // Verify profile is a UserProfile instance with authenticate method
+        if (!(profile instanceof UserProfile) || typeof profile.authenticate !== 'function') {
+          console.error('Profile does not have authenticate method:', {
+            profileType: typeof profile,
+            profileConstructor: profile?.constructor?.name,
+            profileKeys: profile ? Object.keys(profile) : 'null',
+            isUserProfile: profile instanceof UserProfile
+          });
+          return null;
+        }
+        
+        // Authenticate the password
+        const isAuthenticated = await profile.authenticate(password);
+        if (isAuthenticated) {
+          this.currentProfile = profile;
+          // Update last login in database
+          await this.updateLastLogin(username);
+          return profile;
+        } else {
+          console.log('Password authentication failed for username:', username);
+        }
+      } else {
+        console.log('User not found for login:', username);
+      }
+      return null;
+    } catch (error) {
+      console.error('Error during login:', error);
+      return null;
     }
-    return null;
   }
 
   async getUserByUsername(username) {
@@ -577,49 +616,122 @@ class ProfileManager {
 
       let profile = this.profiles.find(p => p.username === username);
       
+      // If found but not a UserProfile instance, remove it and reload from database
+      if (profile && !(profile instanceof UserProfile)) {
+        console.log('Profile in cache is not a UserProfile instance, removing and reloading...');
+        this.profiles = this.profiles.filter(p => p.username !== username);
+        profile = null;
+      }
+      
       if (!profile && this.isInitialized) {
 
         const userData = await this.databaseManager.getUserByUsername(username);
         if (userData) {
-
-          profile = new UserProfile(
-            userData.username,
-            userData.email,
-            userData.password_hash,
-            userData.join_date,
-            userData.gaming_preferences || {}
-          );
-
-          profile.bio = userData.bio || '';
-          profile.statistics = userData.statistics || profile.statistics;
-          profile.achievements = [];
-          profile.isActive = userData.is_active !== undefined ? userData.is_active : true;
-          profile.lastLogin = userData.last_login || null;
-          profile.privacySettings = {
-            profileVisibility: 'public',
-            showEmail: false,
-            showStatistics: true,
-            showFriendsList: true
-          };
-
-          if (userData.steam_id) {
-            profile.steam_id = userData.steam_id;
-            profile.steam_profile = userData.steam_profile;
-            profile.steam_linked_at = userData.steam_linked_at;
-            profile.steam_games = userData.steam_games;
-            profile.steam_last_sync = userData.steam_last_sync;
-          }
-
-          this.profiles.push(profile);
-
-          if (!this.friendsLists.has(username)) {
-            this.friendsLists.set(username, new FriendsList(username));
-          }
-          if (!this.wishlistManagers.has(username)) {
-            this.wishlistManagers.set(username, new WishlistManager(username));
-          }
-          if (!this.reviewManagers.has(username)) {
-            this.reviewManagers.set(username, new ReviewManager(username));
+          try {
+            // Convert Sequelize model instance to plain object if needed
+            let userObj;
+            if (userData.get && typeof userData.get === 'function') {
+              userObj = userData.get({ plain: true });
+            } else if (userData.toJSON && typeof userData.toJSON === 'function') {
+              userObj = userData.toJSON();
+            } else {
+              userObj = userData;
+            }
+            
+            // Ensure we have password_hash for authentication
+            if (!userObj.password_hash && !userObj.password) {
+              console.error('User data missing password_hash field:', {
+                username: userObj.username,
+                availableKeys: Object.keys(userObj)
+              });
+              return null;
+            }
+            
+            // Convert database format to UserProfile format
+            // Ensure password_hash is available
+            const passwordHash = userObj.password_hash || userObj.password || '';
+            if (!passwordHash) {
+              console.error('Cannot create UserProfile without password_hash:', {
+                username: userObj.username,
+                availableKeys: Object.keys(userObj)
+              });
+              return null;
+            }
+            
+            profile = new UserProfile(
+              userObj.username,
+              userObj.email,
+              passwordHash,
+              userObj.join_date,
+              userObj.gaming_preferences || {}
+            );
+            
+            // Verify the instance was created correctly
+            if (!profile || !(profile instanceof UserProfile)) {
+              console.error('Failed to create UserProfile instance');
+              return null;
+            }
+            
+            console.log('Created UserProfile instance:', {
+              username: profile.username,
+              hasPassword: !!profile.password,
+              passwordLength: profile.password ? profile.password.length : 0,
+              hasAuthenticate: typeof profile.authenticate === 'function',
+              isUserProfile: profile instanceof UserProfile,
+              constructorName: profile.constructor.name
+            });
+            
+            // Restore additional properties
+            profile.bio = userObj.bio || '';
+            profile.statistics = userObj.statistics || profile.statistics;
+            profile.achievements = [];
+            profile.isActive = userObj.is_active !== undefined ? userObj.is_active : true;
+            profile.lastLogin = userObj.last_login || null;
+            profile.privacySettings = {
+              profileVisibility: 'public',
+              showEmail: false,
+              showStatistics: true,
+              showFriendsList: true
+            };
+            
+            // Add Steam properties if they exist
+            if (userObj.steam_id) {
+              profile.steam_id = userObj.steam_id;
+              profile.steam_profile = userObj.steam_profile;
+              profile.steam_linked_at = userObj.steam_linked_at;
+              profile.steam_games = userObj.steam_games;
+              profile.steam_last_sync = userObj.steam_last_sync;
+            }
+            
+            // Add avatar path if it exists (will use placeholder if not set)
+            profile.avatar_path = userObj.avatar_path || null;
+            
+            // Verify profile is a proper UserProfile instance with authenticate method
+            if (!profile || typeof profile.authenticate !== 'function') {
+              console.error('Profile does not have authenticate method!', {
+                profileType: typeof profile,
+                profileConstructor: profile?.constructor?.name,
+                hasAuthenticate: typeof profile?.authenticate
+              });
+              return null;
+            }
+            
+            // Add to local profiles array
+            this.profiles.push(profile);
+            
+            // Initialize related managers if they don't exist
+            if (!this.friendsLists.has(username)) {
+              this.friendsLists.set(username, new FriendsList(username));
+            }
+            if (!this.wishlistManagers.has(username)) {
+              this.wishlistManagers.set(username, new WishlistManager(username));
+            }
+            if (!this.reviewManagers.has(username)) {
+              this.reviewManagers.set(username, new ReviewManager(username));
+            }
+          } catch (error) {
+            console.error('Error converting user data to UserProfile:', error);
+            return null;
           }
         }
       }
@@ -821,21 +933,45 @@ class ProfileManager {
   // Friend management methods
   async getUserByUsername(username) {
     try {
-      const { User } = require('../server/models/index');
-      const user = await User.findOne({ 
-        where: { username: username },
-        attributes: ['user_id', 'username', 'email', 'join_date', 'bio']
-      });
-      if (user) {
-        // Map the database fields to the expected format
-        return {
-          id: user.user_id,
-          username: user.username,
-          email: user.email,
-          joinDate: user.join_date,
-          bio: user.bio
-        };
+      // First try to find in local profiles array
+      let profile = this.profiles.find(p => p.username === username);
+      
+      if (!profile && this.isInitialized) {
+        const { User } = require('../server/models/index');
+        const user = await User.findOne({ 
+          where: { username: username }
+          // Don't limit attributes - we need password_hash and all other fields
+        });
+        if (user) {
+          // Convert Sequelize model to plain object if needed
+          const userObj = user.get ? user.get({ plain: true }) : user;
+          
+          // Map the database fields to the expected format
+          return {
+            id: userObj.user_id,
+            username: userObj.username,
+            email: userObj.email,
+            password_hash: userObj.password_hash,
+            joinDate: userObj.join_date,
+            bio: userObj.bio,
+            gaming_preferences: userObj.gaming_preferences,
+            statistics: userObj.statistics,
+            steam_id: userObj.steam_id,
+            steam_profile: userObj.steam_profile,
+            steam_games: userObj.steam_games,
+            steam_last_sync: userObj.steam_last_sync,
+            avatar_path: userObj.avatar_path,
+            is_active: userObj.is_active,
+            last_login: userObj.last_login
+          };
+        }
       }
+      
+      // If found in local profiles, return it
+      if (profile) {
+        return profile;
+      }
+      
       return null;
     } catch (error) {
       console.error('Error getting user by username:', error);
@@ -857,12 +993,14 @@ class ProfileManager {
           {
             model: User,
             as: 'user',
-            attributes: ['user_id', 'username', 'email', 'join_date', 'bio']
+            // Include password_hash for authentication
+        attributes: { exclude: [] } // Don't exclude any fields - we need password_hash
           },
           {
             model: User,
             as: 'friend',
-            attributes: ['user_id', 'username', 'email', 'join_date', 'bio']
+            // Include password_hash for authentication
+        attributes: { exclude: [] } // Don't exclude any fields - we need password_hash
           }
         ]
       });
@@ -898,7 +1036,8 @@ class ProfileManager {
           {
             model: User,
             as: 'friend',
-            attributes: ['user_id', 'username', 'email', 'join_date', 'bio']
+            // Include password_hash for authentication
+        attributes: { exclude: [] } // Don't exclude any fields - we need password_hash
           }
         ]
       });
@@ -931,7 +1070,8 @@ class ProfileManager {
           {
             model: User,
             as: 'user',
-            attributes: ['user_id', 'username', 'email', 'join_date', 'bio']
+            // Include password_hash for authentication
+        attributes: { exclude: [] } // Don't exclude any fields - we need password_hash
           }
         ]
       });

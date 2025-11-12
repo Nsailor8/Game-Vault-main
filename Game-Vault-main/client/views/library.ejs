@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+  <%- include('partials/head', { pageTitle: 'My Libraries' }) %>
+<body>
+  <%- include('partials/header') %>
+
+  <div class="container">
+    <main class="main-content">
+      <!-- Library Section -->
+      <section id="librarySection" class="content-section active">
+        <div class="section-header">
+          <h2>My Libraries</h2>
+          <div class="library-actions">
+            <button id="checkSteamOwnershipBtn" class="btn btn-steam">
+              <i class="fab fa-steam"></i> Check Steam Ownership
+            </button>
+            <button id="createLibraryBtn" class="btn btn-primary">
+              <i class="fas fa-plus"></i> Create Library
+            </button>
+          </div>
+        </div>
+        <!-- Steam Ownership Status -->
+        <div id="steamOwnershipStatus" class="steam-ownership-status" style="display: none;">
+          <div class="ownership-header">
+            <h3><i class="fab fa-steam"></i> Steam Ownership Status</h3>
+            <span id="steamOwnershipCount" class="ownership-count">0 games owned</span>
+          </div>
+          <div id="steamOwnedGamesList" class="steam-owned-games">
+            <!-- Steam owned games will be populated here -->
+          </div>
+        </div>
+
+        <div class="libraries-content">
+          <!-- Libraries List -->
+          <div id="libraryContainer" class="list-container">
+            <!-- Library items will be populated here by JavaScript -->
+            <div class="empty-state">
+              <i class="fas fa-book"></i>
+              <h3>Loading...</h3>
+              <p>Please wait while we load your libraries.</p>
+            </div>
+          </div>
+          
+          <!-- Selected Library Games -->
+          <div id="selectedLibrarySection" style="display: none; margin-top: 2rem;">
+            <div class="section-header">
+              <h3 id="selectedLibraryTitle">Library Games</h3>
+              <div class="library-actions">
+                <button class="btn btn-secondary" onclick="if(window.app) window.app.backToLibraries();">
+                  <i class="fas fa-arrow-left"></i> Back to Libraries
+                </button>
+              </div>
+            </div>
+            <div id="libraryGames" class="list-container">
+              <!-- Games will be populated here when a library is selected -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Create Library Modal -->
+        <div id="createLibraryModal" class="modal" style="display: none;">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3>Create New Library</h3>
+              <button class="modal-close" onclick="closeCreateLibraryModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+              <form id="createLibraryForm">
+                <div class="form-group">
+                  <label for="libraryName">Library Name</label>
+                  <input type="text" id="libraryName" placeholder="Enter library name" required maxlength="100">
+                </div>
+                <div class="form-group">
+                  <label for="libraryDescription">Description (optional)</label>
+                  <textarea id="libraryDescription" placeholder="Describe your library" rows="3"></textarea>
+                </div>
+                <div class="form-actions">
+                  <button type="button" class="btn btn-secondary" onclick="closeCreateLibraryModal()">Cancel</button>
+                  <button type="submit" class="btn btn-primary">Create Library</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- Edit Library Modal -->
+        <div id="editLibraryModal" class="modal" style="display: none;">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3>Edit Library</h3>
+              <button class="modal-close" onclick="closeEditLibraryModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+              <form id="editLibraryForm">
+                <input type="hidden" id="editLibraryId">
+                <div class="form-group">
+                  <label for="editLibraryName">Library Name</label>
+                  <input type="text" id="editLibraryName" placeholder="Enter library name" required maxlength="100">
+                </div>
+                <div class="form-group">
+                  <label for="editLibraryDescription">Description (optional)</label>
+                  <textarea id="editLibraryDescription" placeholder="Describe your library" rows="3"></textarea>
+                </div>
+                <div class="form-actions">
+                  <button type="button" class="btn btn-secondary" onclick="closeEditLibraryModal()">Cancel</button>
+                  <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <%- include('partials/loginModal') %>
+
+  <script src="/app.js?v=2"></script>
+  <script>
+    // Initialize the app when the page loads
+    document.addEventListener('DOMContentLoaded', async () => {
+      console.log('Library page - DOM Content Loaded');
+      
+      // Wait for app to initialize
+      if (window.app) {
+        // Check auth status first
+        await window.app.checkAuthStatus();
+        
+        // If user is logged in, update libraries
+        if (window.app.currentUser) {
+          window.app.updateLibraries();
+        }
+      } else {
+        // Wait a bit for app to initialize
+        setTimeout(async () => {
+          if (window.app) {
+            await window.app.checkAuthStatus();
+            if (window.app.currentUser) {
+              window.app.updateLibraries();
+            }
+          }
+        }, 500);
+      }
+      
+      // Add event listener for Steam ownership check button
+      const checkSteamOwnershipBtn = document.getElementById('checkSteamOwnershipBtn');
+      if (checkSteamOwnershipBtn) {
+        checkSteamOwnershipBtn.addEventListener('click', async () => {
+          if (window.app && window.app.currentUser) {
+            try {
+              const result = await window.checkWishlistSteamOwnership(window.app.currentUser.username);
+              if (result) {
+                displaySteamOwnershipStatus(result);
+              } else {
+                if (window.app) {
+                  window.app.showAlert('Failed to check Steam ownership. Make sure you have a Steam account linked.', 'Error', 'error');
+                } else {
+                  alert('Failed to check Steam ownership. Make sure you have a Steam account linked.');
+                }
+              }
+            } catch (error) {
+              console.error('Error checking Steam ownership:', error);
+              if (window.app) {
+                window.app.showAlert('Error checking Steam ownership', 'Error', 'error');
+              } else {
+                alert('Error checking Steam ownership');
+              }
+            }
+          } else {
+            if (window.app) {
+              window.app.showAlert('Please log in to check Steam ownership', 'Login Required', 'warning');
+            } else {
+              alert('Please log in to check Steam ownership');
+            }
+          }
+        });
+      }
+      
+      // Add event listener for Create Library button
+      const createLibraryBtn = document.getElementById('createLibraryBtn');
+      if (createLibraryBtn) {
+        createLibraryBtn.addEventListener('click', () => {
+          openCreateLibraryModal();
+        });
+      }
+
+      // Create Library Form
+      const createLibraryForm = document.getElementById('createLibraryForm');
+      if (createLibraryForm) {
+        createLibraryForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const name = document.getElementById('libraryName').value.trim();
+          const description = document.getElementById('libraryDescription').value.trim();
+          
+          if (!name) {
+            alert('Library name is required');
+            return;
+          }
+
+          if (window.app && window.app.createLibrary) {
+            const success = await window.app.createLibrary(name, description);
+            if (success) {
+              closeCreateLibraryModal();
+              createLibraryForm.reset();
+            }
+          }
+        });
+      }
+
+      // Edit Library Form
+      const editLibraryForm = document.getElementById('editLibraryForm');
+      if (editLibraryForm) {
+        editLibraryForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const libraryId = document.getElementById('editLibraryId').value;
+          const name = document.getElementById('editLibraryName').value.trim();
+          const description = document.getElementById('editLibraryDescription').value.trim();
+          
+          if (!name) {
+            alert('Library name is required');
+            return;
+          }
+
+          if (window.app && window.app.updateLibrary) {
+            const success = await window.app.updateLibrary(libraryId, name, description);
+            if (success) {
+              closeEditLibraryModal();
+            }
+          }
+        });
+      }
+    });
+
+    function openCreateLibraryModal() {
+      const modal = document.getElementById('createLibraryModal');
+      if (modal) {
+        modal.style.display = 'flex';
+      }
+    }
+
+    function closeCreateLibraryModal() {
+      const modal = document.getElementById('createLibraryModal');
+      if (modal) {
+        modal.style.display = 'none';
+        document.getElementById('createLibraryForm').reset();
+      }
+    }
+
+    function openEditLibraryModal(libraryId, name, description) {
+      const modal = document.getElementById('editLibraryModal');
+      if (modal) {
+        document.getElementById('editLibraryId').value = libraryId;
+        document.getElementById('editLibraryName').value = name || '';
+        document.getElementById('editLibraryDescription').value = description || '';
+        modal.style.display = 'flex';
+      }
+    }
+
+    function closeEditLibraryModal() {
+      const modal = document.getElementById('editLibraryModal');
+      if (modal) {
+        modal.style.display = 'none';
+        document.getElementById('editLibraryForm').reset();
+      }
+    }
+
+    // Close modals when clicking outside
+    window.onclick = function(event) {
+      const createModal = document.getElementById('createLibraryModal');
+      const editModal = document.getElementById('editLibraryModal');
+      if (event.target === createModal) {
+        closeCreateLibraryModal();
+      }
+      if (event.target === editModal) {
+        closeEditLibraryModal();
+      }
+    };
+
+    function displaySteamOwnershipStatus(result) {
+      const statusDiv = document.getElementById('steamOwnershipStatus');
+      const countSpan = document.getElementById('steamOwnershipCount');
+      const gamesList = document.getElementById('steamOwnedGamesList');
+
+      if (statusDiv && countSpan && gamesList) {
+        statusDiv.style.display = 'block';
+        countSpan.textContent = `${result.totalOwned} games owned`;
+
+        if (result.steamOwnedGames.length > 0) {
+          gamesList.innerHTML = result.steamOwnedGames.map(game => `
+            <div class="steam-owned-game">
+              <span class="game-name">${game.gameName}</span>
+              <span class="wishlist-name">in ${game.wishlistName}</span>
+              <a href="steam://run/${game.gameId}" class="btn btn-steam btn-sm">
+                <i class="fab fa-steam"></i> Play
+              </a>
+            </div>
+          `).join('');
+        } else {
+          gamesList.innerHTML = '<p class="no-owned-games">No wishlisted games found in your Steam library.</p>';
+        }
+      }
+    }
+  </script>
+</body>
+</html>
+

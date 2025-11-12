@@ -84,9 +84,66 @@ class DatabaseManager {
 
   async getUserByUsername(username) {
     try {
-      const user = await User.findOne({ where: { username } });
+      // Include password_hash for authentication purposes
+      // Use raw query or explicitly include password_hash in attributes
+      // Note: avatar_path may not exist yet, so we handle it gracefully
+      const user = await User.findOne({ 
+        where: { username },
+        attributes: { 
+          exclude: [] // Don't exclude anything - we need password_hash
+        },
+        raw: false // Return Sequelize instance, not plain object
+      });
+      
+      if (user) {
+        // Check if avatar_path column exists by trying to access it
+        // If it doesn't exist, we'll handle it gracefully
+        try {
+          const hasAvatarPath = user.dataValues && 'avatar_path' in user.dataValues;
+          console.log('User found in database:', {
+            username: user.username,
+            hasPasswordHash: !!user.password_hash,
+            hasAvatarPath: hasAvatarPath,
+            fields: Object.keys(user.dataValues || user)
+          });
+        } catch (e) {
+          // Column might not exist yet - that's okay
+          console.log('User found in database:', {
+            username: user.username,
+            hasPasswordHash: !!user.password_hash,
+            note: 'avatar_path column may not exist yet'
+          });
+        }
+      }
+      
       return user;
     } catch (error) {
+      // If error is about missing avatar_path or profile_picture_path column, try query without it
+      if (error.message && (error.message.includes('avatar_path') || error.message.includes('profile_picture_path') || error.code === '42703')) {
+        console.log('⚠️ avatar_path or profile_picture_path column not found, querying without it...');
+        try {
+          const user = await User.findOne({ 
+            where: { username },
+            attributes: [
+              'user_id', 'username', 'email', 'password_hash', 'join_date', 
+              'is_active', 'is_admin', 'last_login', 'bio', 
+              'gaming_preferences', 'statistics', 
+              'steam_id', 'steam_profile', 'steam_linked_at', 'steam_games', 'steam_last_sync'
+              // Exclude avatar_path and profile_picture_path - will use placeholder image instead
+            ],
+            raw: false
+          });
+          // Set avatar_path and profile_picture_path to null since columns don't exist
+          if (user && user.dataValues) {
+            user.dataValues.avatar_path = null;
+            user.dataValues.profile_picture_path = null;
+          }
+          return user;
+        } catch (retryError) {
+          console.error('Error getting user by username (retry):', retryError);
+          return null;
+        }
+      }
       console.error('Error getting user by username:', error);
       return null;
     }
