@@ -479,6 +479,7 @@ class GameVaultApp {
                 this.currentUser = data.user;
                 this.loginScreen.hide();
                 this.updateUI();
+                this.updateReviews();
                 console.log('User logged in successfully:', data.user.username);
                 
                 // Update profile links immediately after login
@@ -625,6 +626,7 @@ class GameVaultApp {
                 this.currentUser = data.user;
                 this.loginScreen.hide();
                 this.updateUI();
+                this.updateReviews();
                 console.log('User created successfully on server:', data.user.username);
                 
                 // Update profile links immediately after signup
@@ -727,6 +729,7 @@ class GameVaultApp {
             if (data.success && data.user) {
                 this.currentUser = data.user;
                 this.updateUI();
+                this.updateReviews();
                 console.log('User already logged in:', data.user.username);
                 
                 // Update profile links when auth check confirms user

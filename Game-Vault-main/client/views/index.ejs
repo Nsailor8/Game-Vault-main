@@ -17,7 +17,7 @@
       <!-- Trending Games Section -->
       <section class="section">
         <div class="section-header">
-          <h2>🔥 Trending Games</h2>
+          <h2>Trending Games</h2>
           <p>Most popular and highly rated games</p>
         </div>
         <div id="trendingList" class="games-grid">
@@ -61,7 +61,7 @@
       <!-- Recently Added Section -->
       <section class="section">
         <div class="section-header">
-          <h2>🆕 Recently Released</h2>
+          <h2>Recently Released</h2>
           <p>Latest games that just hit the market</p>
         </div>
         <div id="recentList" class="games-grid">
@@ -147,15 +147,24 @@
         }
         
         container.innerHTML = games.map(game => {
-          const imageUrl = game.background_image || game.backgroundImage || '';
+          let imageUrl = game.background_image || game.backgroundImage || '';
+          // Ensure URL is absolute
+          if (imageUrl && !imageUrl.startsWith('http://') && !imageUrl.startsWith('https://') && !imageUrl.startsWith('//')) {
+            imageUrl = 'https://' + imageUrl.replace(/^\/+/, '');
+          }
+          console.log(`[Game Image] ${game.name}:`, imageUrl || 'NO IMAGE URL');
           const ratingHtml = game.rating ? `<span class="rating-badge"><i class="fas fa-star"></i> ${game.rating.toFixed(1)}</span>` : '';
           const metacriticHtml = game.metacritic ? `<span class="metacritic-badge">M: ${game.metacritic}</span>` : '';
           const ratingSection = (game.rating || game.metacritic) ? `<div class="game-card-rating">${ratingHtml}${metacriticHtml}</div>` : '';
           
+          const gameId = game.id || game.appid || game.steam_id || 0;
+          const escapedName = game.name.replace(/'/g, "\\'").replace(/"/g, '\\"');
+          const escapedUrl = imageUrl ? imageUrl.replace(/'/g, "\\'").replace(/"/g, '\\"') : '';
+          
           return `
-            <div class="game-card-simple" onclick="if(window.app) window.app.viewGameDetails(${game.id || game.appid || game.steam_id || 0})">
+            <div class="game-card-simple" onclick="if(window.app) window.app.viewGameDetails(${gameId})">
               <div class="game-image-simple" style="cursor: pointer;">
-                ${imageUrl ? `<img src="${imageUrl}" alt="${game.name}" class="game-image" loading="lazy">` : '<div class="no-image"><i class="fas fa-gamepad"></i></div>'}
+                ${imageUrl ? `<img src="${escapedUrl}" alt="${escapedName}" class="game-image" loading="lazy" crossorigin="anonymous"><div class="no-image" style="display: none;"><i class="fas fa-gamepad"></i></div>` : '<div class="no-image"><i class="fas fa-gamepad"></i></div>'}
                 ${ratingSection}
               </div>
               <div class="game-name-simple" style="cursor: pointer;">
@@ -164,6 +173,36 @@
             </div>
           `;
         }).join('');
+        
+        // Ensure all images are visible after rendering
+        setTimeout(() => {
+          const images = container.querySelectorAll('.game-image');
+          images.forEach(img => {
+            if (img.complete && img.naturalHeight > 0) {
+              console.log('[Image Verified]', img.alt, 'loaded successfully');
+              img.style.display = 'block';
+              img.style.visibility = 'visible';
+              img.style.opacity = '1';
+              img.style.zIndex = '10';
+            } else {
+              img.addEventListener('load', function() {
+                console.log('[Image Loaded]', this.alt);
+                this.style.display = 'block';
+                this.style.visibility = 'visible';
+                this.style.opacity = '1';
+                this.style.zIndex = '10';
+              });
+              img.addEventListener('error', function() {
+                console.error('[Image Error]', this.alt, this.src);
+                this.style.display = 'none';
+                const noImage = this.nextElementSibling;
+                if (noImage && noImage.classList.contains('no-image')) {
+                  noImage.style.display = 'flex';
+                }
+              });
+            }
+          });
+        }, 100);
       }
       
       // Fetch trending games

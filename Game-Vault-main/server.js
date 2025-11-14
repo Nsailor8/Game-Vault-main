@@ -3642,6 +3642,32 @@ app.get('/api/games/suggestions', async (req, res) => {
     }
 });
 
+// Diagnostic endpoint to check Steam app list status
+app.get('/api/games/debug/applist', async (req, res) => {
+    try {
+        const appList = await gameSearchService.getSteamAppList();
+        const hasCache = !!gameSearchService.appListCache;
+        const cacheTime = gameSearchService.appListCacheTime;
+        const cacheAge = cacheTime ? Date.now() - cacheTime : null;
+        
+        res.json({
+            success: true,
+            appListLoaded: appList && appList.length > 0,
+            appListCount: appList ? appList.length : 0,
+            hasCache: hasCache,
+            cacheAge: cacheAge ? Math.floor(cacheAge / 1000) + ' seconds' : null,
+            isBlocked: gameSearchService.steamApiBlocked,
+            sampleGames: appList && appList.length > 0 ? appList.slice(0, 10).map(g => ({ appid: g.appid, name: g.name })) : []
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            stack: error.stack
+        });
+    }
+});
+
 // Trending games endpoint
 app.get('/api/games/trending', async (req, res) => {
     try {
@@ -3910,6 +3936,21 @@ app.listen(PORT, async () => {
             }
             
             console.log(`✅ Database ready for new users!`);
+            
+            // Preload Steam app list in the background for faster searches
+            console.log('🔄 Preloading Steam app list (this may take 30-60 seconds)...');
+            gameSearchService.getSteamAppList()
+                .then(appList => {
+                    if (appList && appList.length > 0) {
+                        console.log(`✅ Steam app list preloaded successfully with ${appList.length} games`);
+                    } else {
+                        console.warn('⚠️ Steam app list preload returned empty or null');
+                    }
+                })
+                .catch(error => {
+                    console.error('❌ Error preloading Steam app list:', error.message);
+                    console.log('   Searches will still work, but may be slower on first use');
+                });
         }
     }, 100);
 
