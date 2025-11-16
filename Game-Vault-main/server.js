@@ -1,3 +1,19 @@
+// Handle unhandled promise rejections to prevent crashes
+process.on('unhandledRejection', (error, promise) => {
+    console.error('❌ Unhandled Promise Rejection:', error.message);
+    if (error.stack) {
+        console.error('   Stack:', error.stack.split('\n').slice(0, 3).join('\n'));
+    }
+    console.error('   This error was caught to prevent server crash');
+    // Don't exit - let the server continue running
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('❌ Uncaught Exception:', error.message);
+    console.error('   Stack:', error.stack);
+    // Don't exit - let the server continue running
+});
+
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -12,7 +28,7 @@ const GameSearchService = require('./server/services/GameSearchService');
 const SteamService = require('./server/services/SteamService');
 
 // Load database models once at startup
-const { User, Game, Review, Wishlist, WishlistGame, Friendship, Achievement, ReviewHelpfulVote } = require('./server/models/index');
+const { User, Game, Review, Wishlist, WishlistGame, Friendship, Achievement, ReviewHelpfulVote, Post, Comment } = require('./server/models/index');
 const { sequelize } = require('./server/config/database');
 const { Op, QueryTypes } = require('sequelize');
 
@@ -53,9 +69,171 @@ app.use(session({
     name: 'connect.sid' // Default session cookie name
 }));
 
-app.use((req, res, next) => {
-    console.log('Session middleware - Session ID:', req.sessionID);
-    console.log('Session middleware - Session user:', req.session.user);
+// Log session configuration
+console.log('[Session Config] Session store:', sessionStore ? 'MemoryStore' : 'default');
+console.log('[Session Config] Cookie name: connect.sid');
+console.log('[Session Config] Cookie maxAge: 7 days');
+console.log('[Session Config] Cookie sameSite: lax');
+console.log('[Session Config] Cookie httpOnly: true');
+console.log('[Session Config] Cookie path: /');
+console.log('[Session Config] Cookie domain: undefined (allows localhost)');
+
+// Helper function to restore session user from database
+async function restoreSessionUser(req, username = null) {
+    // If session user exists, return it
+    if (req.session?.user) {
+        return req.session.user;
+    }
+    
+    // If no session, can't restore
+    if (!req.session || !req.sessionID) {
+        return null;
+    }
+    
+    // Try to reload session first
+    try {
+        await new Promise((resolve, reject) => {
+            req.session.reload((err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+        if (req.session?.user) {
+            console.log('[Restore Session] Session reloaded, found user:', req.session.user.username);
+            return req.session.user;
+        }
+    } catch (error) {
+        console.log('[Restore Session] Session reload failed:', error.message);
+    }
+    
+    // If we have a username (from URL or request), try to restore from database
+    if (username) {
+        try {
+            const dbUser = await User.findOne({ where: { username: username } });
+            if (dbUser) {
+                console.log('[Restore Session] Restoring session user from database:', username);
+                
+                // Extract user_id using multiple methods
+                let userId = dbUser.user_id || dbUser.getDataValue?.('user_id') || dbUser.dataValues?.user_id || dbUser.id;
+                
+                req.session.user = {
+                    id: userId,  // Store as 'id' for consistency
+                    user_id: userId,  // Also store as 'user_id' for compatibility
+                    username: dbUser.username || dbUser.getDataValue?.('username') || dbUser.dataValues?.username,
+                    email: dbUser.email || dbUser.getDataValue?.('email') || dbUser.dataValues?.email,
+                    joinDate: dbUser.join_date || dbUser.getDataValue?.('join_date') || dbUser.dataValues?.join_date,
+                    bio: dbUser.bio || dbUser.getDataValue?.('bio') || dbUser.dataValues?.bio || '',
+                    gamingPreferences: dbUser.gaming_preferences || dbUser.getDataValue?.('gaming_preferences') || dbUser.dataValues?.gaming_preferences || {},
+                    statistics: dbUser.statistics || dbUser.getDataValue?.('statistics') || dbUser.dataValues?.statistics || {},
+                    achievements: dbUser.achievements || dbUser.getDataValue?.('achievements') || dbUser.dataValues?.achievements || [],
+                    steam_id: dbUser.steam_id || dbUser.getDataValue?.('steam_id') || dbUser.dataValues?.steam_id,
+                    steam_profile: dbUser.steam_profile || dbUser.getDataValue?.('steam_profile') || dbUser.dataValues?.steam_profile,
+                    steam_games: dbUser.steam_games || dbUser.getDataValue?.('steam_games') || dbUser.dataValues?.steam_games,
+                    steam_last_sync: dbUser.steam_last_sync || dbUser.getDataValue?.('steam_last_sync') || dbUser.dataValues?.steam_last_sync,
+                    avatar_path: dbUser.avatar_path || dbUser.getDataValue?.('avatar_path') || dbUser.dataValues?.avatar_path
+                };
+                
+                // Save the restored session
+                await new Promise((resolve, reject) => {
+                    req.session.save((err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    });
+                });
+                
+                console.log('[Restore Session] Session restored with user_id:', userId);
+                return req.session.user;
+            }
+        } catch (error) {
+            console.error('[Restore Session] Error restoring from database:', error);
+        }
+    }
+    
+    return null;
+}
+
+// Middleware to check if user is authenticated (with session restoration)
+async function isAuthenticated(req, res, next) {
+    // Try to restore session if missing
+    if (!req.session?.user && req.session && req.sessionID) {
+        // Try to get username from URL
+        const pathMatch = req.path.match(/\/api\/(?:friends|wishlists|reviews|profile)\/([^\/]+)/);
+        const username = pathMatch ? pathMatch[1] : null;
+        
+        const restoredUser = await restoreSessionUser(req, username);
+        if (restoredUser) {
+            console.log('[Is Authenticated] Session restored:', restoredUser.username);
+        }
+    }
+    
+    if (req.session && req.session.user) {
+        // Refresh session expiry on activity
+        req.session.touch();
+    next();
+    } else {
+        res.status(401).json({ success: false, error: 'Not authenticated' });
+    }
+}
+
+app.use(async (req, res, next) => {
+    // Touch session to keep it alive on every request
+    if (req.session) {
+        req.session.touch();
+        
+        // If session exists but user is missing, try to restore it from database
+        // This handles cases where the session store lost the user data (e.g., server restart)
+        if (!req.session.user && req.sessionID) {
+            let username = null;
+            
+            // Try to get username from URL path (various patterns)
+            const pathMatch = req.path.match(/\/(?:api\/)?(?:profile|friends|wishlists|reviews)\/([^\/]+)/);
+            if (pathMatch && pathMatch[1]) {
+                username = pathMatch[1];
+            }
+            
+            // If we have a username, try to restore from database
+            if (username) {
+                try {
+                    const dbUser = await User.findOne({ where: { username: username } });
+                    if (dbUser) {
+                        console.log('[Session Middleware] Restoring session user from database:', username);
+                        req.session.user = {
+                            id: dbUser.id,
+                            username: dbUser.username,
+                            email: dbUser.email,
+                            joinDate: dbUser.join_date,
+                            bio: dbUser.bio,
+                            gamingPreferences: dbUser.gaming_preferences || {},
+                            statistics: dbUser.statistics || {},
+                            achievements: dbUser.achievements || [],
+                            steam_id: dbUser.steam_id,
+                            steam_profile: dbUser.steam_profile,
+                            steam_games: dbUser.steam_games,
+                            steam_last_sync: dbUser.steam_last_sync,
+                            avatar_path: dbUser.avatar_path
+                        };
+                        req.session.save();
+                    }
+                } catch (error) {
+                    // Silently fail - don't block the request
+                    console.warn('[Session Middleware] Could not restore session user:', error.message);
+                }
+            }
+        }
+    }
+    
+    // Only log session info for API requests to reduce noise
+    if (req.path.startsWith('/api/')) {
+        console.log('[Session Middleware]', {
+            path: req.path,
+            sessionID: req.sessionID,
+            hasSession: !!req.session,
+            hasUser: !!req.session?.user,
+            username: req.session?.user?.username || 'none',
+            cookie: req.headers.cookie ? 'present' : 'missing'
+        });
+    }
+    
     next();
 });
 
@@ -226,15 +404,25 @@ app.use((req, res, next) => {
 
 // ===== Render EJS Views =====
 app.get('/', async (req, res) => {
+    // Touch session to keep it alive
+    if (req.session) {
+        req.session.touch();
+    }
     // Render page immediately with empty arrays - games will load asynchronously via API
         res.render('index', { 
         trendingGames: [], 
-        recentGames: [] 
+        recentGames: [],
+        user: req.session.user || null
     });
 });
 
 // Settings page
 app.get('/settings', (req, res) => {
+    console.log('[Settings Route] Session user:', req.session.user ? req.session.user.username : 'none');
+    // Touch session to keep it alive
+    if (req.session) {
+        req.session.touch();
+    }
     res.render('settings', {
         activePage: 'settings',
         user: req.session.user || null
@@ -253,17 +441,37 @@ app.get('/profile/:username', async (req, res) => {
         console.log('[Profile Route] Cookies:', req.headers.cookie);
         
         // Ensure session is saved/touched to maintain it
-        if (req.session.user) {
+        if (req.session) {
             req.session.touch();
+            // Save session to persist it
+            req.session.save((err) => {
+                if (err) {
+                    console.error('[Profile Route] Error saving session:', err);
+                }
+            });
         }
         
         // Load user data directly from database to avoid caching issues
         const dbUser = await User.findOne({ where: { username } });
         
         if (dbUser) {
-            console.log('User found in database:', dbUser.username);
-            console.log('User Steam ID from database:', dbUser.steam_id);
-            console.log('User Steam profile from database:', dbUser.steam_profile ? 'present' : 'missing');
+            // Extract values using multiple methods to ensure we get the data
+            let usernameValue = dbUser.username || dbUser.getDataValue?.('username') || dbUser.dataValues?.username;
+            
+            // If username is still not found, use the URL parameter as fallback
+            if (!usernameValue || usernameValue === 'undefined' || usernameValue === 'null') {
+                console.warn('[Profile Route] Username not found in database, using URL parameter:', username);
+                usernameValue = username;
+            }
+            
+            const emailValue = dbUser.email || dbUser.getDataValue?.('email') || dbUser.dataValues?.email || '';
+            const steamIdValue = dbUser.steam_id || dbUser.getDataValue?.('steam_id') || dbUser.dataValues?.steam_id || null;
+            const steamProfileValue = dbUser.steam_profile || dbUser.getDataValue?.('steam_profile') || dbUser.dataValues?.steam_profile || null;
+            
+            console.log('User found in database:', usernameValue);
+            console.log('User Steam ID from database:', steamIdValue);
+            console.log('User Steam profile from database:', steamProfileValue ? 'present' : 'missing');
+            console.log('Final username value being used:', usernameValue);
             
             // Use statistics from database if available, otherwise calculate from Steam games
             let totalGames = 0;
@@ -273,9 +481,9 @@ app.get('/profile/:username', async (req, res) => {
             let steamLinked = false;
             let steamGames = null; // Will be used for profile.steam_games
             
-            if (dbUser.steam_id) {
+            if (steamIdValue) {
                 steamLinked = true;
-                console.log('User has Steam account linked:', dbUser.steam_id);
+                console.log('User has Steam account linked:', steamIdValue);
                 
                 // Always calculate from steam_games if available, as it's more accurate
                 // Ensure steam_games is an array (JSONB might need parsing)
@@ -362,42 +570,74 @@ app.get('/profile/:username', async (req, res) => {
                 }
                 
                 if (totalGames === 0) {
-                    console.log('No Steam games or statistics found for user:', dbUser.username);
+                    console.log('No Steam games or statistics found for user:', usernameValue);
                     console.log('steam_games value:', dbUser.steam_games);
                     console.log('steam_games type:', typeof dbUser.steam_games, 'isArray:', Array.isArray(dbUser.steam_games));
                     console.log('statistics value:', dbUser.statistics);
                 }
             } else {
-                console.log('No Steam account linked for user:', dbUser.username);
+                console.log('No Steam account linked for user:', usernameValue);
             }
+            
+            // Calculate average rating from user's reviews
+            try {
+                const userId = dbUser.user_id || dbUser.getDataValue?.('user_id') || dbUser.dataValues?.user_id || dbUser.id;
+                if (userId) {
+                    const userReviews = await Review.findAll({
+                        where: { userId: userId },
+                        attributes: ['rating']
+                    });
+                    
+                    if (userReviews && userReviews.length > 0) {
+                        const ratingsSum = userReviews.reduce((sum, review) => {
+                            const rating = parseFloat(review.rating || review.getDataValue?.('rating') || review.dataValues?.rating || 0);
+                            return sum + rating;
+                        }, 0);
+                        avgRating = (ratingsSum / userReviews.length).toFixed(1);
+                        console.log('[Profile] Calculated avgRating from reviews:', avgRating, 'from', userReviews.length, 'reviews');
+                    } else {
+                        console.log('[Profile] No reviews found for user, keeping avgRating from Steam/statistics:', avgRating);
+                    }
+                }
+            } catch (reviewError) {
+                console.error('[Profile] Error calculating avgRating from reviews:', reviewError);
+                // Keep the existing avgRating from Steam/statistics if review calculation fails
+            }
+            
+            // Extract additional fields with fallbacks
+            const joinDateValue = dbUser.join_date || dbUser.getDataValue?.('join_date') || dbUser.dataValues?.join_date || null;
+            const bioValue = dbUser.bio || dbUser.getDataValue?.('bio') || dbUser.dataValues?.bio || '';
+            const gamingPrefs = dbUser.gaming_preferences || dbUser.getDataValue?.('gaming_preferences') || dbUser.dataValues?.gaming_preferences || {};
+            const avatarPathValue = dbUser.avatar_path || dbUser.getDataValue?.('avatar_path') || dbUser.dataValues?.avatar_path || null;
+            const steamLastSyncValue = dbUser.steam_last_sync || dbUser.getDataValue?.('steam_last_sync') || dbUser.dataValues?.steam_last_sync || null;
             
             // Convert database format to profile format
             profile = {
-                username: dbUser.username,
-                email: dbUser.email,
-                joinDate: dbUser.join_date,
+                username: usernameValue,
+                email: emailValue,
+                joinDate: joinDateValue,
                 totalGames: totalGames,
                 totalPlaytime: totalPlaytime,
-                avgRating: avgRating,
+                avgRating: parseFloat(avgRating) || 0,
                 achievementCount: achievementCount,
-                bio: dbUser.bio || '',
-                playStyle: dbUser.gaming_preferences?.playStyle || '',
-                favoriteGenres: dbUser.gaming_preferences?.favoriteGenres || [],
-                preferredPlatforms: dbUser.gaming_preferences?.preferredPlatforms || [],
+                bio: bioValue,
+                playStyle: gamingPrefs?.playStyle || '',
+                favoriteGenres: gamingPrefs?.favoriteGenres || [],
+                preferredPlatforms: gamingPrefs?.preferredPlatforms || [],
                 achievements: [], // Achievements are stored separately in the achievements table
                 steamLinked: steamLinked,
-                steam_id: dbUser.steam_id,
-                steam_profile: dbUser.steam_profile,
+                steam_id: steamIdValue,
+                steam_profile: steamProfileValue,
                 steam_games: (steamGames && Array.isArray(steamGames)) ? steamGames : [], // Ensure it's always an array
-                steam_last_sync: dbUser.steam_last_sync,
-                avatar_path: dbUser.avatar_path || null, // Will use placeholder if null
-                isCurrentUser: req.session.user && req.session.user.username === username
+                steam_last_sync: steamLastSyncValue,
+                avatar_path: avatarPathValue, // Will use placeholder if null
+                isCurrentUser: req.session.user && (req.session.user.username === username || req.session.user.username === usernameValue)
             };
             
             // Ensure statistics are always numbers, not undefined
             if (typeof profile.totalGames === 'undefined' || profile.totalGames === null) profile.totalGames = 0;
             if (typeof profile.totalPlaytime === 'undefined' || profile.totalPlaytime === null) profile.totalPlaytime = 0;
-            if (typeof profile.avgRating === 'undefined' || profile.avgRating === null) profile.avgRating = 0;
+            if (typeof profile.avgRating === 'undefined' || profile.avgRating === null || isNaN(profile.avgRating)) profile.avgRating = 0;
             
             console.log('Profile prepared - steamLinked:', profile.steamLinked, 'steam_id:', profile.steam_id);
             console.log('Profile statistics - totalGames:', profile.totalGames, 'totalPlaytime:', profile.totalPlaytime, 'avgRating:', profile.avgRating);
@@ -424,6 +664,28 @@ app.get('/profile/:username', async (req, res) => {
                         avgRating = (gamesWithRatings.reduce((sum, game) => sum + game.rating, 0) / gamesWithRatings.length).toFixed(1);
                     }
                 }
+                
+                // Calculate average rating from user's reviews (session fallback)
+                try {
+                    const userId = req.session.user.id || req.session.user.user_id;
+                    if (userId) {
+                        const userReviews = await Review.findAll({
+                            where: { userId: userId },
+                            attributes: ['rating']
+                        });
+                        
+                        if (userReviews && userReviews.length > 0) {
+                            const ratingsSum = userReviews.reduce((sum, review) => {
+                                const rating = parseFloat(review.rating || review.getDataValue?.('rating') || review.dataValues?.rating || 0);
+                                return sum + rating;
+                            }, 0);
+                            avgRating = (ratingsSum / userReviews.length).toFixed(1);
+                            console.log('[Profile Session Fallback] Calculated avgRating from reviews:', avgRating, 'from', userReviews.length, 'reviews');
+                        }
+                    }
+                } catch (reviewError) {
+                    console.error('[Profile Session Fallback] Error calculating avgRating from reviews:', reviewError);
+                }
 
                 profile = {
                     username: req.session.user.username,
@@ -431,7 +693,7 @@ app.get('/profile/:username', async (req, res) => {
                     joinDate: req.session.user.joinDate || '',
                     totalGames: totalGames,
                     totalPlaytime: Math.round(totalPlaytime / 60),
-                    avgRating: avgRating || 0,
+                    avgRating: parseFloat(avgRating) || 0,
                     achievementCount: achievementCount,
                     bio: req.session.user.bio || '',
                     playStyle: req.session.user.gamingPreferences?.playStyle || '',
@@ -474,11 +736,29 @@ app.get('/profile/:username', async (req, res) => {
 
         console.log('Profile data prepared:', {
             username: profile.username,
+            email: profile.email,
             steamLinked: profile.steamLinked,
             totalGames: profile.totalGames,
             totalPlaytime: profile.totalPlaytime,
             achievementCount: profile.achievementCount
         });
+        
+        // Ensure username is always set - try session first, then URL parameter
+        if (!profile.username || profile.username === 'undefined' || profile.username === 'null') {
+            // Try to get from session first
+            if (req.session.user && req.session.user.username) {
+                console.warn('[Profile Route] Profile username is missing, using session username:', req.session.user.username);
+                profile.username = req.session.user.username;
+            } else {
+                console.warn('[Profile Route] Profile username is missing, using URL parameter:', username);
+                profile.username = username;
+            }
+        }
+        
+        // Also ensure email is set from session if missing
+        if ((!profile.email || profile.email === 'Loading...') && req.session.user && req.session.user.email) {
+            profile.email = req.session.user.email;
+        }
 
         res.render('profile', { profile });
     } catch (error) {
@@ -528,14 +808,77 @@ app.get('/profile', async (req, res) => {
 });
 
 app.get('/search', (req, res) => {
-    console.log('Search route hit with query:', req.query.q);
-    res.render('search');
+    console.log('[Search Route] Search route hit with query:', req.query.q);
+    console.log('[Search Route] Session user:', req.session.user ? req.session.user.username : 'none');
+    // Touch session to keep it alive
+    if (req.session) {
+        req.session.touch();
+    }
+    res.render('search', {
+        activePage: 'search',
+        user: req.session.user || null
+    });
 });
-app.get('/friends', (req, res) => res.render('friends'));
-app.get('/library', (req, res) => res.render('library'));
-app.get('/wishlist', (req, res) => res.render('wishlist'));
-app.get('/reviews', (req, res) => res.render('reviews'));
-app.get('/admin', (req, res) => res.render('admin'));
+
+app.get('/friends', (req, res) => {
+    console.log('[Friends Route] Session user:', req.session.user ? req.session.user.username : 'none');
+    // Touch session to keep it alive
+    if (req.session) {
+        req.session.touch();
+    }
+    res.render('friends', {
+        activePage: 'friends',
+        user: req.session.user || null
+    });
+});
+
+app.get('/library', (req, res) => {
+    console.log('[Library Route] Session user:', req.session.user ? req.session.user.username : 'none');
+    // Touch session to keep it alive
+    if (req.session) {
+        req.session.touch();
+    }
+    res.render('library', {
+        activePage: 'library',
+        user: req.session.user || null
+    });
+});
+
+app.get('/wishlist', (req, res) => {
+    console.log('[Wishlist Route] Session user:', req.session.user ? req.session.user.username : 'none');
+    // Touch session to keep it alive
+    if (req.session) {
+        req.session.touch();
+    }
+    res.render('wishlist', {
+        activePage: 'wishlist',
+        user: req.session.user || null
+    });
+});
+
+app.get('/reviews', (req, res) => {
+    console.log('[Reviews Route] Session user:', req.session.user ? req.session.user.username : 'none');
+    // Touch session to keep it alive
+    if (req.session) {
+        req.session.touch();
+    }
+    res.render('reviews', {
+        activePage: 'reviews',
+        user: req.session.user || null
+    });
+});
+
+app.get('/admin', (req, res) => {
+    console.log('[Admin Route] Session user:', req.session.user ? req.session.user.username : 'none');
+    // Touch session to keep it alive
+    if (req.session) {
+        req.session.touch();
+    }
+    res.render('admin', {
+        activePage: 'admin',
+        user: req.session.user || null
+    });
+});
 
 app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body;
@@ -554,8 +897,14 @@ app.post('/api/auth/login', async (req, res) => {
             // Load full user data from database to ensure we have all fields
             const dbUser = await User.findOne({ where: { username: username } });
             
+            // Extract user_id using multiple methods (primary key is user_id, not id)
+            const userId = dbUser ? (dbUser.user_id || dbUser.getDataValue?.('user_id') || dbUser.dataValues?.user_id || dbUser.id) : null;
+            
             // Store complete user data in session
+            // Include both id and user_id for compatibility
             req.session.user = {
+                id: userId,  // Store as 'id' for consistency
+                user_id: userId,  // Also store as 'user_id' for compatibility
                 username: user.username,
                 email: user.email,
                 joinDate: user.joinDate || (dbUser ? dbUser.join_date : null),
@@ -591,8 +940,29 @@ app.post('/api/auth/login', async (req, res) => {
                     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
                     httpOnly: true,
                     sameSite: 'lax',
-                    path: '/'
+                    path: '/',
+                    domain: undefined // Allow localhost
                 });
+                
+                // Also set a non-httpOnly cookie for client-side detection
+                res.cookie('sessionActive', 'true', {
+                    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+                    httpOnly: false, // Allow client-side access
+                    sameSite: 'lax',
+                    path: '/',
+                    domain: undefined
+                });
+                
+                // Store username in cookie for session restoration
+                res.cookie('currentUsername', user.username, {
+                    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+                    httpOnly: false, // Allow client-side access if needed
+                    sameSite: 'lax',
+                    path: '/',
+                    domain: undefined
+                });
+                
+                console.log('[Login] Session cookie set:', req.sessionID);
                 
                 res.json({
                     success: true,
@@ -624,7 +994,15 @@ app.post('/api/auth/signup', async (req, res) => {
         const user = await profileManager.signUp(username, email, password, gamingPreferences || {});
         if (user) {
 
+            // Get user ID from database
+            const dbUser = await User.findOne({ where: { username: user.username } });
+            
+            // Extract user_id using multiple methods (primary key is user_id, not id)
+            const userId = dbUser ? (dbUser.user_id || dbUser.getDataValue?.('user_id') || dbUser.dataValues?.user_id || dbUser.id) : null;
+
             req.session.user = {
+                id: userId,  // Store as 'id' for consistency
+                user_id: userId,  // Also store as 'user_id' for compatibility
                 username: user.username,
                 email: user.email,
                 joinDate: user.joinDate,
@@ -651,7 +1029,26 @@ app.post('/api/auth/signup', async (req, res) => {
                     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
                     httpOnly: true,
                     sameSite: 'lax',
-                    path: '/'
+                    path: '/',
+                    domain: undefined
+                });
+                
+                // Also set a non-httpOnly cookie for client-side detection
+                res.cookie('sessionActive', 'true', {
+                    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+                    httpOnly: false, // Allow client-side access
+                    sameSite: 'lax',
+                    path: '/',
+                    domain: undefined
+                });
+                
+                // Store username in cookie for session restoration
+                res.cookie('currentUsername', user.username, {
+                    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+                    httpOnly: false, // Allow client-side access if needed
+                    sameSite: 'lax',
+                    path: '/',
+                    domain: undefined
                 });
                 
                 res.json({
@@ -683,17 +1080,79 @@ app.post('/api/auth/signup', async (req, res) => {
     }
 });
 
-app.get('/api/auth/check', (req, res) => {
+app.get('/api/auth/check', async (req, res) => {
+    console.log('[Auth Check] ========== START ==========');
     console.log('[Auth Check] Request received');
     console.log('[Auth Check] Session ID:', req.sessionID);
-    console.log('[Auth Check] Session user:', req.session.user ? req.session.user.username : 'none');
-    console.log('[Auth Check] Cookies:', req.headers.cookie);
+    console.log('[Auth Check] Has session object:', !!req.session);
+    console.log('[Auth Check] Session keys:', req.session ? Object.keys(req.session) : 'no session');
+    console.log('[Auth Check] Has session.user:', !!req.session?.user);
+    console.log('[Auth Check] Cookies header:', req.headers.cookie ? 'present' : 'missing');
     
     // Touch the session to keep it alive (reset expiration)
+    if (req.session) {
     req.session.touch();
+    }
+    
+    // Check for session user
+    let sessionUser = req.session?.user;
+    
+    // If no session user but session exists, try to restore from database
+    if (!sessionUser && req.session && req.sessionID) {
+        console.log('[Auth Check] No session user, attempting to restore from database...');
+        
+        // Try to reload session first
+        try {
+            await new Promise((resolve, reject) => {
+                req.session.reload((err) => {
+                    if (err) reject(err);
+                    else resolve();
+                });
+            });
+            sessionUser = req.session?.user;
+            if (sessionUser) {
+                console.log('[Auth Check] Session reloaded, found user:', sessionUser.username);
+            }
+        } catch (reloadError) {
+            console.log('[Auth Check] Session reload failed, will try database restore');
+        }
+        
+        // If still no user, try to restore using restoreSessionUser with null username
+        // This will try to find the user from the session store if possible
+        if (!sessionUser) {
+            try {
+                const restoredUser = await restoreSessionUser(req, null);
+                if (restoredUser) {
+                    sessionUser = req.session?.user;
+                    console.log('[Auth Check] Session restored from database:', sessionUser?.username);
+                }
+            } catch (restoreError) {
+                console.log('[Auth Check] Session restore failed:', restoreError.message);
+            }
+        }
+        
+        // If still no user, return failure
+        if (!sessionUser) {
+            console.log('[Auth Check] Cannot restore session - no user found');
+            console.log('[Auth Check] ========== END (NO USER) ==========');
+            return res.json({
+                success: false,
+                user: null,
+                error: 'No session user found'
+            });
+        }
+    }
     
     // Ensure session is saved
-    if (req.session.user) {
+    if (sessionUser) {
+        // Extract username with fallbacks
+        const username = sessionUser.username || 
+                        sessionUser.getDataValue?.('username') || 
+                        sessionUser.dataValues?.username;
+        
+        console.log('[Auth Check] Extracted username:', username);
+        
+        if (username) {
         // Save session to ensure it persists and extend expiration
         req.session.save((err) => {
             if (err) {
@@ -708,20 +1167,102 @@ app.get('/api/auth/check', (req, res) => {
             maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
             httpOnly: true,
             sameSite: 'lax',
-            path: '/'
-        });
-        
-        console.log('[Auth Check] Returning user:', req.session.user.username);
+                path: '/',
+                domain: undefined
+            });
+            
+            res.cookie('sessionActive', 'true', {
+                maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+                httpOnly: false,
+                sameSite: 'lax',
+                path: '/',
+                domain: undefined
+            });
+            
+            console.log('[Auth Check] Returning success with user:', username);
+            console.log('[Auth Check] ========== END (SUCCESS) ==========');
         res.json({
             success: true,
-            user: req.session.user
+                user: sessionUser
         });
     } else {
-        console.log('[Auth Check] No session user found');
+            console.log('[Auth Check] Session user exists but no username found');
+            console.log('[Auth Check] ========== END (NO USERNAME) ==========');
         res.json({
             success: false,
-            user: null
+                user: null,
+                error: 'Session user missing username'
+            });
+        }
+    } else {
+        console.log('[Auth Check] No session user found - returning failure');
+        console.log('[Auth Check] ========== END (NO USER) ==========');
+        res.json({
+            success: false,
+            user: null,
+            error: 'No session user found'
         });
+    }
+});
+
+app.post('/api/auth/refresh', async (req, res) => {
+    // Touch session to keep it alive
+    if (req.session) {
+        req.session.touch();
+    }
+    
+    let sessionUser = req.session?.user;
+    
+    // If no session user but session exists, try to restore
+    if (!sessionUser && req.session && req.sessionID) {
+        console.log('[Auth Refresh] No session user, attempting to restore...');
+        
+        // Try to reload session
+        try {
+            await new Promise((resolve, reject) => {
+                req.session.reload((err) => {
+                    if (err) reject(err);
+                    else resolve();
+                });
+            });
+            sessionUser = req.session?.user;
+        } catch (error) {
+            console.error('[Auth Refresh] Session reload failed:', error);
+        }
+    }
+    
+    if (sessionUser) {
+        // Save session to extend expiration
+        req.session.save((err) => {
+            if (err) {
+                console.error('[Auth Refresh] Session save error:', err);
+                return res.status(500).json({ success: false, error: 'Failed to refresh session' });
+            }
+            
+            // Refresh cookie
+            res.cookie('connect.sid', req.sessionID, {
+                maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+                httpOnly: true,
+                sameSite: 'lax',
+                path: '/',
+                domain: undefined
+            });
+            
+            res.cookie('sessionActive', 'true', {
+                maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+                httpOnly: false,
+                sameSite: 'lax',
+                path: '/',
+                domain: undefined
+            });
+            
+            res.json({
+                success: true,
+                user: sessionUser
+            });
+        });
+    } else {
+        res.status(401).json({ success: false, error: 'No active session' });
     }
 });
 
@@ -1971,11 +2512,25 @@ app.get('/api/steam/game/:appId', async (req, res) => {
 
 app.get('/api/reviews/current-user', async (req, res) => {
     try {
-        if (!req.session.user) {
+        // Try to restore session if missing
+        if (!req.session?.user) {
+            // Try to get username from query or referer
+            const referer = req.headers.referer || '';
+            const pathMatch = referer.match(/\/profile\/([^\/]+)/);
+            const username = pathMatch ? pathMatch[1] : null;
+            
+            const restoredUser = await restoreSessionUser(req, username);
+            if (!restoredUser) {
             return res.status(401).json({ error: 'User not logged in' });
+            }
         }
 
-        const user = await profileManager.getUserByUsername(req.session.user.username);
+        const sessionUsername = req.session.user.username;
+        if (!sessionUsername) {
+            return res.status(401).json({ error: 'Username not found in session' });
+        }
+
+        const user = await profileManager.getUserByUsername(sessionUsername);
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
@@ -2058,9 +2613,143 @@ app.put('/api/profile/:username', async (req, res) => {
     const { username } = req.params;
     const updates = req.body;
 
-        if (!req.session.user || req.session.user.username !== username) {
+        // Touch session to keep it alive
+        if (req.session) {
+            req.session.touch();
+        }
+        
+        // Log session state for debugging
+        console.log('[Profile Update] ========== START ==========');
+        console.log('[Profile Update] Session check:', {
+            hasSession: !!req.session,
+            hasUser: !!req.session?.user,
+            sessionUsername: req.session?.user?.username,
+            requestedUsername: username,
+            sessionID: req.sessionID,
+            cookies: req.headers.cookie ? 'present' : 'missing'
+        });
+        console.log('[Profile Update] Full session object:', req.session ? Object.keys(req.session) : 'no session');
+        console.log('[Profile Update] Session user object:', req.session?.user);
+        
+        // Check if user is logged in - try multiple ways to get session user
+        let sessionUser = req.session?.user;
+        
+        // If no session user but we have a session ID, try to reload the session
+        if (!sessionUser && req.sessionID && req.session) {
+            console.log('[Profile Update] No session user, but session ID exists:', req.sessionID);
+            console.log('[Profile Update] Attempting to reload session...');
+            
+            // Try to reload session from store (wrapped in promise for async/await)
+            try {
+                await new Promise((resolve, reject) => {
+                    req.session.reload((err) => {
+                        if (err) {
+                            console.error('[Profile Update] Session reload error:', err);
+                            reject(err);
+                        } else {
+                            resolve();
+                        }
+                    });
+                });
+                
+                sessionUser = req.session?.user;
+                if (sessionUser) {
+                    console.log('[Profile Update] Session reloaded successfully, found user:', sessionUser.username);
+                } else {
+                    console.error('[Profile Update] Session reloaded but still no user');
+                }
+            } catch (reloadError) {
+                console.error('[Profile Update] Session reload failed:', reloadError);
+                console.log('[Profile Update] This might indicate the server was restarted and session was lost');
+            }
+        }
+        
+        // If no session user, try to restore from database using the username from the request
+        // This is a fallback in case the session was lost but the user is still authenticated
+        if (!sessionUser) {
+            console.warn('[Profile Update] No session user found, attempting to restore from database...');
+            
+            try {
+                // Try to find the user in the database
+                const dbUser = await User.findOne({ where: { username: username } });
+                if (dbUser) {
+                    console.log('[Profile Update] Found user in database, restoring session...');
+                    // Restore session user from database
+                    req.session.user = {
+                        id: dbUser.id,
+                        username: dbUser.username,
+                        email: dbUser.email,
+                        joinDate: dbUser.join_date,
+                        bio: dbUser.bio,
+                        gamingPreferences: dbUser.gaming_preferences || {},
+                        statistics: dbUser.statistics || {},
+                        achievements: dbUser.achievements || [],
+                        steam_id: dbUser.steam_id,
+                        steam_profile: dbUser.steam_profile,
+                        steam_games: dbUser.steam_games,
+                        steam_last_sync: dbUser.steam_last_sync,
+                        avatar_path: dbUser.avatar_path
+                    };
+                    
+                    // Save the restored session
+                    req.session.save((err) => {
+                        if (err) {
+                            console.error('[Profile Update] Error saving restored session:', err);
+                        } else {
+                            console.log('[Profile Update] Session restored and saved successfully');
+                        }
+                    });
+                    
+                    sessionUser = req.session.user;
+                    console.log('[Profile Update] Session user restored from database:', sessionUser.username);
+                } else {
+                    console.error('[Profile Update] User not found in database:', username);
+                    console.log('[Profile Update] Session exists:', !!req.session);
+                    console.log('[Profile Update] Session ID:', req.sessionID);
+                    console.log('[Profile Update] Session keys:', req.session ? Object.keys(req.session) : 'no session');
+                    console.log('[Profile Update] Cookie header:', req.headers.cookie ? 'present' : 'missing');
+                    if (req.headers.cookie) {
+                        const cookiePreview = req.headers.cookie.length > 100 
+                            ? req.headers.cookie.substring(0, 100) + '...' 
+                            : req.headers.cookie;
+                        console.log('[Profile Update] Cookie value:', cookiePreview);
+                    }
+                    console.log('[Profile Update] ========== END (NO USER) ==========');
+                    return res.status(401).json({ error: 'Unauthorized - please log in to update your profile' });
+                }
+            } catch (dbError) {
+                console.error('[Profile Update] Error querying database for user:', dbError);
+                console.log('[Profile Update] ========== END (DB ERROR) ==========');
+                return res.status(401).json({ error: 'Unauthorized - please log in to update your profile' });
+            }
+        }
+        
+        // Get session username with fallbacks
+        const sessionUsername = sessionUser.username ||
+                               sessionUser.getDataValue?.('username') || 
+                               sessionUser.dataValues?.username;
+        
+        console.log('[Profile Update] Session username:', sessionUsername);
+        console.log('[Profile Update] Requested username:', username);
+        
+        // Compare usernames (case-insensitive for safety)
+        if (!sessionUsername || sessionUsername.toLowerCase() !== username.toLowerCase()) {
+            console.error('[Profile Update] Username mismatch:', {
+                sessionUsername: sessionUsername,
+                requestedUsername: username
+            });
+            console.log('[Profile Update] ========== END (USERNAME MISMATCH) ==========');
             return res.status(401).json({ error: 'Unauthorized - can only update your own profile' });
         }
+        
+        // Ensure session is saved before proceeding
+        req.session.save((err) => {
+            if (err) {
+                console.error('[Profile Update] Error saving session before update:', err);
+            } else {
+                console.log('[Profile Update] Session saved before update');
+            }
+        });
 
     if (!profileManager.isInitialized) {
         return res.status(503).json({ error: 'Database not ready yet, please try again' });
@@ -2082,11 +2771,29 @@ app.put('/api/profile/:username', async (req, res) => {
 
         await user.save();
 
-        // Update session
+        // Update session with fresh data from database
         if (req.session.user) {
+            // Reload user data to ensure we have the latest
+            const updatedUser = await User.findOne({ where: { username } });
+            if (updatedUser) {
+                req.session.user.bio = updatedUser.bio || updatedUser.getDataValue?.('bio') || updatedUser.dataValues?.bio || '';
+                req.session.user.gamingPreferences = updatedUser.gaming_preferences || updatedUser.getDataValue?.('gaming_preferences') || updatedUser.dataValues?.gaming_preferences || {};
+                req.session.user.email = updatedUser.email || updatedUser.getDataValue?.('email') || updatedUser.dataValues?.email || req.session.user.email;
+                req.session.user.username = updatedUser.username || updatedUser.getDataValue?.('username') || updatedUser.dataValues?.username || req.session.user.username;
+            } else {
+                // Fallback to what we just saved
             req.session.user.bio = user.bio;
             req.session.user.gamingPreferences = user.gaming_preferences;
-            req.session.save();
+            }
+            
+            // Save session to persist changes
+            req.session.save((err) => {
+                if (err) {
+                    console.error('[Profile Update] Error saving session:', err);
+                } else {
+                    console.log('[Profile Update] Session updated and saved successfully');
+                }
+            });
         }
 
         res.json({ success: true, message: 'Profile updated successfully' });
@@ -2100,6 +2807,14 @@ app.put('/api/profile/:username', async (req, res) => {
 app.get('/api/friends/:username', async (req, res) => {
     try {
         const { username } = req.params;
+        
+        // Restore session if missing
+        if (!req.session?.user) {
+            const restoredUser = await restoreSessionUser(req, username);
+            if (!restoredUser) {
+                return res.status(401).json({ error: 'Authentication required' });
+            }
+        }
         
         // Get user from database
         const user = await profileManager.getUserByUsername(username);
@@ -2336,59 +3051,118 @@ app.get('/api/wishlists/:username', async (req, res) => {
         const { username } = req.params;
         
         console.log(`[Get Libraries] Request for username: ${username}`);
-        console.log(`[Get Libraries] Session user:`, req.session.user);
         
-        // Verify session user matches requested username (security check)
-        if (req.session.user && req.session.user.username !== username) {
-            console.warn(`[Get Libraries] Session user (${req.session.user.username}) doesn't match requested user (${username})`);
-            // Don't block, but log it
+        // Restore session if missing
+        if (!req.session?.user) {
+            const restoredUser = await restoreSessionUser(req, username);
+            if (!restoredUser) {
+                return res.status(401).json({ 
+                    success: false,
+                    error: 'Authentication required',
+                    wishlists: []
+                });
+            }
         }
         
-        // Get user from database
-        const user = await profileManager.getUserByUsername(username);
+        console.log(`[Get Libraries] Session user:`, req.session.user);
+        
+        // Use session user ID if available - try both 'id' and 'user_id'
+        let userId = req.session?.user?.id || req.session?.user?.user_id || null;
+
+        // Get user from database if we don't have ID - use direct User model query instead of profileManager
+        let user = null;
+        if (!userId) {
+            // Try direct User model query first (more reliable)
+            try {
+                user = await User.findOne({ where: { username: username } });
         if (!user) {
-            console.error(`[Get Libraries] User not found: ${username}`);
+                    console.error(`[Get Libraries] User not found in database: ${username}`);
             return res.status(404).json({ 
                 success: false,
                 error: 'User not found' 
             });
+                }
+            } catch (dbError) {
+                console.error(`[Get Libraries] Database error finding user:`, dbError);
+                return res.status(500).json({ 
+                    success: false,
+                    error: 'Database error' 
+                });
+            }
         }
 
-        // Extract user ID - try multiple methods (same as add-game route)
-        let userId = null;
-        
-        // Method 1: Use getDataValue (Sequelize's proper method)
-        if (user.getDataValue && typeof user.getDataValue === 'function') {
+        // Extract user ID - try multiple methods if not from session
+        if (!userId && user) {
+            console.log(`[Get Libraries] Extracting user ID from database user object...`);
+            console.log(`[Get Libraries] User object type:`, user.constructor?.name);
+            console.log(`[Get Libraries] User has getDataValue:`, typeof user.getDataValue === 'function');
+            console.log(`[Get Libraries] User has toJSON:`, typeof user.toJSON === 'function');
+            
+            // Method 1: Try 'user_id' first (primary key in database)
+            if (user.user_id !== undefined && user.user_id !== null) {
+                userId = user.user_id;
+                console.log(`[Get Libraries] Found user_id via direct property: ${userId}`);
+            }
+            
+            // Method 2: Use getDataValue for 'user_id' (Sequelize method)
+            if (!userId && user.getDataValue && typeof user.getDataValue === 'function') {
             try {
                 userId = user.getDataValue('user_id');
+                    if (userId) {
+                        console.log(`[Get Libraries] Found user_id via getDataValue: ${userId}`);
+                    }
             } catch (e) {
                 console.warn(`[Get Libraries] getDataValue('user_id') failed:`, e.message);
             }
         }
         
-        // Method 2: Check dataValues directly
+            // Method 3: Check dataValues directly for 'user_id'
         if (!userId && user.dataValues && user.dataValues.user_id !== undefined && user.dataValues.user_id !== null) {
             userId = user.dataValues.user_id;
-        }
-        
-        // Method 3: Direct property access
-        if (!userId && user.user_id !== undefined && user.user_id !== null) {
-            userId = user.user_id;
-        }
-        
-        // Method 4: Use toJSON() to convert to plain object
+                console.log(`[Get Libraries] Found user_id via dataValues: ${userId}`);
+            }
+            
+            // Method 4: Try 'id' (might be mapped)
+            if (!userId && user.id !== undefined && user.id !== null) {
+                userId = user.id;
+                console.log(`[Get Libraries] Found id via direct property: ${userId}`);
+            }
+            
+            // Method 5: Use getDataValue for 'id'
+            if (!userId && user.getDataValue && typeof user.getDataValue === 'function') {
+                try {
+                    userId = user.getDataValue('id');
+                    if (userId) {
+                        console.log(`[Get Libraries] Found id via getDataValue: ${userId}`);
+                    }
+                } catch (e) {
+                    // Ignore
+                }
+            }
+            
+            // Method 6: Check dataValues directly for 'id'
+            if (!userId && user.dataValues && user.dataValues.id !== undefined && user.dataValues.id !== null) {
+                userId = user.dataValues.id;
+                console.log(`[Get Libraries] Found id via dataValues: ${userId}`);
+            }
+            
+            // Method 7: Use toJSON() to convert to plain object
         if (!userId && user.toJSON && typeof user.toJSON === 'function') {
             try {
                 const plain = user.toJSON();
                 if (plain && plain.user_id !== undefined && plain.user_id !== null) {
                     userId = plain.user_id;
+                        console.log(`[Get Libraries] Found user_id via toJSON: ${userId}`);
+                    } else if (plain && plain.id !== undefined && plain.id !== null) {
+                        userId = plain.id;
+                        console.log(`[Get Libraries] Found id via toJSON: ${userId}`);
                 }
             } catch (e) {
                 console.warn(`[Get Libraries] toJSON() failed:`, e.message);
             }
         }
         
-        // Method 5: Fallback - raw query if all else fails
+            // Method 8: Fallback - raw query if all else fails
         if (!userId) {
             console.warn(`[Get Libraries] All extraction methods failed, trying raw query...`);
             try {
@@ -2401,27 +3175,20 @@ app.get('/api/wishlists/:username', async (req, res) => {
                 );
                 
                 // QueryTypes.SELECT returns an array of objects directly
-                if (results && Array.isArray(results) && results.length > 0 && results[0] && results[0].user_id) {
+                    if (results && Array.isArray(results) && results.length > 0 && results[0]) {
                     userId = results[0].user_id;
+                        if (userId) {
                     console.log(`[Get Libraries] Successfully retrieved user_id via raw query: ${userId}`);
+                        }
                 }
             } catch (rawError) {
                 console.error(`[Get Libraries] Raw query also failed:`, rawError.message);
+                }
             }
         }
         
         if (!userId) {
-            console.error(`[Get Libraries] User ID extraction failed. User object details:`, {
-                username: user.username || user.dataValues?.username || 'unknown',
-                hasDataValues: !!user.dataValues,
-                dataValuesKeys: user.dataValues ? Object.keys(user.dataValues) : [],
-                user_id_in_dataValues: user.dataValues?.user_id,
-                user_id_direct: user.user_id,
-                id_direct: user.id,
-                hasGetDataValue: typeof user.getDataValue === 'function',
-                hasToJSON: typeof user.toJSON === 'function',
-                userInstanceType: user.constructor?.name || typeof user
-            });
+            console.error(`[Get Libraries] User ID extraction failed. Session user:`, req.session?.user);
             return res.status(500).json({ 
                 success: false,
                 error: 'Invalid user data - could not extract user ID' 
@@ -2507,16 +3274,26 @@ app.post('/api/wishlists/:username/create', async (req, res) => {
             return res.status(400).json({ error: 'Library name is required' });
         }
 
-        // Get user from database
-        const user = await profileManager.getUserByUsername(username);
-        if (!user) {
+        // Restore session if missing
+        if (!req.session?.user) {
+            const restoredUser = await restoreSessionUser(req, username);
+            if (!restoredUser) {
+                return res.status(401).json({ error: 'Authentication required' });
+            }
+        }
+
+        // Use session user ID if available, otherwise get from database
+        let userId = req.session?.user?.id || null;
+
+        // Get user from database if we don't have ID
+        const user = userId ? null : await profileManager.getUserByUsername(username);
+        if (!userId && !user) {
             console.error(`[Create Library] User not found: ${username}`);
             return res.status(404).json({ error: 'User not found. Please log in and try again.' });
         }
 
-        // Extract user ID - try multiple methods (same as other routes)
-        let userId = null;
-        
+        // Extract user ID - try multiple methods (same as other routes) if not from session
+        if (!userId && user) {
         if (user.getDataValue && typeof user.getDataValue === 'function') {
             try {
                 userId = user.getDataValue('user_id');
@@ -2541,21 +3318,16 @@ app.post('/api/wishlists/:username/create', async (req, res) => {
                 }
             } catch (e) {
                 console.warn(`[Create Library] toJSON() failed:`, e.message);
+                }
+            }
+            
+            if (!userId && user.id !== undefined && user.id !== null) {
+                userId = user.id;
             }
         }
         
         if (!userId) {
-            console.error(`[Create Library] User ID extraction failed. User object details:`, {
-                username: user.username || user.dataValues?.username || 'unknown',
-                hasDataValues: !!user.dataValues,
-                dataValuesKeys: user.dataValues ? Object.keys(user.dataValues) : [],
-                user_id_in_dataValues: user.dataValues?.user_id,
-                user_id_direct: user.user_id,
-                id_direct: user.id,
-                hasGetDataValue: typeof user.getDataValue === 'function',
-                hasToJSON: typeof user.toJSON === 'function',
-                userInstanceType: user.constructor?.name || typeof user
-            });
+            console.error(`[Create Library] User ID extraction failed. Session user:`, req.session?.user);
             return res.status(500).json({ error: 'Invalid user data - could not extract user ID' });
         }
 
@@ -2611,44 +3383,128 @@ app.get('/api/wishlists/:username/:wishlistId', async (req, res) => {
     try {
         const { username, wishlistId } = req.params;
         
-        // Get user from database
-        const user = await profileManager.getUserByUsername(username);
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-
-        // Extract user ID - try multiple methods
-        let userId = null;
+        console.log(`[Get Library] Request for username: ${username}, library ID: ${wishlistId}`);
         
-        if (user.getDataValue && typeof user.getDataValue === 'function') {
-            try {
-                userId = user.getDataValue('user_id');
-            } catch (e) {
-                // Ignore
+        // Restore session if missing
+        if (!req.session?.user) {
+            const restoredUser = await restoreSessionUser(req, username);
+            if (!restoredUser) {
+                return res.status(401).json({ error: 'Authentication required' });
             }
         }
         
+        // Use session user ID if available - try both 'id' and 'user_id'
+        let userId = req.session?.user?.id || req.session?.user?.user_id || null;
+
+        // Get user from database if we don't have ID - use direct User model query
+        let user = null;
+        if (!userId) {
+            try {
+                user = await User.findOne({ where: { username: username } });
+        if (!user) {
+                    console.error(`[Get Library] User not found in database: ${username}`);
+            return res.status(404).json({ error: 'User not found' });
+                }
+            } catch (dbError) {
+                console.error(`[Get Library] Database error finding user:`, dbError);
+                return res.status(500).json({ error: 'Database error' });
+            }
+        }
+
+        // Extract user ID - try multiple methods if not from session
+        if (!userId && user) {
+            console.log(`[Get Library] Extracting user ID from database user object...`);
+            
+            // Method 1: Try 'user_id' first (primary key in database)
+            if (user.user_id !== undefined && user.user_id !== null) {
+                userId = user.user_id;
+                console.log(`[Get Library] Found user_id via direct property: ${userId}`);
+            }
+            
+            // Method 2: Use getDataValue for 'user_id' (Sequelize method)
+            if (!userId && user.getDataValue && typeof user.getDataValue === 'function') {
+            try {
+                userId = user.getDataValue('user_id');
+                    if (userId) {
+                        console.log(`[Get Library] Found user_id via getDataValue: ${userId}`);
+                    }
+            } catch (e) {
+                    console.warn(`[Get Library] getDataValue('user_id') failed:`, e.message);
+            }
+        }
+        
+            // Method 3: Check dataValues directly for 'user_id'
         if (!userId && user.dataValues && user.dataValues.user_id !== undefined && user.dataValues.user_id !== null) {
             userId = user.dataValues.user_id;
-        }
-        
-        if (!userId && user.user_id !== undefined && user.user_id !== null) {
-            userId = user.user_id;
-        }
-        
+                console.log(`[Get Library] Found user_id via dataValues: ${userId}`);
+            }
+            
+            // Method 4: Try 'id' (might be mapped)
+            if (!userId && user.id !== undefined && user.id !== null) {
+                userId = user.id;
+                console.log(`[Get Library] Found id via direct property: ${userId}`);
+            }
+            
+            // Method 5: Use getDataValue for 'id'
+            if (!userId && user.getDataValue && typeof user.getDataValue === 'function') {
+                try {
+                    userId = user.getDataValue('id');
+                    if (userId) {
+                        console.log(`[Get Library] Found id via getDataValue: ${userId}`);
+                    }
+                } catch (e) {
+                    // Ignore
+                }
+            }
+            
+            // Method 6: Check dataValues directly for 'id'
+            if (!userId && user.dataValues && user.dataValues.id !== undefined && user.dataValues.id !== null) {
+                userId = user.dataValues.id;
+                console.log(`[Get Library] Found id via dataValues: ${userId}`);
+            }
+            
+            // Method 7: Use toJSON() to convert to plain object
         if (!userId && user.toJSON && typeof user.toJSON === 'function') {
             try {
                 const plain = user.toJSON();
                 if (plain && plain.user_id !== undefined && plain.user_id !== null) {
                     userId = plain.user_id;
+                        console.log(`[Get Library] Found user_id via toJSON: ${userId}`);
+                    } else if (plain && plain.id !== undefined && plain.id !== null) {
+                        userId = plain.id;
+                        console.log(`[Get Library] Found id via toJSON: ${userId}`);
                 }
             } catch (e) {
-                // Ignore
+                    console.warn(`[Get Library] toJSON() failed:`, e.message);
+            }
+        }
+        
+            // Method 8: Fallback - raw query if all else fails
+        if (!userId) {
+                console.warn(`[Get Library] All extraction methods failed, trying raw query...`);
+                try {
+                    const results = await sequelize.query(
+                        `SELECT user_id FROM users WHERE username = :username LIMIT 1`,
+                        {
+                            replacements: { username },
+                            type: QueryTypes.SELECT
+                        }
+                    );
+                    
+                    if (results && Array.isArray(results) && results.length > 0 && results[0]) {
+                        userId = results[0].user_id;
+                        if (userId) {
+                            console.log(`[Get Library] Successfully retrieved user_id via raw query: ${userId}`);
+                        }
+                    }
+                } catch (rawError) {
+                    console.error(`[Get Library] Raw query also failed:`, rawError.message);
+                }
             }
         }
         
         if (!userId) {
-            console.error(`[Route] User ID extraction failed for user:`, username);
+            console.error(`[Get Library] User ID extraction failed. Session user:`, req.session?.user);
             return res.status(500).json({ error: 'Invalid user data - could not extract user ID' });
         }
 
@@ -2675,16 +3531,46 @@ app.get('/api/wishlists/:username/:wishlistId', async (req, res) => {
                 priority: wishlist.priority,
                 type: wishlist.type || 'custom'
             },
-            games: games.map(game => ({
+            games: games.map(game => {
+                const steamId = game.steamId || game.steam_id || game.getDataValue?.('steamId') || game.dataValues?.steamId || game.gameId;
+                
+                // Try to extract backgroundImage from notes if stored there
+                let backgroundImage = null;
+                if (game.notes) {
+                    try {
+                        const notesObj = JSON.parse(game.notes);
+                        if (notesObj.backgroundImage) {
+                            backgroundImage = notesObj.backgroundImage;
+                        }
+                    } catch (e) {
+                        // Check if notes contains IMAGE: prefix
+                        const imageMatch = game.notes.match(/IMAGE:(.+?)(?:\s|$)/);
+                        if (imageMatch) {
+                            backgroundImage = imageMatch[1];
+                        }
+                    }
+                }
+                
+                // If no stored image, construct Steam image URL if we have a steamId
+                if (!backgroundImage && steamId) {
+                    backgroundImage = `https://cdn.akamai.steamstatic.com/steam/apps/${steamId}/header.jpg`;
+                }
+                
+                return {
                 id: game.id,
                 gameId: game.gameId,
-                steamId: game.steamId,
+                    steamId: steamId,
+                    steam_id: steamId, // Also include as steam_id for compatibility
                 title: game.gameTitle,
                 platform: game.platform,
                 priority: game.priority,
                 notes: game.notes,
-                addedDate: game.createdAt
-            }))
+                    addedDate: game.createdAt,
+                    backgroundImage: backgroundImage,
+                    image: backgroundImage, // Also include as image for compatibility
+                    background_image: backgroundImage // Also include as background_image for compatibility
+                };
+            })
         });
     } catch (error) {
         console.error('Error getting library:', error);
@@ -2913,80 +3799,175 @@ app.post('/api/wishlists/:username/add-game', async (req, res) => {
 // Remove game from wishlist
 app.delete('/api/wishlists/:username/:wishlistId/games/:gameId', async (req, res) => {
     try {
+        console.log('[Delete Game] ========== START ==========');
+        console.log('[Delete Game] Route hit:', req.method, req.path);
+        console.log('[Delete Game] Params:', req.params);
         const { username, wishlistId, gameId } = req.params;
 
-        // Get user from database
-        const user = await profileManager.getUserByUsername(username);
-        if (!user) {
+        // Get user from database directly using User model
+        const dbUser = await User.findOne({ where: { username } });
+        if (!dbUser) {
+            console.log('[Delete Game] User not found:', username);
+            console.log('[Delete Game] ========== END (USER NOT FOUND) ==========');
             return res.status(404).json({ error: 'User not found' });
         }
 
         // Extract user ID - try multiple methods
-        let userId = null;
+        let userId = dbUser.user_id || 
+                     dbUser.getDataValue?.('user_id') || 
+                     dbUser.dataValues?.user_id || 
+                     dbUser.id ||
+                     null;
         
-        if (user.getDataValue && typeof user.getDataValue === 'function') {
+        // If still no userId, try toJSON
+        if (!userId && dbUser.toJSON && typeof dbUser.toJSON === 'function') {
             try {
-                userId = user.getDataValue('user_id');
+                const plain = dbUser.toJSON();
+                userId = plain.user_id || plain.id || null;
             } catch (e) {
-                // Ignore
+                console.error('[Delete Game] Error calling toJSON:', e);
             }
         }
         
-        if (!userId && user.dataValues && user.dataValues.user_id !== undefined && user.dataValues.user_id !== null) {
-            userId = user.dataValues.user_id;
-        }
-        
-        if (!userId && user.user_id !== undefined && user.user_id !== null) {
-            userId = user.user_id;
-        }
-        
-        if (!userId && user.toJSON && typeof user.toJSON === 'function') {
+        // Last resort: raw SQL query
+        if (!userId) {
             try {
-                const plain = user.toJSON();
-                if (plain && plain.user_id !== undefined && plain.user_id !== null) {
-                    userId = plain.user_id;
+                const [results] = await sequelize.query(
+                    `SELECT user_id FROM users WHERE username = :username LIMIT 1`,
+                    {
+                        replacements: { username },
+                        type: QueryTypes.SELECT
+                    }
+                );
+                if (results && results.user_id) {
+                    userId = results.user_id;
                 }
-            } catch (e) {
-                // Ignore
+            } catch (sqlError) {
+                console.error('[Delete Game] SQL query error:', sqlError);
             }
         }
         
         if (!userId) {
-            console.error(`[Route] User ID extraction failed for user:`, username);
+            console.error('[Delete Game] User ID extraction failed for user:', username);
+            console.log('[Delete Game] ========== END (NO USER ID) ==========');
             return res.status(500).json({ error: 'Invalid user data - could not extract user ID' });
+        }
+        
+        console.log('[Delete Game] Extracted userId:', userId);
+        console.log('[Delete Game] Looking for wishlist:', wishlistId, 'type:', typeof wishlistId, 'for userId:', userId);
+
+        // Parse wishlistId to integer
+        const parsedWishlistId = parseInt(wishlistId, 10);
+        if (isNaN(parsedWishlistId)) {
+            console.log('[Delete Game] Invalid wishlistId:', wishlistId);
+            console.log('[Delete Game] ========== END (INVALID WISHLIST ID) ==========');
+            return res.status(400).json({ error: 'Invalid library ID' });
         }
 
         // Verify wishlist belongs to user
         const wishlist = await Wishlist.findOne({
-            where: { id: wishlistId, userId: userId }
+            where: { id: parsedWishlistId, userId: userId }
         });
         if (!wishlist) {
+            console.log('[Delete Game] Wishlist not found or doesn\'t belong to user');
+            console.log('[Delete Game] ========== END (WISHLIST NOT FOUND) ==========');
             return res.status(404).json({ error: 'Library not found' });
         }
+        
+        console.log('[Delete Game] Wishlist found:', wishlist.id);
+
+        // Parse gameId - it might be a string from the URL
+        const parsedGameId = parseInt(gameId, 10);
+        console.log('[Delete Game] Looking for game with gameId:', gameId, 'parsed:', parsedGameId);
+        console.log('[Delete Game] WishlistId type:', typeof wishlistId, 'value:', wishlistId);
+        console.log('[Delete Game] Parsed wishlistId:', parseInt(wishlistId, 10));
 
         // Remove game from library (check by gameId or steamId)
-        const wishlistGame = await WishlistGame.findOne({
+        // The steamId field maps to 'steam_id' column in database
+        // Try both gameId and steamId, using integer since both are INTEGER types
+        let wishlistGame = null;
+        
+        // First try with steamId (most likely since 447530 looks like a Steam app ID)
+        if (!isNaN(parsedGameId)) {
+            wishlistGame = await WishlistGame.findOne({
             where: {
-                wishlistId: wishlistId,
+                    wishlistId: parsedWishlistId,
+                    steamId: parsedGameId
+                }
+            });
+            console.log('[Delete Game] Search by steamId result:', wishlistGame ? 'found' : 'not found');
+        }
+        
+        // If not found by steamId, try gameId
+        if (!wishlistGame && !isNaN(parsedGameId)) {
+            wishlistGame = await WishlistGame.findOne({
+                where: {
+                    wishlistId: parsedWishlistId,
+                    gameId: parsedGameId
+                }
+            });
+            console.log('[Delete Game] Search by gameId result:', wishlistGame ? 'found' : 'not found');
+        }
+        
+        // If still not found, try with string versions
+        if (!wishlistGame) {
+            wishlistGame = await WishlistGame.findOne({
+                where: {
+                    wishlistId: parsedWishlistId,
                 [Op.or]: [
                     { gameId: gameId },
-                    { steamId: gameId }  // Also check by Steam ID
+                        { steamId: gameId }
                 ]
             }
         });
+            console.log('[Delete Game] Search by string gameId/steamId result:', wishlistGame ? 'found' : 'not found');
+        }
+        
+        console.log('[Delete Game] Final WishlistGame found:', wishlistGame ? 'yes' : 'no');
+        if (wishlistGame) {
+            console.log('[Delete Game] WishlistGame details:', {
+                id: wishlistGame.id,
+                wishlistId: wishlistGame.wishlistId,
+                gameId: wishlistGame.gameId,
+                steamId: wishlistGame.steamId,
+                gameTitle: wishlistGame.gameTitle
+            });
+        }
 
         if (wishlistGame) {
             await wishlistGame.destroy();
+            console.log('[Delete Game] Game removed successfully');
+            console.log('[Delete Game] ========== END (SUCCESS) ==========');
             res.json({ 
                 success: true, 
                 message: 'Game removed from library' 
             });
         } else {
+            console.log('[Delete Game] Game not found in library');
+            console.log('[Delete Game] ========== END (NOT FOUND) ==========');
             res.status(404).json({ error: 'Game not found in library' });
         }
     } catch (error) {
-        console.error('Error removing game from library:', error);
-        res.status(500).json({ error: 'Failed to remove game from library' });
+        console.error('[Delete Game] Error removing game from library:', error);
+        console.error('[Delete Game] Error name:', error.name);
+        console.error('[Delete Game] Error message:', error.message);
+        console.error('[Delete Game] Error stack:', error.stack);
+        
+        // Log Sequelize-specific errors
+        if (error.name === 'SequelizeDatabaseError') {
+            console.error('[Delete Game] Sequelize Database Error:', error.original);
+        } else if (error.name === 'SequelizeValidationError') {
+            console.error('[Delete Game] Sequelize Validation Error:', error.errors);
+        } else if (error.name === 'SequelizeUniqueConstraintError') {
+            console.error('[Delete Game] Sequelize Unique Constraint Error:', error.errors);
+        }
+        
+        console.log('[Delete Game] ========== END (ERROR) ==========');
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to remove game from library',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 });
 
@@ -3199,94 +4180,423 @@ app.get('/api/wishlists/:username/steam-check', async (req, res) => {
 // Reviews routes
 app.get('/api/reviews', async (req, res) => {
     try {
-        if (!req.session.user) {
+        console.log('[Get Reviews] ========== START ==========');
+        console.log('[Get Reviews] Session ID:', req.sessionID);
+        console.log('[Get Reviews] Has session:', !!req.session);
+        console.log('[Get Reviews] Has session.user:', !!req.session?.user);
+        
+        // Try to restore session if missing
+        if (!req.session?.user) {
+            console.log('[Get Reviews] No session user, attempting restoration...');
+            // Try to get username from query, referer, or cookies
+            const referer = req.headers.referer || '';
+            const pathMatch = referer.match(/\/profile\/([^\/]+)/);
+            let username = pathMatch ? pathMatch[1] : null;
+            
+            // Also check if there's a username in cookies (if we stored it)
+            if (!username && req.cookies && req.cookies.currentUsername) {
+                username = req.cookies.currentUsername;
+                console.log('[Get Reviews] Found username in cookie:', username);
+            }
+            
+            const restoredUser = await restoreSessionUser(req, username);
+            if (!restoredUser) {
+                console.log('[Get Reviews] Session restoration failed');
+                console.log('[Get Reviews] ========== END (AUTH FAILED) ==========');
             return res.status(401).json({ error: 'Authentication required' });
+            }
+            console.log('[Get Reviews] Session restored successfully');
         }
 
-        const userId = req.session.user.id;
-        const reviews = await Review.findAll({
+        // Extract user ID - try both 'id' and 'user_id' (primary key)
+        let userId = req.session.user.id || req.session.user.user_id || null;
+        console.log('[Get Reviews] Initial userId from session:', userId);
+
+        // If still no userId, try to get it from the database
+        if (!userId && req.session.user.username) {
+            console.log('[Get Reviews] No userId in session, querying database for username:', req.session.user.username);
+            try {
+                const dbUser = await User.findOne({ where: { username: req.session.user.username } });
+                if (dbUser) {
+                    // Try multiple methods to extract user_id
+                    userId = dbUser.user_id || 
+                             dbUser.getDataValue?.('user_id') || 
+                             dbUser.dataValues?.user_id || 
+                             dbUser.id ||
+                             null;
+                    
+                    console.log('[Get Reviews] Found userId from database:', userId);
+                    
+                    // Update session with the found ID
+                    if (userId) {
+                        req.session.user.id = userId;
+                        req.session.user.user_id = userId;
+                        req.session.save();
+                        console.log('[Get Reviews] Updated session with userId');
+                    }
+                } else {
+                    console.error('[Get Reviews] User not found in database:', req.session.user.username);
+                }
+            } catch (dbError) {
+                console.error('[Get Reviews] Error querying user:', dbError);
+            }
+        }
+
+        if (!userId) {
+            console.error('[Get Reviews] User ID extraction failed. Session user:', req.session?.user);
+            console.log('[Get Reviews] ========== END (NO USER ID) ==========');
+            return res.status(401).json({ error: 'User ID not found in session' });
+        }
+        
+        console.log('[Get Reviews] Proceeding with userId:', userId);
+        
+        // Query reviews - try using userId directly
+        let reviews;
+        try {
+            reviews = await Review.findAll({
             where: { userId: userId },
             order: [['createdAt', 'DESC']]
         });
+            console.log('[Get Reviews] Found', reviews.length, 'reviews');
+        } catch (queryError) {
+            console.error('[Get Reviews] Error querying reviews:', queryError);
+            console.error('[Get Reviews] Query error details:', {
+                name: queryError.name,
+                message: queryError.message,
+                stack: queryError.stack
+            });
+            // Try alternative query using raw SQL if Sequelize query fails
+            // Try different column name variations
+            try {
+                let results = null;
+                // Try with "userId" (camelCase)
+                try {
+                    results = await sequelize.query(
+                        'SELECT * FROM reviews WHERE "userId" = :userId ORDER BY "createdAt" DESC',
+                        {
+                            replacements: { userId: userId },
+                            type: QueryTypes.SELECT
+                        }
+                    );
+                } catch (e1) {
+                    // Try with "user_id" (snake_case)
+                    try {
+                        results = await sequelize.query(
+                            'SELECT * FROM reviews WHERE user_id = :userId ORDER BY "createdAt" DESC',
+                            {
+                                replacements: { userId: userId },
+                                type: QueryTypes.SELECT
+                            }
+                        );
+                    } catch (e2) {
+                        // Try with "userid" (lowercase)
+                        try {
+                            results = await sequelize.query(
+                                'SELECT * FROM reviews WHERE userid = :userId ORDER BY "createdAt" DESC',
+                                {
+                                    replacements: { userId: userId },
+                                    type: QueryTypes.SELECT
+                                }
+                            );
+                        } catch (e3) {
+                            throw e1; // Throw first error
+                        }
+                    }
+                }
+                
+                if (results) {
+                    console.log('[Get Reviews] Raw query found', results.length, 'reviews');
+                    // Use raw results directly - they're already plain objects
+                    reviews = results;
+                } else {
+                    throw queryError;
+                }
+            } catch (rawError) {
+                console.error('[Get Reviews] Raw query also failed:', rawError);
+                throw queryError; // Throw original error
+            }
+        }
 
-        const reviewIds = reviews.map(review => review.id);
+        const reviewIds = reviews.map(review => review.id || review.getDataValue?.('id') || review.dataValues?.id).filter(id => id != null);
+        console.log('[Get Reviews] Review IDs:', reviewIds);
+        
         let userVotes = [];
         if (reviewIds.length > 0) {
+            try {
             userVotes = await ReviewHelpfulVote.findAll({
                 where: {
                     reviewId: reviewIds,
                     userId: userId
                 }
             });
+                console.log('[Get Reviews] Found', userVotes.length, 'user votes');
+            } catch (voteError) {
+                console.error('[Get Reviews] Error querying votes:', voteError);
+                // Continue without votes if query fails
+                userVotes = [];
+            }
         }
 
         const votedSet = new Set(userVotes.map(vote => vote.reviewId));
 
-        const serializedReviews = reviews.map(review => ({
-                id: review.id,
-                gameTitle: review.gameTitle,
-                rating: review.rating,
-                reviewText: review.reviewText,
-            tags: Array.isArray(review.tags) ? review.tags : [],
-            helpfulVotes: review.helpfulVotes || 0,
-                isPublic: review.isPublic,
-                createdAt: review.createdAt,
-            updatedAt: review.updatedAt,
-            userHasVoted: votedSet.has(review.id)
-        }));
+        const serializedReviews = reviews.map(review => {
+            // Handle both Sequelize instances and plain objects
+            const id = review.id || review.getDataValue?.('id') || review.dataValues?.id;
+            const gameTitle = review.gameTitle || review.getDataValue?.('gameTitle') || review.dataValues?.gameTitle;
+            // Parse rating as float to handle DECIMAL type from database
+            const rawRating = review.rating !== undefined ? review.rating : 
+                             (review.getDataValue ? review.getDataValue('rating') : 
+                             (review.dataValues ? review.dataValues.rating : null));
+            const rating = rawRating !== null && rawRating !== undefined ? parseFloat(rawRating) : 0;
+            const reviewText = review.reviewText || review.getDataValue?.('reviewText') || review.dataValues?.reviewText;
+            const tags = review.tags || review.getDataValue?.('tags') || review.dataValues?.tags || [];
+            const helpfulVotes = review.helpfulVotes || review.getDataValue?.('helpfulVotes') || review.dataValues?.helpfulVotes || 0;
+            const isPublic = review.isPublic !== undefined ? review.isPublic : (review.getDataValue?.('isPublic') !== undefined ? review.getDataValue('isPublic') : review.dataValues?.isPublic);
+            const isApproved = review.isApproved !== undefined ? review.isApproved : (review.getDataValue?.('isApproved') !== undefined ? review.getDataValue('isApproved') : review.dataValues?.isApproved);
+            
+            // Extract rejectionReason with multiple fallbacks
+            let rejectionReason = null;
+            if (review.rejectionReason !== undefined && review.rejectionReason !== null) {
+                rejectionReason = review.rejectionReason;
+            } else if (review.getDataValue && review.getDataValue('rejectionReason') !== undefined && review.getDataValue('rejectionReason') !== null) {
+                rejectionReason = review.getDataValue('rejectionReason');
+            } else if (review.dataValues && review.dataValues.rejectionReason !== undefined && review.dataValues.rejectionReason !== null) {
+                rejectionReason = review.dataValues.rejectionReason;
+            } else if (review.toJSON && typeof review.toJSON === 'function') {
+                const jsonData = review.toJSON();
+                if (jsonData.rejectionReason !== undefined && jsonData.rejectionReason !== null) {
+                    rejectionReason = jsonData.rejectionReason;
+                }
+            }
+            
+            // Log rejection reason for debugging
+            if (rejectionReason) {
+                console.log('[Get Reviews] Found rejection reason for review', id, ':', rejectionReason);
+            }
+            
+            const createdAt = review.createdAt || review.getDataValue?.('createdAt') || review.dataValues?.createdAt;
+            const updatedAt = review.updatedAt || review.getDataValue?.('updatedAt') || review.dataValues?.updatedAt;
+            
+            return {
+                id: id,
+                gameTitle: gameTitle,
+                rating: rating,
+                reviewText: reviewText,
+                tags: Array.isArray(tags) ? tags : [],
+                helpfulVotes: helpfulVotes,
+                isPublic: isPublic !== undefined ? isPublic : true,
+                isApproved: isApproved !== undefined ? isApproved : false,
+                rejectionReason: rejectionReason,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                userHasVoted: votedSet.has(id)
+            };
+        });
 
-        const averageRating = serializedReviews.length > 0
-            ? (serializedReviews.reduce((sum, review) => sum + review.rating, 0) / serializedReviews.length).toFixed(1)
+        // Calculate average rating - ensure all ratings are numbers
+        const ratingsWithValues = serializedReviews
+            .map(r => parseFloat(r.rating) || 0)
+            .filter(r => r > 0);
+        
+        const averageRating = ratingsWithValues.length > 0
+            ? ratingsWithValues.reduce((sum, rating) => sum + rating, 0) / ratingsWithValues.length
             : 0;
+        
+        const finalAverageRating = !isNaN(averageRating) && isFinite(averageRating) ? parseFloat(averageRating.toFixed(1)) : 0;
+        
+        console.log('[Get Reviews] Average rating calculation:', {
+            totalReviews: serializedReviews.length,
+            ratings: serializedReviews.map(r => ({ id: r.id, rating: r.rating, parsed: parseFloat(r.rating) })),
+            averageRating: finalAverageRating
+        });
 
         res.json({
             success: true,
             reviews: serializedReviews,
-            averageRating: parseFloat(averageRating),
+            averageRating: finalAverageRating,
             totalReviews: serializedReviews.length
         });
     } catch (error) {
-        console.error('Error fetching reviews:', error);
-        res.status(500).json({ error: 'Failed to fetch reviews' });
+        console.error('[Get Reviews] Error fetching reviews:', error);
+        console.error('[Get Reviews] Error stack:', error.stack);
+        console.log('[Get Reviews] ========== END (ERROR) ==========');
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to fetch reviews',
+            message: error.message || 'An error occurred while fetching reviews'
+        });
     }
 });
 
 app.post('/api/reviews', async (req, res) => {
     try {
-        if (!req.session.user) {
+        console.log('[Create Review] ========== START ==========');
+        console.log('[Create Review] Session ID:', req.sessionID);
+        console.log('[Create Review] Has session.user:', !!req.session?.user);
+        
+        // Try to restore session if missing
+        if (!req.session?.user) {
+            console.log('[Create Review] No session user, attempting restoration...');
+            // Try to get username from cookies
+            let username = null;
+            if (req.cookies && req.cookies.currentUsername) {
+                username = req.cookies.currentUsername;
+                console.log('[Create Review] Found username in cookie:', username);
+            }
+            
+            const restoredUser = await restoreSessionUser(req, username);
+            if (!restoredUser) {
+                console.log('[Create Review] Session restoration failed');
+                console.log('[Create Review] ========== END (AUTH FAILED) ==========');
             return res.status(401).json({ error: 'Authentication required' });
+            }
+            console.log('[Create Review] Session restored successfully');
+        }
+
+        // Extract user ID - try both 'id' and 'user_id' (primary key)
+        let userId = req.session.user.id || req.session.user.user_id || null;
+        console.log('[Create Review] Initial userId from session:', userId);
+
+        // If still no userId, try to get it from the database
+        if (!userId && req.session.user.username) {
+            console.log('[Create Review] No userId in session, querying database for username:', req.session.user.username);
+            try {
+                const dbUser = await User.findOne({ where: { username: req.session.user.username } });
+                if (dbUser) {
+                    // Try multiple methods to extract user_id
+                    userId = dbUser.user_id || 
+                             dbUser.getDataValue?.('user_id') || 
+                             dbUser.dataValues?.user_id || 
+                             dbUser.id ||
+                             null;
+                    
+                    console.log('[Create Review] Found userId from database:', userId);
+                    
+                    // Update session with the found ID
+                    if (userId) {
+                        req.session.user.id = userId;
+                        req.session.user.user_id = userId;
+                        req.session.save();
+                        console.log('[Create Review] Updated session with userId');
+                    }
+                } else {
+                    console.error('[Create Review] User not found in database:', req.session.user.username);
+                }
+            } catch (dbError) {
+                console.error('[Create Review] Error querying user:', dbError);
+            }
+        }
+
+        if (!userId) {
+            console.error('[Create Review] User ID extraction failed. Session user:', req.session?.user);
+            console.log('[Create Review] ========== END (NO USER ID) ==========');
+            return res.status(401).json({ error: 'User ID not found in session' });
         }
 
         const { gameTitle, rating, reviewText, tags, isPublic } = req.body;
-        const userId = req.session.user.id;
+        console.log('[Create Review] Proceeding with userId:', userId);
 
         const safeTitle = typeof gameTitle === 'string' ? gameTitle.trim() : '';
-        const parsedRating = parseInt(rating, 10);
+        const parsedRating = parseFloat(rating);
         const safeReviewText = typeof reviewText === 'string' ? reviewText.trim() : '';
         const normalizedTags = normalizeReviewTags(tags);
-        const visibility = !(isPublic === false || isPublic === 'false');
+        const userWantsPublic = !(isPublic === false || isPublic === 'false');
+        
+        // If user wants review to be public, it needs admin approval first
+        // So set isPublic to false and isApproved to false until admin approves
+        // Store the user's original intent in intendedPublic
+        const finalIsPublic = false; // Always false until approved (even if user wants public)
+        const isApproved = userWantsPublic ? false : true; // Requires admin approval only if user wants public
+        const intendedPublic = userWantsPublic; // Store user's original intent
 
         if (!safeTitle || Number.isNaN(parsedRating) || !safeReviewText) {
-            return res.status(400).json({ error: 'Game title, rating, and review text are required' });
+            return res.status(400).json({ 
+                success: false,
+                error: 'Game title, rating, and review text are required' 
+            });
         }
 
-        if (parsedRating < 1 || parsedRating > 5) {
-            return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+        // Round to nearest 0.5 for validation
+        const roundedRating = Math.round(parsedRating * 2) / 2;
+        if (roundedRating < 0.5 || roundedRating > 5.0) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'Rating must be between 0.5 and 5.0' 
+            });
         }
 
         if (safeReviewText.length < 10 || safeReviewText.length > 5000) {
-            return res.status(400).json({ error: 'Review text must be between 10 and 5000 characters' });
+            return res.status(400).json({ 
+                success: false,
+                error: 'Review text must be between 10 and 5000 characters' 
+            });
         }
 
-        const review = await Review.create({
+        console.log('[Create Review] Creating review with data:', {
             userId: userId,
             gameTitle: safeTitle,
-            rating: parsedRating,
-            reviewText: safeReviewText,
+            rating: roundedRating,
+            reviewTextLength: safeReviewText.length,
             tags: normalizedTags,
-            isPublic: visibility,
+            isPublic: finalIsPublic,
+            isApproved: isApproved,
+            intendedPublic: intendedPublic
+        });
+
+        let review;
+        try {
+            // Create review with explicit field mapping
+            review = await Review.create({
+                userId: userId,
+                gameTitle: safeTitle,
+                rating: roundedRating,
+                reviewText: safeReviewText,
+                tags: normalizedTags.length > 0 ? normalizedTags : [],
+                isPublic: finalIsPublic,
+                isApproved: isApproved,
+                intendedPublic: intendedPublic,
             helpfulVotes: 0
         });
+        } catch (createError) {
+            console.error('[Create Review] Review.create() failed:', createError);
+            console.error('[Create Review] Error name:', createError.name);
+            console.error('[Create Review] Error message:', createError.message);
+            console.error('[Create Review] Error details:', createError.errors || createError);
+            console.error('[Create Review] Full error:', JSON.stringify(createError, null, 2));
+            
+            // Provide more specific error messages
+            if (createError.name === 'SequelizeValidationError') {
+                const validationErrors = createError.errors?.map(e => `${e.path}: ${e.message}`).join(', ') || createError.message;
+                return res.status(400).json({
+                    success: false,
+                    error: 'Validation error',
+                    message: `Review validation failed: ${validationErrors}`
+                });
+            } else if (createError.name === 'SequelizeForeignKeyConstraintError') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid user',
+                    message: 'User not found. Please log in again.'
+                });
+            } else if (createError.name === 'SequelizeDatabaseError') {
+                // Database error - might be missing columns
+                return res.status(500).json({
+                    success: false,
+                    error: 'Database error',
+                    message: 'Database error occurred. Please check if migrations have been run.'
+                });
+            } else {
+                // Re-throw to be caught by outer catch
+                throw createError;
+            }
+        }
+
+        console.log('[Create Review] Review created successfully with ID:', review.id);
+        console.log('[Create Review] ========== END (SUCCESS) ==========');
+
+        const message = intendedPublic 
+            ? 'Review submitted successfully! Your review is pending admin approval before it can be made public.'
+            : 'Review submitted successfully!';
 
         res.json({
             success: true,
@@ -3298,12 +4608,39 @@ app.post('/api/reviews', async (req, res) => {
                 tags: review.tags,
                 helpfulVotes: review.helpfulVotes,
                 isPublic: review.isPublic,
+                isApproved: review.isApproved,
+                intendedPublic: review.intendedPublic,
                 createdAt: review.createdAt
-            }
+            },
+            message: message
         });
     } catch (error) {
-        console.error('Error creating review:', error);
-        res.status(500).json({ error: 'Failed to create review' });
+        console.error('[Create Review] Error creating review:', error);
+        console.error('[Create Review] Error stack:', error.stack);
+        console.error('[Create Review] Error details:', {
+            name: error.name,
+            message: error.message,
+            userId: req.session?.user?.id || req.session?.user?.user_id,
+            errors: error.errors || null
+        });
+        console.log('[Create Review] ========== END (ERROR) ==========');
+        
+        // Provide more specific error messages
+        let errorMessage = 'Failed to create review';
+        if (error.name === 'SequelizeValidationError') {
+            const validationErrors = error.errors?.map(e => e.message).join(', ') || error.message;
+            errorMessage = `Validation error: ${validationErrors}`;
+        } else if (error.name === 'SequelizeForeignKeyConstraintError') {
+            errorMessage = 'Invalid user or game. Please log in again.';
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        res.status(500).json({ 
+            success: false,
+            error: errorMessage,
+            message: errorMessage
+        });
     }
 });
 
@@ -3318,10 +4655,13 @@ app.put('/api/reviews/:reviewId', async (req, res) => {
         const userId = req.session.user.id;
 
         const safeTitle = typeof gameTitle === 'string' ? gameTitle.trim() : '';
-        const parsedRating = parseInt(rating, 10);
+        const parsedRating = parseFloat(rating);
         const safeReviewText = typeof reviewText === 'string' ? reviewText.trim() : '';
         const normalizedTags = normalizeReviewTags(tags);
         const visibility = !(isPublic === false || isPublic === 'false');
+        
+        // Round to nearest 0.5 for validation
+        const roundedRating = Math.round(parsedRating * 2) / 2;
 
         const review = await Review.findOne({
             where: { id: reviewId, userId: userId }
@@ -3335,8 +4675,8 @@ app.put('/api/reviews/:reviewId', async (req, res) => {
             return res.status(400).json({ error: 'Game title, rating, and review text are required' });
         }
 
-        if (parsedRating < 1 || parsedRating > 5) {
-            return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+        if (roundedRating < 0.5 || roundedRating > 5.0) {
+            return res.status(400).json({ error: 'Rating must be between 0.5 and 5.0' });
         }
 
         if (safeReviewText.length < 10 || safeReviewText.length > 5000) {
@@ -3344,7 +4684,7 @@ app.put('/api/reviews/:reviewId', async (req, res) => {
         }
 
         review.gameTitle = safeTitle;
-        review.rating = parsedRating;
+        review.rating = roundedRating;
         review.reviewText = safeReviewText;
         review.tags = normalizedTags;
         review.isPublic = visibility;
@@ -3373,27 +4713,101 @@ app.put('/api/reviews/:reviewId', async (req, res) => {
 
 app.delete('/api/reviews/:reviewId', async (req, res) => {
     try {
-        if (!req.session.user) {
-            return res.status(401).json({ error: 'Authentication required' });
+        console.log('[Delete Review] ========== START ==========');
+        console.log('[Delete Review] Session ID:', req.sessionID);
+        console.log('[Delete Review] Has session:', !!req.session);
+        console.log('[Delete Review] Has session.user:', !!req.session?.user);
+        
+        // Try to restore session if missing
+        if (!req.session?.user) {
+            console.log('[Delete Review] No session user, attempting restoration...');
+            const referer = req.headers.referer || '';
+            const pathMatch = referer.match(/\/profile\/([^\/]+)/);
+            let username = pathMatch ? pathMatch[1] : null;
+            
+            if (!username && req.cookies && req.cookies.currentUsername) {
+                username = req.cookies.currentUsername;
+                console.log('[Delete Review] Found username in cookie:', username);
+            }
+            
+            const restoredUser = await restoreSessionUser(req, username);
+            if (!restoredUser) {
+                console.log('[Delete Review] Session restoration failed');
+                console.log('[Delete Review] ========== END (AUTH FAILED) ==========');
+                return res.status(401).json({ success: false, error: 'Authentication required' });
+            }
+            console.log('[Delete Review] Session restored successfully');
         }
 
         const { reviewId } = req.params;
-        const userId = req.session.user.id;
+        const reviewIdInt = parseInt(reviewId, 10);
+        
+        if (Number.isNaN(reviewIdInt)) {
+            return res.status(400).json({ success: false, error: 'Invalid review ID' });
+        }
+        
+        // Extract user ID - try both 'id' and 'user_id'
+        let userId = req.session.user.id || req.session.user.user_id || null;
+        console.log('[Delete Review] Initial userId from session:', userId);
+
+        // If still no userId, try to get it from the database
+        if (!userId && req.session.user.username) {
+            console.log('[Delete Review] No userId in session, querying database for username:', req.session.user.username);
+            try {
+                const dbUser = await User.findOne({ where: { username: req.session.user.username } });
+                if (dbUser) {
+                    userId = dbUser.user_id || 
+                             dbUser.getDataValue?.('user_id') || 
+                             dbUser.dataValues?.user_id || 
+                             dbUser.id ||
+                             null;
+                    
+                    console.log('[Delete Review] Found userId from database:', userId);
+                    
+                    // Update session with the found ID
+                    if (userId) {
+                        req.session.user.id = userId;
+                        req.session.user.user_id = userId;
+                        req.session.save();
+                        console.log('[Delete Review] Updated session with userId');
+                    }
+                }
+            } catch (dbError) {
+                console.error('[Delete Review] Error querying user:', dbError);
+            }
+        }
+
+        if (!userId) {
+            console.error('[Delete Review] User ID extraction failed');
+            console.log('[Delete Review] ========== END (NO USER ID) ==========');
+            return res.status(401).json({ success: false, error: 'User ID not found in session' });
+        }
+        
+        console.log('[Delete Review] Proceeding with userId:', userId, 'reviewId:', reviewIdInt);
 
         const review = await Review.findOne({
-            where: { id: reviewId, userId: userId }
+            where: { 
+                id: reviewIdInt, 
+                userId: userId 
+            }
         });
 
         if (!review) {
-            return res.status(404).json({ error: 'Review not found' });
+            console.log('[Delete Review] Review not found or not owned by user');
+            console.log('[Delete Review] ========== END (NOT FOUND) ==========');
+            return res.status(404).json({ success: false, error: 'Review not found or you do not have permission to delete it' });
         }
 
         await review.destroy();
+        
+        console.log('[Delete Review] Review deleted successfully');
+        console.log('[Delete Review] ========== END (SUCCESS) ==========');
 
         res.json({ success: true, message: 'Review deleted successfully' });
     } catch (error) {
-        console.error('Error deleting review:', error);
-        res.status(500).json({ error: 'Failed to delete review' });
+        console.error('[Delete Review] Error deleting review:', error);
+        console.log('[Delete Review] ========== END (ERROR) ==========');
+        res.status(500).json({ success: false, error: 'Failed to delete review' });
     }
 });
 
@@ -3479,8 +4893,11 @@ app.post('/api/admin/login', async (req, res) => {
 
         console.log(`[Admin Login] ✅ Password verified successfully for: ${username}`);
 
-        // Set admin session
+        // Set admin session with user ID
+        const userId = user.user_id || user.getDataValue?.('user_id') || user.dataValues?.user_id;
         req.session.user = {
+            id: userId,
+            user_id: userId,
             username: user.username,
             email: user.email,
             joinDate: user.join_date,
@@ -3517,6 +4934,53 @@ app.post('/api/admin/login', async (req, res) => {
     }
 });
 
+// Admin authentication middleware
+async function requireAdmin(req, res, next) {
+    try {
+        // Try to restore session if needed
+        if (!req.session?.user) {
+            await restoreSessionUser(req);
+        }
+
+        if (!req.session?.user) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+
+        let userId = req.session.user.id || req.session.user.user_id;
+        
+        // If still no userId, try to get it from username
+        if (!userId && req.session.user.username) {
+            const userByUsername = await User.findOne({ 
+                where: { username: req.session.user.username } 
+            });
+            if (userByUsername) {
+                userId = userByUsername.user_id || userByUsername.getDataValue?.('user_id') || userByUsername.dataValues?.user_id;
+                // Update session with user ID
+                req.session.user.id = userId;
+                req.session.user.user_id = userId;
+                await req.session.save();
+            }
+        }
+
+        if (!userId) {
+            return res.status(401).json({ success: false, error: 'User ID not found' });
+        }
+
+        const user = await User.findByPk(userId);
+        if (!user || !user.is_admin) {
+            return res.status(403).json({ success: false, error: 'Admin access required' });
+        }
+
+        // Attach user to request for use in route handlers
+        req.adminUser = user;
+        req.adminUserId = userId;
+        next();
+    } catch (error) {
+        console.error('Error in requireAdmin middleware:', error);
+        res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+}
+
 // Admin logout
 app.post('/api/admin/logout', (req, res) => {
     req.session.isAdmin = false;
@@ -3526,6 +4990,239 @@ app.post('/api/admin/logout', (req, res) => {
         }
         res.json({ success: true });
     });
+});
+
+// Admin Stats Endpoint
+app.get('/api/admin/stats', requireAdmin, async (req, res) => {
+    try {
+
+        // Get user statistics
+        const totalUsers = await User.count();
+        const activeUsers = await User.count({ where: { is_active: true } });
+        const totalAdmins = await User.count({ where: { is_admin: true } });
+        
+        // Get new users this month
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+        const newUsersThisMonth = await User.count({
+            where: {
+                join_date: {
+                    [Op.gte]: startOfMonth
+                }
+            }
+        });
+
+        res.json({
+            success: true,
+            isAdmin: true,
+            userStats: {
+                totalUsers,
+                activeUsers,
+                newUsersThisMonth,
+                totalAdmins
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching admin stats:', error);
+        res.status(500).json({ error: 'Failed to fetch admin stats' });
+    }
+});
+
+// Admin Users List Endpoint
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+    try {
+
+        // Get all users
+        const users = await User.findAll({
+            attributes: ['user_id', 'username', 'email', 'join_date', 'is_active', 'is_admin'],
+            order: [['join_date', 'DESC']]
+        });
+
+        res.json({
+            success: true,
+            users: users.map(u => ({
+                id: u.user_id || u.getDataValue?.('user_id') || u.dataValues?.user_id,
+                username: u.username || u.getDataValue?.('username') || u.dataValues?.username,
+                email: u.email || u.getDataValue?.('email') || u.dataValues?.email,
+                joinDate: u.join_date || u.getDataValue?.('join_date') || u.dataValues?.join_date,
+                isActive: u.is_active || u.getDataValue?.('is_active') || u.dataValues?.is_active,
+                isAdmin: u.is_admin || u.getDataValue?.('is_admin') || u.dataValues?.is_admin
+            }))
+        });
+    } catch (error) {
+        console.error('Error fetching users:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch users' });
+    }
+});
+
+// Admin List Endpoint
+app.get('/api/admin/list', requireAdmin, async (req, res) => {
+    try {
+
+        // Get all admins
+        const admins = await User.findAll({
+            where: { is_admin: true },
+            attributes: ['user_id', 'username', 'email', 'join_date'],
+            order: [['join_date', 'DESC']]
+        });
+
+        res.json({
+            success: true,
+            admins: admins.map(a => ({
+                id: a.user_id || a.getDataValue?.('user_id') || a.dataValues?.user_id,
+                username: a.username || a.getDataValue?.('username') || a.dataValues?.username,
+                email: a.email || a.getDataValue?.('email') || a.dataValues?.email,
+                joinDate: a.join_date || a.getDataValue?.('join_date') || a.dataValues?.join_date
+            }))
+        });
+    } catch (error) {
+        console.error('Error fetching admins:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch admins' });
+    }
+});
+
+// Admin Create Endpoint
+app.post('/api/admin/create', requireAdmin, async (req, res) => {
+    try {
+
+        const { username, email, password } = req.body;
+
+        if (!username || !email || !password) {
+            return res.status(400).json({ error: 'Username, email, and password are required' });
+        }
+
+        // Use DatabaseManager to create admin
+        const admin = await profileManager.databaseManager.createAdmin(username, email, password);
+
+        res.json({
+            success: true,
+            message: `Admin ${username} created successfully`,
+            admin: {
+                id: admin.user_id,
+                username: admin.username,
+                email: admin.email
+            }
+        });
+    } catch (error) {
+        console.error('Error creating admin:', error);
+        res.status(500).json({ success: false, error: error.message || 'Failed to create admin' });
+    }
+});
+
+// Admin Logs Endpoint
+app.get('/api/admin/logs', requireAdmin, async (req, res) => {
+    try {
+
+        // For now, return a simple log structure
+        // In a real application, you'd have a logs table
+        const logs = [
+            {
+                action: 'Admin Login',
+                details: `Admin ${user.username} logged in`,
+                timestamp: new Date()
+            },
+            {
+                action: 'System Start',
+                details: 'Server started successfully',
+                timestamp: new Date(Date.now() - 3600000) // 1 hour ago
+            }
+        ];
+
+        res.json({
+            success: true,
+            logs: logs
+        });
+    } catch (error) {
+        console.error('Error fetching logs:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch logs' });
+    }
+});
+
+// Admin User Status Toggle
+app.put('/api/admin/users/:userId/status', requireAdmin, async (req, res) => {
+    try {
+
+        const targetUserId = parseInt(req.params.userId, 10);
+        const { isActive } = req.body;
+
+        const targetUser = await User.findByPk(targetUserId);
+        if (!targetUser) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        await targetUser.update({ is_active: isActive });
+
+        res.json({
+            success: true,
+            message: `User ${targetUser.username} ${isActive ? 'activated' : 'deactivated'} successfully`
+        });
+    } catch (error) {
+        console.error('Error updating user status:', error);
+        res.status(500).json({ success: false, error: 'Failed to update user status' });
+    }
+});
+
+// Admin Promote User
+app.post('/api/admin/users/:username/promote', requireAdmin, async (req, res) => {
+    try {
+
+        const { username } = req.params;
+        await profileManager.databaseManager.promoteToAdmin(username);
+
+        res.json({
+            success: true,
+            message: `User ${username} promoted to admin successfully`
+        });
+    } catch (error) {
+        console.error('Error promoting user:', error);
+        res.status(500).json({ success: false, error: error.message || 'Failed to promote user' });
+    }
+});
+
+// Admin Demote User
+app.post('/api/admin/users/:username/demote', requireAdmin, async (req, res) => {
+    try {
+
+        const { username } = req.params;
+        await profileManager.databaseManager.demoteFromAdmin(username);
+
+        res.json({
+            success: true,
+            message: `User ${username} demoted from admin successfully`
+        });
+    } catch (error) {
+        console.error('Error demoting user:', error);
+        res.status(500).json({ success: false, error: error.message || 'Failed to demote user' });
+    }
+});
+
+// Admin Delete User
+app.delete('/api/admin/users/:userId', requireAdmin, async (req, res) => {
+    try {
+
+        const targetUserId = parseInt(req.params.userId, 10);
+        
+        // Don't allow deleting yourself
+        if (targetUserId === req.adminUserId) {
+            return res.status(400).json({ error: 'Cannot delete your own account' });
+        }
+
+        const targetUser = await User.findByPk(targetUserId);
+        if (!targetUser) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        await targetUser.destroy();
+
+        res.json({
+            success: true,
+            message: `User ${targetUser.username} deleted successfully`
+        });
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        res.status(500).json({ success: false, error: 'Failed to delete user' });
+    }
 });
 
 app.get('/api/games/search', async (req, res) => {
@@ -3897,6 +5594,703 @@ app.post('/api/settings', async (req, res) => {
     }
 });
 
+// ===== Admin Endpoints (must be before 404 handler) =====
+// Admin endpoints for review moderation
+app.get('/api/admin/reviews/pending', requireAdmin, async (req, res) => {
+    try {
+        console.log('[Admin Pending Reviews] Endpoint called');
+        console.log('[Admin Pending Reviews] Session user:', req.session?.user?.username);
+        console.log('[Admin Pending Reviews] Admin user ID:', req.adminUserId);
+
+        // Get all pending reviews (intended to be public but not yet approved and not rejected)
+        const pendingReviews = await Review.findAll({
+            where: {
+                intendedPublic: true,
+                isApproved: false,
+                rejectionReason: null  // Exclude rejected reviews
+            },
+            include: [{ 
+                model: User, 
+                as: 'user', 
+                attributes: ['user_id', 'username', 'email'] 
+            }],
+            order: [['createdAt', 'DESC']]
+        });
+
+        console.log('[Admin Pending Reviews] Found', pendingReviews.length, 'pending reviews');
+
+        res.json({
+            success: true,
+            reviews: pendingReviews.map(review => {
+                // Extract review data safely
+                const reviewData = {
+                    id: review.id || review.getDataValue?.('id') || review.dataValues?.id,
+                    gameTitle: review.gameTitle || review.getDataValue?.('gameTitle') || review.dataValues?.gameTitle,
+                    rating: review.rating || review.getDataValue?.('rating') || review.dataValues?.rating,
+                    reviewText: review.reviewText || review.getDataValue?.('reviewText') || review.dataValues?.reviewText,
+                    tags: Array.isArray(review.tags) ? review.tags : (review.tags ? (typeof review.tags === 'string' ? review.tags.split(',') : []) : []),
+                    helpfulVotes: review.helpfulVotes || review.getDataValue?.('helpfulVotes') || review.dataValues?.helpfulVotes || 0,
+                    isPublic: review.isPublic !== undefined ? review.isPublic : (review.getDataValue?.('isPublic') !== undefined ? review.getDataValue('isPublic') : review.dataValues?.isPublic),
+                    isApproved: review.isApproved !== undefined ? review.isApproved : (review.getDataValue?.('isApproved') !== undefined ? review.getDataValue('isApproved') : review.dataValues?.isApproved),
+                    intendedPublic: review.intendedPublic !== undefined ? review.intendedPublic : (review.getDataValue?.('intendedPublic') !== undefined ? review.getDataValue('intendedPublic') : review.dataValues?.intendedPublic),
+                    createdAt: review.createdAt || review.getDataValue?.('createdAt') || review.dataValues?.createdAt,
+                    updatedAt: review.updatedAt || review.getDataValue?.('updatedAt') || review.dataValues?.updatedAt,
+                    user: null
+                };
+
+                // Extract user data if included
+                if (review.user) {
+                    reviewData.user = {
+                        id: review.user.user_id || review.user.getDataValue?.('user_id') || review.user.dataValues?.user_id,
+                        username: review.user.username || review.user.getDataValue?.('username') || review.user.dataValues?.username,
+                        email: review.user.email || review.user.getDataValue?.('email') || review.user.dataValues?.email
+                    };
+                }
+
+                return reviewData;
+            })
+        });
+            } catch (error) {
+        console.error('Error fetching pending reviews:', error);
+        console.error('Error stack:', error.stack);
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to fetch pending reviews',
+            message: error.message || 'An error occurred while fetching pending reviews'
+        });
+    }
+});
+
+app.post('/api/admin/reviews/:reviewId/approve', requireAdmin, async (req, res) => {
+    try {
+        console.log('[Approve Review] Endpoint called');
+        console.log('[Approve Review] Review ID:', req.params.reviewId);
+        console.log('[Approve Review] Session user:', req.session?.user?.username);
+
+        const reviewId = parseInt(req.params.reviewId, 10);
+        if (Number.isNaN(reviewId)) {
+            return res.status(400).json({ error: 'Invalid review ID' });
+        }
+
+        const review = await Review.findByPk(reviewId);
+        if (!review) {
+            return res.status(404).json({ error: 'Review not found' });
+        }
+
+        // Approve the review and set it to public if intended
+        await review.update({
+            isApproved: true,
+            isPublic: review.intendedPublic ? true : review.isPublic
+        });
+
+        res.json({
+            success: true,
+            message: 'Review approved successfully',
+            review: {
+                id: review.id,
+                gameTitle: review.gameTitle,
+                isPublic: review.isPublic,
+                isApproved: review.isApproved
+            }
+        });
+            } catch (error) {
+        console.error('Error approving review:', error);
+        res.status(500).json({ error: 'Failed to approve review' });
+    }
+});
+
+app.post('/api/admin/reviews/:reviewId/reject', requireAdmin, async (req, res) => {
+    try {
+        console.log('[Reject Review] Endpoint called');
+        console.log('[Reject Review] Review ID:', req.params.reviewId);
+        console.log('[Reject Review] Request body:', req.body);
+        console.log('[Reject Review] Session user:', req.session?.user?.username);
+        
+        const reviewId = parseInt(req.params.reviewId, 10);
+        if (Number.isNaN(reviewId)) {
+            console.log('[Reject Review] Invalid review ID');
+            return res.status(400).json({ success: false, error: 'Invalid review ID' });
+        }
+
+        const { reason } = req.body;
+        if (!reason || !reason.trim()) {
+            console.log('[Reject Review] Missing rejection reason');
+            return res.status(400).json({ success: false, error: 'Rejection reason is required' });
+        }
+
+        const review = await Review.findByPk(reviewId);
+        if (!review) {
+            return res.status(404).json({ success: false, error: 'Review not found' });
+        }
+
+        // Reject the review and store the reason
+        await review.update({
+            isApproved: false,
+            isPublic: false,
+            rejectionReason: reason.trim()
+        });
+
+        res.json({
+            success: true,
+            message: 'Review rejected successfully',
+            review: {
+                id: review.id,
+                gameTitle: review.gameTitle,
+                isPublic: review.isPublic,
+                isApproved: review.isApproved,
+                rejectionReason: review.rejectionReason
+            }
+        });
+            } catch (error) {
+        console.error('Error rejecting review:', error);
+        res.status(500).json({ success: false, error: 'Failed to reject review' });
+    }
+});
+
+// ===== Community Page Route =====
+app.get('/community', (req, res) => {
+    console.log('[Community Route] Session user:', req.session.user ? req.session.user.username : 'none');
+    // Touch session to keep it alive
+    if (req.session) {
+        req.session.touch();
+        // Save session to persist it
+        req.session.save((err) => {
+            if (err) {
+                console.error('[Community Route] Error saving session:', err);
+            }
+        });
+    }
+    res.render('community', {
+        activePage: 'community',
+        user: req.session.user || null,
+        title: 'Community - Game Vault'
+    });
+});
+
+// ===== Community API Routes =====
+// Get all posts
+app.get('/api/community/posts', async (req, res) => {
+    try {
+        console.log('[Community Posts] Request received:', req.query);
+        const page = parseInt(req.query.page, 10) || 1;
+        const pageSize = parseInt(req.query.pageSize, 10) || 20;
+        const category = req.query.category || 'all';
+        const sortBy = req.query.sortBy || 'newest';
+        const gameFilter = req.query.game ? String(req.query.game).toLowerCase() : null;
+
+        const where = {};
+        if (category !== 'all') {
+            where.category = category;
+        }
+        if (gameFilter) {
+            where.gameTitle = { [Op.iLike]: `%${gameFilter}%` };
+        }
+
+        const order = [];
+        switch (sortBy) {
+            case 'newest':
+                order.push(['createdAt', 'DESC']);
+                break;
+            case 'oldest':
+                order.push(['createdAt', 'ASC']);
+                break;
+            case 'most-liked':
+                order.push(['likes', 'DESC']);
+                order.push(['createdAt', 'DESC']);
+                break;
+            case 'most-viewed':
+                order.push(['views', 'DESC']);
+                order.push(['createdAt', 'DESC']);
+                break;
+            case 'most-commented':
+                // Will sort after fetching
+                order.push(['createdAt', 'DESC']);
+                break;
+            default:
+                order.push(['createdAt', 'DESC']);
+        }
+
+        // First get pinned posts
+        let pinnedPosts = [];
+        let posts = [];
+        let count = 0;
+        
+        try {
+            pinnedPosts = await Post.findAll({
+                where: { ...where, isPinned: true },
+                include: [{ model: User, as: 'user', attributes: ['user_id', 'username'], required: false }],
+                order: [['createdAt', 'DESC']]
+            });
+
+            // Then get regular posts
+            const result = await Post.findAndCountAll({
+                where: { ...where, isPinned: false },
+                include: [{ model: User, as: 'user', attributes: ['user_id', 'username'], required: false }],
+                order: order,
+                limit: pageSize,
+                offset: (page - 1) * pageSize
+            });
+            count = result.count;
+            posts = result.rows;
+        } catch (dbError) {
+            // If table doesn't exist, return empty results
+            if (dbError.name === 'SequelizeDatabaseError' && dbError.message.includes('does not exist')) {
+                console.log('[Community Posts] Tables do not exist yet. Returning empty results.');
+                return res.json({
+                    success: true,
+                    posts: [],
+                    total: 0,
+                    page: 1,
+                    pageSize: pageSize,
+                    totalPages: 0
+                });
+            }
+            throw dbError; // Re-throw if it's a different error
+        }
+
+        // Get comment counts for each post
+        const postIds = [...pinnedPosts.map(p => p.id), ...posts.map(p => p.id)];
+        let commentCounts = [];
+        const commentCountMap = {};
+        
+        if (postIds.length > 0) {
+            try {
+                commentCounts = await Comment.findAll({
+                    where: { postId: { [Op.in]: postIds } },
+                    attributes: ['postId', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+                    group: ['postId'],
+                    raw: true
+                });
+                
+                commentCounts.forEach(cc => {
+                    commentCountMap[cc.postId] = parseInt(cc.count) || 0;
+                });
+            } catch (commentError) {
+                console.error('[Community Posts] Error fetching comment counts:', commentError);
+                // Continue without comment counts if query fails
+            }
+        }
+
+        // Combine and format posts
+        const allPosts = [...pinnedPosts, ...posts].map(post => {
+            const plain = post.toJSON ? post.toJSON() : post;
+            return {
+                id: plain.id,
+                title: plain.title,
+                content: plain.content,
+                gameTitle: plain.gameTitle,
+                category: plain.category,
+                tags: Array.isArray(plain.tags) ? plain.tags : [],
+                likes: plain.likes || 0,
+                views: plain.views || 0,
+                isPinned: plain.isPinned || false,
+                isLocked: plain.isLocked || false,
+                createdAt: plain.createdAt,
+                updatedAt: plain.updatedAt,
+                user: plain.user ? {
+                    id: plain.user.user_id || plain.user.id,
+                    username: plain.user.username || 'Anonymous'
+                } : null,
+                commentCount: commentCountMap[plain.id] || 0
+            };
+        });
+
+        // Sort by most commented if needed
+        if (sortBy === 'most-commented') {
+            allPosts.sort((a, b) => {
+                if (a.isPinned && !b.isPinned) return -1;
+                if (!a.isPinned && b.isPinned) return 1;
+                return b.commentCount - a.commentCount;
+            });
+        }
+
+        console.log('[Community Posts] Returning posts:', {
+            total: count + pinnedPosts.length,
+            postsCount: allPosts.length,
+            page,
+            pageSize,
+            totalPages: Math.ceil((count + pinnedPosts.length) / pageSize)
+        });
+
+        res.json({
+            success: true,
+            posts: allPosts,
+            total: count + pinnedPosts.length,
+            page,
+            pageSize,
+            totalPages: Math.ceil((count + pinnedPosts.length) / pageSize)
+        });
+            } catch (error) {
+        console.error('[Community Posts] Error fetching posts:', error);
+        console.error('[Community Posts] Error name:', error.name);
+        console.error('[Community Posts] Error message:', error.message);
+        console.error('[Community Posts] Error stack:', error.stack);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to fetch posts',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+// Get single post with comments
+app.get('/api/community/posts/:postId', async (req, res) => {
+    try {
+        const postId = parseInt(req.params.postId, 10);
+        
+        // Increment view count
+        await Post.increment('views', { where: { id: postId } });
+
+        const post = await Post.findByPk(postId, {
+            include: [{ model: User, as: 'user', attributes: ['user_id', 'username'] }]
+        });
+
+        if (!post) {
+            return res.status(404).json({ success: false, error: 'Post not found' });
+        }
+
+        const comments = await Comment.findAll({
+            where: { postId: postId, parentCommentId: null },
+            include: [
+                { model: User, as: 'user', attributes: ['user_id', 'username'] },
+                {
+                    model: Comment,
+                    as: 'replies',
+                    include: [{ model: User, as: 'user', attributes: ['user_id', 'username'] }],
+                    order: [['createdAt', 'ASC']]
+                }
+            ],
+            order: [['createdAt', 'ASC']]
+        });
+
+        const plainPost = post.toJSON ? post.toJSON() : post;
+        res.json({
+            success: true,
+            post: {
+                ...plainPost,
+                user: plainPost.user ? {
+                    id: plainPost.user.user_id || plainPost.user.id,
+                    username: plainPost.user.username || 'Anonymous'
+                } : null
+            },
+            comments: comments.map(comment => {
+                const plain = comment.toJSON ? comment.toJSON() : comment;
+                return {
+                    ...plain,
+                    user: plain.user ? {
+                        id: plain.user.user_id || plain.user.id,
+                        username: plain.user.username || 'Anonymous'
+                    } : null,
+                    replies: (plain.replies || []).map(reply => {
+                        const plainReply = reply.toJSON ? reply.toJSON() : reply;
+                        return {
+                            ...plainReply,
+                            user: plainReply.user ? {
+                                id: plainReply.user.user_id || plainReply.user.id,
+                                username: plainReply.user.username || 'Anonymous'
+                            } : null
+                        };
+                    })
+                };
+            })
+        });
+    } catch (error) {
+        console.error('Error fetching post:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch post' });
+    }
+});
+
+// Create new post
+app.post('/api/community/posts', async (req, res) => {
+    try {
+        if (!req.session.user) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+
+        const userId = req.session.user.id || req.session.user.user_id;
+        if (!userId) {
+            return res.status(401).json({ success: false, error: 'Invalid user session' });
+        }
+
+        const { title, content, gameTitle, category, tags } = req.body;
+
+        if (!title || !content) {
+            return res.status(400).json({ success: false, error: 'Title and content are required' });
+        }
+
+        if (title.length < 3 || title.length > 200) {
+            return res.status(400).json({ success: false, error: 'Title must be between 3 and 200 characters' });
+        }
+
+        if (content.length < 10 || content.length > 10000) {
+            return res.status(400).json({ success: false, error: 'Content must be between 10 and 10000 characters' });
+        }
+
+        const post = await Post.create({
+            userId: userId,
+            title: title.trim(),
+            content: content.trim(),
+            gameTitle: gameTitle ? gameTitle.trim() : null,
+            category: category || 'general',
+            tags: Array.isArray(tags) ? tags : []
+        });
+
+        const createdPost = await Post.findByPk(post.id, {
+            include: [{ model: User, as: 'user', attributes: ['user_id', 'username'] }]
+        });
+
+        const plain = createdPost.toJSON ? createdPost.toJSON() : createdPost;
+        res.json({
+            success: true,
+            post: {
+                ...plain,
+                user: plain.user ? {
+                    id: plain.user.user_id || plain.user.id,
+                    username: plain.user.username || 'Anonymous'
+                } : null,
+                commentCount: 0
+            }
+        });
+    } catch (error) {
+        console.error('Error creating post:', error);
+        res.status(500).json({ success: false, error: 'Failed to create post' });
+    }
+});
+
+// Add comment to post
+app.post('/api/community/posts/:postId/comments', async (req, res) => {
+    try {
+        if (!req.session.user) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+
+        const userId = req.session.user.id || req.session.user.user_id;
+        if (!userId) {
+            return res.status(401).json({ success: false, error: 'Invalid user session' });
+        }
+
+        const postId = parseInt(req.params.postId, 10);
+        const { content, parentCommentId } = req.body;
+
+        if (!content || content.trim().length === 0) {
+            return res.status(400).json({ success: false, error: 'Comment content is required' });
+        }
+
+        if (content.length > 5000) {
+            return res.status(400).json({ success: false, error: 'Comment must be less than 5000 characters' });
+        }
+
+        // Check if post exists and is not locked
+        const post = await Post.findByPk(postId);
+        if (!post) {
+            return res.status(404).json({ success: false, error: 'Post not found' });
+        }
+
+        if (post.isLocked) {
+            return res.status(403).json({ success: false, error: 'Post is locked' });
+        }
+
+        const comment = await Comment.create({
+            postId: postId,
+            userId: userId,
+            content: content.trim(),
+            parentCommentId: parentCommentId || null
+        });
+
+        const createdComment = await Comment.findByPk(comment.id, {
+            include: [{ model: User, as: 'user', attributes: ['user_id', 'username'] }]
+        });
+
+        const plain = createdComment.toJSON ? createdComment.toJSON() : createdComment;
+        res.json({
+            success: true,
+            comment: {
+                ...plain,
+                user: plain.user ? {
+                    id: plain.user.user_id || plain.user.id,
+                    username: plain.user.username || 'Anonymous'
+                } : null,
+                replies: []
+            }
+        });
+    } catch (error) {
+        console.error('Error creating comment:', error);
+        res.status(500).json({ success: false, error: 'Failed to create comment' });
+    }
+});
+
+// Like post
+app.post('/api/community/posts/:postId/like', async (req, res) => {
+    try {
+        if (!req.session.user) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+
+        const postId = parseInt(req.params.postId, 10);
+        await Post.increment('likes', { where: { id: postId } });
+        
+        const post = await Post.findByPk(postId);
+        res.json({ success: true, likes: post.likes });
+    } catch (error) {
+        console.error('Error liking post:', error);
+        res.status(500).json({ success: false, error: 'Failed to like post' });
+    }
+});
+
+// Like comment
+app.post('/api/community/comments/:commentId/like', async (req, res) => {
+    try {
+        if (!req.session.user) {
+            return res.status(401).json({ success: false, error: 'Authentication required' });
+        }
+
+        const commentId = parseInt(req.params.commentId, 10);
+        await Comment.increment('likes', { where: { id: commentId } });
+        
+        const comment = await Comment.findByPk(commentId);
+        res.json({ success: true, likes: comment.likes });
+    } catch (error) {
+        console.error('Error liking comment:', error);
+        res.status(500).json({ success: false, error: 'Failed to like comment' });
+    }
+});
+
+// ===== Public Reviews API =====
+app.get('/api/reviews/public', async (req, res) => {
+    try {
+        console.log('[Public Reviews] Request received:', req.query);
+        const rawPage = parseInt(req.query.page, 10);
+        const rawPageSize = parseInt(req.query.pageSize, 10);
+        const page = Number.isNaN(rawPage) || rawPage < 1 ? 1 : rawPage;
+        const pageSize = Number.isNaN(rawPageSize) || rawPageSize < 1 ? 12 : Math.min(rawPageSize, 30);
+        const minRating = parseInt(req.query.minRating, 10);
+        const tagFilter = req.query.tag ? String(req.query.tag).toLowerCase() : null;
+        const gameFilter = req.query.game ? String(req.query.game).toLowerCase() : null;
+        const sortOption = req.query.sort || 'newest';
+
+        console.log('[Public Reviews] Filters:', { page, pageSize, minRating, tagFilter, gameFilter, sortOption });
+
+        // Only show approved public reviews
+        const reviews = await Review.findAll({
+            where: { 
+                isPublic: true,
+                isApproved: true  // Only show approved reviews
+            },
+            include: [{ 
+                model: User, 
+                as: 'user', 
+                attributes: ['user_id', 'username'],
+                required: false  // Left join - don't fail if user doesn't exist
+            }],
+            raw: false  // Get Sequelize instances to access associations
+        });
+
+        console.log('[Public Reviews] Found reviews:', reviews.length);
+
+        // Convert to plain objects for easier manipulation
+        let filtered = reviews.map(review => {
+            const plain = review.toJSON ? review.toJSON() : review;
+            // Ensure rating is a number
+            if (plain.rating != null) {
+                plain.rating = parseFloat(plain.rating) || 0;
+            }
+            // Ensure tags is an array
+            if (!Array.isArray(plain.tags)) {
+                plain.tags = plain.tags ? [plain.tags] : [];
+            }
+            // Extract user data safely
+            if (plain.user) {
+                plain.user = {
+                    id: plain.user.user_id || plain.user.id || null,
+                    username: plain.user.username || 'Anonymous'
+                };
+            } else {
+                plain.user = null;
+            }
+            return plain;
+        });
+
+        if (!Number.isNaN(minRating) && minRating >= 1 && minRating <= 5) {
+            filtered = filtered.filter(review => review.rating >= minRating);
+        }
+
+        if (tagFilter) {
+            filtered = filtered.filter(review => {
+                if (!review.tags || review.tags.length === 0) return false;
+                return review.tags.map(tag => String(tag).toLowerCase()).includes(tagFilter);
+            });
+        }
+
+        if (gameFilter) {
+            filtered = filtered.filter(review => {
+                if (!review.gameTitle) return false;
+                return String(review.gameTitle).toLowerCase().includes(gameFilter);
+            });
+            console.log('[Public Reviews] After game filter:', filtered.length, 'reviews match:', gameFilter);
+        }
+
+        switch (sortOption) {
+            case 'oldest':
+                filtered.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+                break;
+            case 'rating-desc':
+                filtered.sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating));
+                break;
+            case 'rating-asc':
+                filtered.sort((a, b) => parseFloat(a.rating) - parseFloat(b.rating));
+                break;
+            case 'helpful':
+                filtered.sort((a, b) => (b.helpfulVotes || 0) - (a.helpfulVotes || 0));
+                break;
+            case 'alpha':
+                filtered.sort((a, b) => (a.gameTitle || '').localeCompare(b.gameTitle || ''));
+                break;
+            case 'newest':
+            default:
+                filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                break;
+        }
+
+        const total = filtered.length;
+        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+        const currentPage = Math.min(page, totalPages);
+        const startIndex = (currentPage - 1) * pageSize;
+        const pageReviews = filtered.slice(startIndex, startIndex + pageSize);
+
+        console.log('[Public Reviews] Response:', { total, currentPage, totalPages, pageReviewsCount: pageReviews.length });
+
+        res.json({
+            success: true,
+            page: currentPage,
+            pageSize,
+            total,
+            totalPages,
+            reviews: pageReviews.map(review => ({
+                id: review.id,
+                gameTitle: review.gameTitle,
+                rating: parseFloat(review.rating) || 0,
+                reviewText: review.reviewText,
+                tags: Array.isArray(review.tags) ? review.tags : [],
+                helpfulVotes: review.helpfulVotes || 0,
+                isPublic: review.isPublic,
+                createdAt: review.createdAt,
+                updatedAt: review.updatedAt,
+                user: review.user
+            }))
+        });
+    } catch (error) {
+        console.error('[Public Reviews] Error fetching public reviews:', error);
+        console.error('[Public Reviews] Error name:', error.name);
+        console.error('[Public Reviews] Error message:', error.message);
+        console.error('[Public Reviews] Error stack:', error.stack);
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to fetch public reviews',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
 // ===== Error Handling =====
 app.use((err, req, res, next) => {
     console.error(err.stack);
@@ -3960,95 +6354,6 @@ app.listen(PORT, async () => {
             console.error('❌ Database initialization timeout. Server running with limited functionality.');
         }
     }, 10000);
-});
-
-app.get('/api/reviews/public', async (req, res) => {
-    try {
-        const rawPage = parseInt(req.query.page, 10);
-        const rawPageSize = parseInt(req.query.pageSize, 10);
-        const page = Number.isNaN(rawPage) || rawPage < 1 ? 1 : rawPage;
-        const pageSize = Number.isNaN(rawPageSize) || rawPageSize < 1 ? 12 : Math.min(rawPageSize, 30);
-        const minRating = parseInt(req.query.minRating, 10);
-        const tagFilter = req.query.tag ? String(req.query.tag).toLowerCase() : null;
-        const gameFilter = req.query.game ? String(req.query.game).toLowerCase() : null;
-        const sortOption = req.query.sort || 'newest';
-
-        const reviews = await Review.findAll({
-            where: { isPublic: true },
-            include: [{ model: User, as: 'user', attributes: ['id', 'username'] }]
-        });
-
-        let filtered = reviews;
-
-        if (!Number.isNaN(minRating) && minRating >= 1 && minRating <= 5) {
-            filtered = filtered.filter(review => review.rating >= minRating);
-        }
-
-        if (tagFilter) {
-            filtered = filtered.filter(review => {
-                if (!review.tags || review.tags.length === 0) return false;
-                return review.tags.map(tag => tag.toLowerCase()).includes(tagFilter);
-            });
-        }
-
-        if (gameFilter) {
-            filtered = filtered.filter(review => {
-                if (!review.gameTitle) return false;
-                return review.gameTitle.toLowerCase().includes(gameFilter);
-            });
-        }
-
-        switch (sortOption) {
-            case 'oldest':
-                filtered.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-                break;
-            case 'rating-desc':
-                filtered.sort((a, b) => b.rating - a.rating);
-                break;
-            case 'rating-asc':
-                filtered.sort((a, b) => a.rating - b.rating);
-                break;
-            case 'helpful':
-                filtered.sort((a, b) => (b.helpfulVotes || 0) - (a.helpfulVotes || 0));
-                break;
-            case 'alpha':
-                filtered.sort((a, b) => (a.gameTitle || '').localeCompare(b.gameTitle || ''));
-                break;
-            case 'newest':
-            default:
-                filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                break;
-        }
-
-        const total = filtered.length;
-        const totalPages = Math.max(1, Math.ceil(total / pageSize));
-        const currentPage = Math.min(page, totalPages);
-        const startIndex = (currentPage - 1) * pageSize;
-        const pageReviews = filtered.slice(startIndex, startIndex + pageSize);
-
-        res.json({
-            success: true,
-            page: currentPage,
-            pageSize,
-            total,
-            totalPages,
-            reviews: pageReviews.map(review => ({
-                id: review.id,
-                gameTitle: review.gameTitle,
-                rating: review.rating,
-                reviewText: review.reviewText,
-                tags: Array.isArray(review.tags) ? review.tags : [],
-                helpfulVotes: review.helpfulVotes || 0,
-                isPublic: review.isPublic,
-                createdAt: review.createdAt,
-                updatedAt: review.updatedAt,
-                user: review.user ? { id: review.user.id, username: review.user.username } : null
-            }))
-        });
-    } catch (error) {
-        console.error('Error fetching public reviews:', error);
-        res.status(500).json({ error: 'Failed to fetch public reviews' });
-    }
 });
 
 app.post('/api/reviews/:reviewId/helpful', async (req, res) => {
@@ -4212,3 +6517,4 @@ const normalizeReviewTags = (tagsInput) => {
 };
 
 module.exports = app;
+

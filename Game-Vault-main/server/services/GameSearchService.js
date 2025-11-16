@@ -21,19 +21,8 @@ class GameSearchService {
         this.appListLoading = false;
         this.appListLoadingPromise = null;
         
-        // Preload app list on service initialization (non-blocking)
-        this.preloadAppList();
-    }
-
-    async preloadAppList() {
-        try {
-            console.log('🔄 [GameSearchService] Preloading Steam app list in background...');
-            await this.getSteamAppList();
-            console.log('✅ [GameSearchService] App list preloaded successfully');
-        } catch (error) {
-            console.error('❌ [GameSearchService] Failed to preload app list:', error.message);
-            console.log('   App list will be loaded on first search request');
-        }
+        // Note: Preload is handled by server.js after database initialization
+        // to avoid blocking server startup
     }
 
     async searchGames(query, page = 1, pageSize = 20) {
@@ -127,36 +116,10 @@ class GameSearchService {
             
             console.log(`📋 [Steam Search] Got app list: ${appList ? appList.length : 0} games`);
             
-            // If app list is empty or null, try to force reload it
+            // If app list is empty, use Steam Store API search directly
             if (!appList || appList.length === 0) {
-                console.warn('⚠️ [Steam Search] App list is empty, attempting to reload...');
-                // Clear cache and try again
-                this.appListCache = null;
-                this.appListCacheTime = null;
-                this.appListLoading = false;
-                this.appListLoadingPromise = null;
-                
-                console.log('🔄 [Steam Search] Forcing app list reload...');
-                // Try to reload with a longer timeout
-                appList = await this.getSteamAppList();
-                
-                console.log(`📋 [Steam Search] After reload: ${appList ? appList.length : 0} games`);
-                
-                if (!appList || appList.length === 0) {
-                    console.error('❌ [Steam Search] No app list available after reload attempt');
-                    console.error('   This can happen if Steam API is slow or blocked. Check server logs for Steam app list loading.');
-                    console.error('   Try visiting /api/games/debug/applist to check app list status');
-                    // Return empty results instead of mock data so user knows it's not working
-                    return {
-                        success: false,
-                        games: [],
-                        totalResults: 0,
-                        currentPage: page,
-                        totalPages: 0,
-                        isMockData: false,
-                        error: 'Steam app list not available. The app list may still be loading. Please wait a moment and try again, or check /api/games/debug/applist for status.'
-                    };
-                }
+                console.log('📡 [Steam Search] App list is empty, using Steam Store API search directly...');
+                return await this.searchSteamStoreDirect(query, page, pageSize);
             }
             
             console.log(`📦 [Steam Search] Using app list with ${appList.length} games`);
@@ -272,34 +235,23 @@ class GameSearchService {
                         const details = await this.getSteamGameDetails(game.appid);
                         if (details) {
                             const formattedGame = this.formatSteamGameData(game, details);
-                            if (formattedGame && formattedGame.name) {
+                            if (formattedGame && formattedGame.name && formattedGame.backgroundImage) {
                                 gamesWithDetails.push(formattedGame);
                                 // Reset error counter on success
                                 this.consecutive403Errors = 0;
+                            } else if (formattedGame && formattedGame.name && !formattedGame.backgroundImage) {
+                                console.log(`⚠️ Skipping ${game.name} (${game.appid}) - no image available`);
                             }
                         } else {
-                            // If we can't get details, still include the game with basic info
-                            // This ensures searches return results even if Steam API is slow
-                            console.log(`⚠️ Could not get details for ${game.name} (${game.appid}), using basic info`);
-                            const basicGame = this.formatSteamGameData(game, null);
-                            if (basicGame && basicGame.name) {
-                                gamesWithDetails.push(basicGame);
-                            }
+                            // Skip games without details (they won't have images)
+                            console.log(`⚠️ Skipping ${game.name} (${game.appid}) - no details available (no image)`);
                         }
                         // Delay between requests
                         await new Promise(resolve => setTimeout(resolve, delayBetweenRequests));
                     } catch (error) {
                         // Log but continue - don't fail entire search for individual game errors
                         console.log(`⚠️ Skipping app ${game.appid} (${game.name}) due to error: ${error.message}`);
-                        // Still try to add basic game info
-                        try {
-                            const basicGame = this.formatSteamGameData(game, null);
-                            if (basicGame && basicGame.name) {
-                                gamesWithDetails.push(basicGame);
-                            }
-                        } catch (formatError) {
-                            // Skip if we can't even format basic info
-                        }
+                        // Skip games without details (they won't have images)
                     }
                 }
                 
@@ -311,25 +263,21 @@ class GameSearchService {
 
             console.log(`📊 [Steam Search] Fetched details for ${gamesWithDetails.length} games`);
 
-            // If we got no games with details, try to return basic games from app list
+            // Filter out games without images
+            gamesWithDetails = gamesWithDetails.filter(game => game && game.backgroundImage);
+            
+            // If we got no games with details, return empty results (no games with images)
             if (gamesWithDetails.length === 0 && matchingGames.length > 0) {
-                console.log(`⚠️ [Steam Search] Could not fetch details for any games, returning basic info for top matches`);
-                // Return basic game info for top matches
-                const basicGames = matchingGames.slice(0, pageSize).map(game => 
-                    this.formatSteamGameData(game, null)
-                ).filter(g => g && g.name);
-                
-                if (basicGames.length > 0) {
-                    console.log(`📊 [Steam Search] Returning ${basicGames.length} games with basic info`);
-                    return {
-                        success: true,
-                        games: basicGames,
-                        totalResults: matchingGames.length,
-                        currentPage: page,
-                        totalPages: Math.ceil(matchingGames.length / pageSize) || 1,
-                        isMockData: false
-                    };
-                }
+                console.log(`⚠️ [Steam Search] Could not fetch details for any games with images`);
+                // Don't return games without images - return empty instead
+                return {
+                    success: true,
+                    games: [],
+                    totalResults: 0,
+                    currentPage: page,
+                    totalPages: 0,
+                    isMockData: false
+                };
             }
             
             // If we still have no games, return empty results
@@ -395,16 +343,20 @@ class GameSearchService {
             // For other errors, check if we got any games before the error
             // If we have some games, return them instead of failing completely
             if (gamesWithDetails && gamesWithDetails.length > 0) {
-                console.log(`⚠️ [Steam Search] Error occurred but returning ${gamesWithDetails.length} games found so far`);
-                const topGames = gamesWithDetails.slice(0, pageSize);
-                return {
-                    success: true,
-                    games: topGames,
-                    totalResults: gamesWithDetails.length,
-                    currentPage: page,
-                    totalPages: Math.ceil(gamesWithDetails.length / pageSize) || 1,
-                    isMockData: false
-                };
+                // Filter out games without images
+                const gamesWithImages = gamesWithDetails.filter(game => game && game.backgroundImage);
+                if (gamesWithImages.length > 0) {
+                    console.log(`⚠️ [Steam Search] Error occurred but returning ${gamesWithImages.length} games with images found so far`);
+                    const topGames = gamesWithImages.slice(0, pageSize);
+                    return {
+                        success: true,
+                        games: topGames,
+                        totalResults: gamesWithImages.length,
+                        currentPage: page,
+                        totalPages: Math.ceil(gamesWithImages.length / pageSize) || 1,
+                        isMockData: false
+                    };
+                }
             }
             
             // Only return error if we have no games at all
@@ -462,140 +414,115 @@ class GameSearchService {
 
     async _loadSteamAppList() {
         try {
-            console.log('🔄 Fetching Steam app list from Steam API (this may take 30-60 seconds)...');
-            const startTime = Date.now();
+            console.log('🔄 Steam API GetAppList endpoint appears to be deprecated.');
+            console.log('   Using alternative approach: search will query Steam Store API directly.');
+            console.log('   This means searches will be slower but will work correctly.');
+            
+            // Return empty array - we'll search directly via Steam Store API instead
+            // This prevents the 404 error and allows searches to work
+            this.appListCache = [];
+            this.appListCacheTime = Date.now();
+            
+            console.log('✅ App list cache initialized (empty - will use direct search)');
+            return [];
+        } catch (error) {
+            console.error('❌ Error initializing Steam app list:', error.message);
+            
+            // Return empty array as fallback
+            this.appListCache = [];
+            this.appListCacheTime = Date.now();
+            return [];
+        }
+    }
+
+    async searchSteamStoreDirect(query, page = 1, pageSize = 20) {
+        try {
+            console.log(`🔍 [Steam Store Direct] Searching for: "${query}"`);
+            
+            // Use Steam Store search suggestions API
+            const searchUrl = `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(query)}&l=english&cc=US`;
             
             try {
-                // Try the standard Steam API endpoint
-                const url = `${this.steamApiBase}/ISteamApps/GetAppList/v0002/?format=json`;
-                console.log(`🌐 [Steam API] Fetching from: ${url}`);
-                
-                const response = await axios.get(url, {
-                    timeout: 120000, // 120 second timeout for large response
-                    maxContentLength: Infinity,
-                    maxBodyLength: Infinity,
+                const response = await axios.get(searchUrl, {
+                    timeout: 10000,
                     headers: {
                         'Accept': 'application/json',
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                    },
-                    validateStatus: function (status) {
-                        // Don't throw for 404, we'll handle it
-                        return status < 500;
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                     }
                 });
                 
-                // Check for 404 explicitly
-                if (response.status === 404) {
-                    console.error(`❌ [Steam API] 404 Not Found for endpoint: ${url}`);
-                    console.error('   Response data:', response.data);
-                    console.error('   Trying alternative endpoint format...');
+                if (response.data && response.data.items && Array.isArray(response.data.items)) {
+                    const items = response.data.items;
+                    console.log(`📦 [Steam Store Direct] Found ${items.length} items`);
                     
-                    // Try alternative endpoint without trailing slash and format
-                    const altUrl = `${this.steamApiBase}/ISteamApps/GetAppList/v2/`;
-                    console.log(`🌐 [Steam API] Trying alternative: ${altUrl}`);
-                    
-                    const altResponse = await axios.get(altUrl, {
-                        timeout: 120000,
-                        maxContentLength: Infinity,
-                        maxBodyLength: Infinity,
-                        headers: {
-                            'Accept': 'application/json',
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                        },
-                        validateStatus: function (status) {
-                            return status < 500;
+                    const games = [];
+                    for (const item of items.slice(0, Math.min(20, pageSize * 2))) {
+                        try {
+                            if (item.id) {
+                                const details = await this.getSteamGameDetails(item.id);
+                                if (details) {
+                                    const formattedGame = this.formatSteamGameData(
+                                        { appid: item.id, name: item.name || details.name },
+                                        details
+                                    );
+                                    // Only add games that have images
+                                    if (formattedGame && formattedGame.backgroundImage) {
+                                        games.push(formattedGame);
+                                    } else if (formattedGame && !formattedGame.backgroundImage) {
+                                        console.log(`⚠️ Skipping ${item.name || item.id} - no image available`);
+                                    }
+                                } else {
+                                    // Skip games without details (they won't have images)
+                                    console.log(`⚠️ Skipping ${item.name || item.id} - no details available (no image)`);
+                                }
+                                // Small delay to avoid rate limiting
+                                await new Promise(resolve => setTimeout(resolve, 200));
+                            }
+                        } catch (err) {
+                            console.log(`⚠️ Skipping item ${item.id}: ${err.message}`);
+                            continue;
                         }
-                    });
-                    
-                    if (altResponse.status === 404) {
-                        console.error(`❌ [Steam API] Alternative endpoint also returned 404`);
-                        throw new Error(`Steam API endpoints returned 404. This could mean: 1) Steam API endpoint has changed, 2) Network/firewall is blocking requests, 3) Steam API is temporarily unavailable. Check your network connection and try again.`);
                     }
                     
-                    // Use the alternative response
-                    const fetchTime = Date.now() - startTime;
-                    console.log(`⏱️ Steam API (alternative) responded in ${fetchTime}ms with status ${altResponse.status}`);
+                    // Filter out games without images
+                    const gamesWithImages = games.filter(game => game && game.backgroundImage);
                     
-                    if (!altResponse.data || !altResponse.data.applist || !altResponse.data.applist.apps) {
-                        throw new Error('Invalid Steam API response format from alternative endpoint');
+                    if (gamesWithImages.length > 0) {
+                        return {
+                            success: true,
+                            games: gamesWithImages.slice((page - 1) * pageSize, page * pageSize),
+                            totalResults: gamesWithImages.length,
+                            currentPage: page,
+                            totalPages: Math.ceil(gamesWithImages.length / pageSize) || 1,
+                            isMockData: false
+                        };
                     }
-                    
-                    console.log(`📦 Received ${altResponse.data.applist.apps.length} apps from Steam API (alternative endpoint)`);
-                    const games = this._filterAppList(altResponse.data.applist.apps);
-                    this.appListCache = games;
-                    this.appListCacheTime = Date.now();
-                    console.log(`✅ Successfully cached ${games.length} Steam games`);
-                    return games;
                 }
-                
-                const fetchTime = Date.now() - startTime;
-                console.log(`⏱️ Steam API responded in ${fetchTime}ms with status ${response.status}`);
-
-                if (!response.data) {
-                    console.error('❌ Steam API returned no data');
-                    throw new Error('No data in Steam API response');
-                }
-
-                if (!response.data.applist) {
-                    console.error('❌ Steam API response missing applist. Response keys:', Object.keys(response.data));
-                    throw new Error('Invalid Steam API response format - missing applist');
-                }
-
-                if (!response.data.applist.apps || !Array.isArray(response.data.applist.apps)) {
-                    console.error('❌ Steam API response missing apps array');
-                    throw new Error('Invalid Steam API response format - missing apps array');
-                }
-
-                console.log(`📦 Received ${response.data.applist.apps.length} apps from Steam API`);
-                
-                const filterStartTime = Date.now();
-                const games = this._filterAppList(response.data.applist.apps);
-                const filterTime = Date.now() - filterStartTime;
-                console.log(`🔍 Filtered ${games.length} games in ${filterTime}ms`);
-
-                if (games.length === 0) {
-                    console.warn('⚠️ No games after filtering - check filter criteria');
-                    // Return unfiltered apps if filtering removed everything (shouldn't happen but safety check)
-                    if (response.data.applist.apps.length > 0) {
-                        console.log('📋 Returning unfiltered app list as fallback');
-                        this.appListCache = response.data.applist.apps;
-                        this.appListCacheTime = Date.now();
-                        return this.appListCache;
-                    }
-                    throw new Error('No games found in Steam app list');
-                }
-
-                // Cache the results
-                this.appListCache = games;
-                this.appListCacheTime = Date.now();
-                
-                console.log(`✅ Successfully cached ${games.length} Steam games (filtered from ${response.data.applist.apps.length} total apps)`);
-                return games;
-            } catch (axiosError) {
-                console.error('❌ Axios error fetching Steam app list:', axiosError.message);
-                if (axiosError.response) {
-                    console.error(`   Status: ${axiosError.response.status}`);
-                    console.error(`   Status Text: ${axiosError.response.statusText}`);
-                }
-                if (axiosError.code === 'ECONNABORTED') {
-                    console.error('   ⚠️ Request timed out - Steam API may be slow');
-                }
-                throw axiosError;
+            } catch (searchError) {
+                console.error('❌ [Steam Store Direct] Search API error:', searchError.message);
+                // Fall through to return empty results
             }
+            
+            console.log('⚠️ [Steam Store Direct] No results found');
+            return {
+                success: true,
+                games: [],
+                totalResults: 0,
+                currentPage: page,
+                totalPages: 0,
+                isMockData: false
+            };
         } catch (error) {
-            console.error('❌ Error fetching Steam app list:', error.message);
-            if (error.stack) {
-                console.error('   Stack:', error.stack.split('\n').slice(0, 3).join('\n'));
-            }
-            
-            // Return cached data if available, even if expired
-            if (this.appListCache && this.appListCache.length > 0) {
-                console.log(`⚠️ Using expired cache (${this.appListCache.length} games) due to error`);
-                return this.appListCache;
-            }
-            
-            console.error('❌ No cached data available and Steam API failed');
-            throw error; // Re-throw so caller knows it failed
+            console.error('❌ [Steam Store Direct] Error:', error.message);
+            return {
+                success: false,
+                games: [],
+                totalResults: 0,
+                currentPage: page,
+                totalPages: 0,
+                isMockData: false,
+                error: `Search failed: ${error.message}`
+            };
         }
     }
 

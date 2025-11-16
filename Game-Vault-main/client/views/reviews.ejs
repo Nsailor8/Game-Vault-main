@@ -151,6 +151,23 @@
   <%- include('partials/loginModal') %>
   <%- include('partials/reviewModal') %>
 
+  <!-- Delete Review Confirmation Modal -->
+  <div id="deleteReviewModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <h2><i class="fas fa-exclamation-triangle"></i> Delete Review</h2>
+        <span class="close" onclick="if(window.app) window.app.closeDeleteReviewModal()">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete this review? This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button class="btn btn-secondary" onclick="if(window.app) window.app.closeDeleteReviewModal()">Cancel</button>
+        <button id="confirmDeleteReviewBtn" class="btn btn-danger">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/app.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {

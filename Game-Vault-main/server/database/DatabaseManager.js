@@ -170,6 +170,95 @@ class DatabaseManager {
       } else {
         console.log('✅ "profile_picture_path" column already exists in users table');
       }
+
+      // Check if 'posts' table exists
+      const [postsTableResults] = await sequelize.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'posts';
+      `);
+      
+      if (postsTableResults.length === 0) {
+        console.log('🔄 Creating "posts" table...');
+        try {
+          // Create ENUM type for category if it doesn't exist
+          await sequelize.query(`
+            DO $$ BEGIN
+              CREATE TYPE "enum_posts_category" AS ENUM ('general', 'game-discussion', 'help', 'off-topic', 'announcements');
+            EXCEPTION
+              WHEN duplicate_object THEN null;
+            END $$;
+          `);
+          
+          await sequelize.query(`
+            CREATE TABLE posts (
+              id SERIAL PRIMARY KEY,
+              "userId" INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+              title VARCHAR(200) NOT NULL,
+              content TEXT NOT NULL,
+              "gameTitle" VARCHAR(200),
+              category "enum_posts_category" NOT NULL DEFAULT 'general',
+              tags JSONB DEFAULT '[]'::jsonb,
+              likes INTEGER NOT NULL DEFAULT 0,
+              views INTEGER NOT NULL DEFAULT 0,
+              "isPinned" BOOLEAN NOT NULL DEFAULT false,
+              "isLocked" BOOLEAN NOT NULL DEFAULT false,
+              "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+              "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+              CONSTRAINT posts_title_length CHECK (char_length(title) >= 3 AND char_length(title) <= 200),
+              CONSTRAINT posts_content_length CHECK (char_length(content) >= 10 AND char_length(content) <= 10000)
+            );
+          `);
+          await sequelize.query(`
+            CREATE INDEX idx_posts_userId ON posts("userId");
+            CREATE INDEX idx_posts_gameTitle ON posts("gameTitle");
+            CREATE INDEX idx_posts_category ON posts(category);
+            CREATE INDEX idx_posts_createdAt ON posts("createdAt");
+          `);
+          console.log('✅ Successfully created "posts" table');
+        } catch (migrationError) {
+          console.error('❌ Error creating "posts" table:', migrationError.message);
+        }
+      } else {
+        console.log('✅ "posts" table already exists');
+      }
+
+      // Check if 'comments' table exists
+      const [commentsTableResults] = await sequelize.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'comments';
+      `);
+      
+      if (commentsTableResults.length === 0) {
+        console.log('🔄 Creating "comments" table...');
+        try {
+          await sequelize.query(`
+            CREATE TABLE comments (
+              id SERIAL PRIMARY KEY,
+              "postId" INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+              "userId" INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+              content TEXT NOT NULL,
+              "parentCommentId" INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+              likes INTEGER NOT NULL DEFAULT 0,
+              "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+              "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+              CONSTRAINT comments_content_length CHECK (char_length(content) >= 1 AND char_length(content) <= 5000)
+            );
+          `);
+          await sequelize.query(`
+            CREATE INDEX idx_comments_postId ON comments("postId");
+            CREATE INDEX idx_comments_userId ON comments("userId");
+            CREATE INDEX idx_comments_parentCommentId ON comments("parentCommentId");
+            CREATE INDEX idx_comments_createdAt ON comments("createdAt");
+          `);
+          console.log('✅ Successfully created "comments" table');
+        } catch (migrationError) {
+          console.error('❌ Error creating "comments" table:', migrationError.message);
+        }
+      } else {
+        console.log('✅ "comments" table already exists');
+      }
     } catch (error) {
       console.error('❌ Error running migrations:', error);
       // Don't throw - allow server to continue, but log the error
@@ -687,6 +776,23 @@ class DatabaseManager {
         throw new Error('Steam ID is required');
       }
       
+      // Store background image URL in notes if provided (as JSON for easy retrieval)
+      let notes = gameData.notes || '';
+      if (gameData.backgroundImage && !notes) {
+        // Store image URL in notes as JSON if notes is empty
+        notes = JSON.stringify({ backgroundImage: gameData.backgroundImage });
+      } else if (gameData.backgroundImage && notes) {
+        // If notes already exists, try to parse and merge
+        try {
+          const notesObj = JSON.parse(notes);
+          notesObj.backgroundImage = gameData.backgroundImage;
+          notes = JSON.stringify(notesObj);
+        } catch (e) {
+          // If notes is not JSON, append image info
+          notes = notes + ' | IMAGE:' + gameData.backgroundImage;
+        }
+      }
+      
       const wishlistGame = await WishlistGame.create({
         wishlistId: wishlistId,
         gameId: localGameId,  // Always null - we only use Steam games
@@ -694,7 +800,7 @@ class DatabaseManager {
         gameTitle: gameData.title || gameData.name || 'Unknown Game',
         platform: gameData.platform || 'PC',
         priority: gameData.priority || 'medium',
-        notes: gameData.notes || ''
+        notes: notes
       });
       
       console.log(`Game ${gameData.title || gameData.name} added to library (steamId: ${steamId})`);
@@ -821,6 +927,86 @@ class DatabaseManager {
         totalWishlists: 0,
         averageReviewsPerUser: 0
       };
+    }
+  }
+
+  async createAdmin(username, email, password) {
+    try {
+      const bcrypt = require('bcrypt');
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
+      const admin = await User.create({
+        username: username,
+        email: email,
+        password_hash: hashedPassword,
+        is_admin: true,
+        is_active: true,
+        join_date: new Date()
+      });
+      
+      console.log(`Admin user "${username}" created successfully`);
+      return admin;
+    } catch (error) {
+      console.error('Error creating admin:', error);
+      throw error;
+    }
+  }
+
+  async promoteToAdmin(username) {
+    try {
+      const user = await User.findOne({ where: { username: username } });
+      if (!user) {
+        throw new Error(`User "${username}" not found`);
+      }
+      
+      await user.update({ is_admin: true });
+      console.log(`User "${username}" promoted to admin`);
+      return true;
+    } catch (error) {
+      console.error('Error promoting user to admin:', error);
+      throw error;
+    }
+  }
+
+  async demoteFromAdmin(username) {
+    try {
+      const user = await User.findOne({ where: { username: username } });
+      if (!user) {
+        throw new Error(`User "${username}" not found`);
+      }
+      
+      await user.update({ is_admin: false });
+      console.log(`User "${username}" demoted from admin`);
+      return true;
+    } catch (error) {
+      console.error('Error demoting user from admin:', error);
+      throw error;
+    }
+  }
+
+  async getAdmins() {
+    try {
+      const admins = await User.findAll({
+        where: { is_admin: true },
+        attributes: ['user_id', 'username', 'email', 'join_date', 'is_active']
+      });
+      return admins;
+    } catch (error) {
+      console.error('Error getting admins:', error);
+      return [];
+    }
+  }
+
+  async isAdmin(username) {
+    try {
+      const user = await User.findOne({ 
+        where: { username: username },
+        attributes: ['is_admin']
+      });
+      return user ? user.is_admin : false;
+    } catch (error) {
+      console.error('Error checking admin status:', error);
+      return false;
     }
   }
 

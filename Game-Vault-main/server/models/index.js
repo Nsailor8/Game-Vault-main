@@ -8,6 +8,8 @@ const WishlistGame = require('./WishlistGame');
 const Friendship = require('./Friendship');
 const Achievement = require('./Achievement');
 const ReviewHelpfulVote = require('./ReviewHelpfulVote');
+const Post = require('./Post');
+const Comment = require('./Comment');
 
 const setupAssociations = () => {
 
@@ -15,6 +17,8 @@ const setupAssociations = () => {
   User.hasMany(Wishlist, { foreignKey: 'userId', as: 'wishlists' });
   User.hasMany(Achievement, { foreignKey: 'userId', as: 'achievements' });
   User.hasMany(ReviewHelpfulVote, { foreignKey: 'userId', as: 'reviewHelpfulVotes', onDelete: 'CASCADE' });
+  User.hasMany(Post, { foreignKey: 'userId', as: 'posts' });
+  User.hasMany(Comment, { foreignKey: 'userId', as: 'comments' });
 
   User.belongsToMany(User, {
     through: Friendship,
@@ -53,6 +57,16 @@ const setupAssociations = () => {
 
   WishlistGame.belongsTo(Wishlist, { foreignKey: 'wishlistId' });
   WishlistGame.belongsTo(Game, { foreignKey: 'gameId' });
+
+  // Post associations
+  Post.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+  Post.hasMany(Comment, { foreignKey: 'postId', as: 'comments', onDelete: 'CASCADE' });
+
+  // Comment associations
+  Comment.belongsTo(Post, { foreignKey: 'postId', as: 'post' });
+  Comment.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+  Comment.belongsTo(Comment, { foreignKey: 'parentCommentId', as: 'parentComment' });
+  Comment.hasMany(Comment, { foreignKey: 'parentCommentId', as: 'replies', onDelete: 'CASCADE' });
 };
 
 setupAssociations();
@@ -78,5 +92,7 @@ module.exports = {
   Friendship,
   Achievement,
   ReviewHelpfulVote,
+  Post,
+  Comment,
   syncDatabase
 };

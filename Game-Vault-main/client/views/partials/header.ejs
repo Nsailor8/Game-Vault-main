@@ -45,6 +45,7 @@
     <a class="nav-btn <%= activePage === 'friends' ? 'active' : '' %>" href="/friends">Friends</a>
     <a class="nav-btn <%= activePage === 'library' ? 'active' : '' %>" href="/library">Library</a>
     <a class="nav-btn <%= activePage === 'reviews' ? 'active' : '' %>" href="/reviews">Reviews</a>
+    <a class="nav-btn <%= activePage === 'community' ? 'active' : '' %>" href="/community">Community</a>
     <a class="nav-btn <%= activePage === 'settings' ? 'active' : '' %>" href="/settings">Settings</a>
     <a class="nav-btn <%= activePage === 'admin' ? 'active' : '' %>" href="/admin">Admin</a>
   </nav>
@@ -83,6 +84,10 @@
           <a href="/reviews" class="profile-menu-item <%= activePage === 'reviews' ? 'active' : '' %>">
             <i class="fas fa-star"></i>
             <span>Reviews</span>
+          </a>
+          <a href="/community" class="profile-menu-item <%= activePage === 'community' ? 'active' : '' %>">
+            <i class="fas fa-comments"></i>
+            <span>Community</span>
           </a>
           <a href="/settings" class="profile-menu-item <%= activePage === 'settings' ? 'active' : '' %>">
             <i class="fas fa-cog"></i>
