@@ -210,3 +210,8 @@ class WishlistManager {
     }
   }
 }
+
+module.exports = {
+  WishlistItem,
+  WishlistManager
+};

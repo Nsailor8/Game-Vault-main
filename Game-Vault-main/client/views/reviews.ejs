@@ -2,24 +2,146 @@
 <html lang="en">
   <%- include('partials/head', { pageTitle: 'Reviews' }) %>
 <body>
-  <%- include('partials/header') %>
+  <%- include('partials/header', { activePage: 'reviews' }) %>
 
   <div class="container">
     <main class="main-content">
-      
-      <section id="reviewsSection" class="content-section active">
+      <section id="reviewsSection" class="content-section active reviews-section">
         <div class="section-header">
-          <h2>Reviews</h2>
-          <button id="addReviewBtn" class="btn btn-primary">Write a Review</button>
+          <div class="section-title-group">
+            <h2>My Reviews</h2>
+            <p class="section-subtitle">Track your favourites, share insights, and keep your library honest.</p>
+          </div>
+          <div class="section-actions">
+            <button id="addReviewBtn" class="btn btn-primary">
+              <i class="fas fa-plus"></i> Write a Review
+            </button>
+          </div>
         </div>
-        <div class="reviews-content">
-          <div id="reviewsContainer" class="list-container">
-            
-            <div class="empty-state">
-              <i class="fas fa-star"></i>
-              <h3>Loading...</h3>
-              <p>Please wait while we load your reviews.</p>
+
+        <div class="reviews-dashboard">
+          <!-- Stats Overview -->
+          <div class="reviews-stats" id="reviewsStats">
+            <div class="stat-card">
+              <div class="stat-icon primary"><i class="fas fa-star-half-alt"></i></div>
+              <div class="stat-label">Average Rating</div>
+              <div class="stat-value" id="reviewsAverage">0.0</div>
+              <div class="stat-meta">Across all reviews</div>
             </div>
+            <div class="stat-card">
+              <div class="stat-icon success"><i class="fas fa-pen-fancy"></i></div>
+              <div class="stat-label">Total Reviews</div>
+              <div class="stat-value" id="reviewsTotal">0</div>
+              <div class="stat-meta">Published entries</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon info"><i class="fas fa-unlock"></i></div>
+              <div class="stat-label">Public Reviews</div>
+              <div class="stat-value" id="reviewsPublicCount">0</div>
+              <div class="stat-meta">Visible to others</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon warning"><i class="fas fa-clock"></i></div>
+              <div class="stat-label">Last Updated</div>
+              <div class="stat-value" id="reviewsLastUpdated">—</div>
+              <div class="stat-meta">Most recent entry</div>
+            </div>
+          </div>
+
+          <!-- Filters & Controls -->
+          <div class="reviews-toolbar">
+            <div class="toolbar-left">
+              <div class="search-input">
+                <i class="fas fa-search"></i>
+                <input type="text" id="reviewsSearch" placeholder="Search by game title...">
+              </div>
+              <div class="filter-group">
+                <label class="sr-only" for="reviewsSort">Sort</label>
+                <select id="reviewsSort" class="filter-control">
+                  <option value="newest" selected>Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="rating-desc">Rating: high to low</option>
+                  <option value="rating-asc">Rating: low to high</option>
+                  <option value="helpful">Most helpful</option>
+                  <option value="alpha">Alphabetical</option>
+                </select>
+
+                <label class="sr-only" for="reviewsRatingFilter">Rating Filter</label>
+                <select id="reviewsRatingFilter" class="filter-control">
+                  <option value="all" selected>All ratings</option>
+                  <option value="4">4★ & above</option>
+                  <option value="3">3★ & above</option>
+                  <option value="2">2★ & above</option>
+                  <option value="1">1★ & above</option>
+                </select>
+
+                <label class="sr-only" for="reviewsVisibilityFilter">Visibility</label>
+                <select id="reviewsVisibilityFilter" class="filter-control">
+                  <option value="all" selected>All visibility</option>
+                  <option value="public">Public only</option>
+                  <option value="private">Private only</option>
+                </select>
+              </div>
+            </div>
+            <div class="toolbar-right">
+              <div class="tag-filter">
+                <input type="text" id="reviewsTagFilter" placeholder="Filter by tag (press enter)">
+                <div id="activeTagChips" class="active-tag-chips"></div>
+              </div>
+              <button id="reviewsResetFilters" class="btn btn-secondary btn-outline">
+                <i class="fas fa-undo-alt"></i> Reset
+              </button>
+            </div>
+          </div>
+
+          <!-- Active filter chips -->
+          <div class="active-filters" id="reviewsActiveFilters" style="display: none;"></div>
+
+          <!-- Content area -->
+          <div class="reviews-content">
+            <div id="reviewsEmptyState" class="reviews-empty" style="display: none;">
+              <div class="empty-illustration">
+                <i class="fas fa-clipboard-list"></i>
+              </div>
+              <h3>No reviews yet</h3>
+              <p>Share your thoughts on games you've played to build your history.</p>
+              <button class="btn btn-primary" onclick="if(window.app) window.app.showAddReviewModal();">
+                <i class="fas fa-plus"></i> Write your first review
+              </button>
+            </div>
+
+            <div id="privateReviewsWrapper">
+              <div id="reviewsList" class="reviews-grid">
+                <!-- Review cards rendered via JavaScript -->
+              </div>
+
+              <div id="reviewsLoadingState" class="reviews-loading">
+                <div class="spinner"></div>
+                <p>Fetching your reviews...</p>
+              </div>
+            </div>
+
+            <div id="publicReviewsPreview" class="public-reviews-preview" style="display: none;">
+              <div class="preview-header">
+                <div>
+                  <h3>Community reviews for <span id="publicReviewsGameName"></span></h3>
+                  <p class="preview-subtitle">See what other members are saying about this game.</p>
+                </div>
+                <button id="publicReviewsClear" class="btn btn-secondary btn-outline">
+                  <i class="fas fa-times"></i> Clear
+                </button>
+              </div>
+              <div id="publicReviewsList" class="public-reviews-list"></div>
+            </div>
+          </div>
+
+          <!-- Pagination -->
+          <div class="reviews-pagination" id="reviewsPagination" style="display: none;">
+            <button class="btn btn-secondary" id="reviewsPrevPage"><i class="fas fa-chevron-left"></i></button>
+            <div class="pagination-status">
+              <span id="reviewsPageInfo">Page 1 of 1</span>
+            </div>
+            <button class="btn btn-secondary" id="reviewsNextPage"><i class="fas fa-chevron-right"></i></button>
           </div>
         </div>
       </section>
@@ -29,12 +151,27 @@
   <%- include('partials/loginModal') %>
   <%- include('partials/reviewModal') %>
 
+  <!-- Delete Review Confirmation Modal -->
+  <div id="deleteReviewModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <h2><i class="fas fa-exclamation-triangle"></i> Delete Review</h2>
+        <span class="close" onclick="if(window.app) window.app.closeDeleteReviewModal()">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete this review? This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer" style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button class="btn btn-secondary" onclick="if(window.app) window.app.closeDeleteReviewModal()">Cancel</button>
+        <button id="confirmDeleteReviewBtn" class="btn btn-danger">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/app.js"></script>
   <script>
-
     document.addEventListener('DOMContentLoaded', () => {
       console.log('Reviews page - DOM Content Loaded');
-
     });
   </script>
 </body>

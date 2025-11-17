@@ -12,8 +12,9 @@ const Review = sequelize.define('Review', {
     allowNull: false,
     references: {
       model: 'users',
-      key: 'id'
-    }
+      key: 'user_id'  // Changed from 'id' to 'user_id' to match User model primary key
+    },
+    field: 'userId'  // Database column name
   },
   gameId: {
     type: DataTypes.INTEGER,
@@ -31,11 +32,11 @@ const Review = sequelize.define('Review', {
     }
   },
   rating: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.DECIMAL(2, 1),
     allowNull: false,
     validate: {
-      min: 1,
-      max: 5
+      min: 0.5,
+      max: 5.0
     }
   },
   reviewText: {
@@ -60,6 +61,23 @@ const Review = sequelize.define('Review', {
     type: DataTypes.BOOLEAN,
     allowNull: false,
     defaultValue: true
+  },
+  isApproved: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'isApproved'
+  },
+  intendedPublic: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+    field: 'intendedPublic'
+  },
+  rejectionReason: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    field: 'rejectionReason'
   }
 }, {
   tableName: 'reviews',

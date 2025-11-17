@@ -1,5 +1,12 @@
-// Import bcrypt at the top for password hashing
-const bcrypt = require('bcrypt');
+// Import bcrypt only on server-side (Node.js), not in browser
+let bcrypt = null;
+if (typeof require !== 'undefined' && typeof window === 'undefined') {
+    try {
+        bcrypt = require('bcrypt');
+    } catch (e) {
+        console.warn('bcrypt not available (this is normal in browser)');
+    }
+}
 
 // User Profile Class
 class UserProfile {
@@ -42,6 +49,9 @@ class UserProfile {
     if (!this.isActive) return false;
 
     if (this.password.startsWith('$2b$')) {
+      if (!bcrypt) {
+        throw new Error('bcrypt not available - this method only works on the server');
+      }
       return await bcrypt.compare(password, this.password);
     }
 
@@ -420,6 +430,9 @@ class AdminManager {
 
       // Verify password
       const bcrypt = require('bcrypt');
+      if (!bcrypt) {
+        throw new Error('bcrypt not available - this method only works on the server');
+      }
       const passwordMatch = await bcrypt.compare(password, user.password_hash);
       
       if (passwordMatch) {
@@ -518,7 +531,15 @@ class AdminManager {
   }
 }
 
-const RealDatabaseManager = require('../server/database/DatabaseManager');
+// Only require server-side modules when running in Node.js
+let RealDatabaseManager = null;
+if (typeof require !== 'undefined' && typeof window === 'undefined') {
+    try {
+        RealDatabaseManager = require('../server/database/DatabaseManager');
+    } catch (e) {
+        console.warn('DatabaseManager not available (this is normal in browser)');
+    }
+}
 
 class ProfileManager {
   constructor() {
@@ -527,10 +548,18 @@ class ProfileManager {
     this.friendsLists = new Map();
     this.wishlistManagers = new Map();
     this.reviewManagers = new Map();
-    this.databaseManager = new RealDatabaseManager();
+    // Only initialize database manager on server-side
+    if (RealDatabaseManager) {
+        this.databaseManager = new RealDatabaseManager();
+    } else {
+        this.databaseManager = null;
+    }
     this.isInitialized = false;
 
-    this.initializeDatabase();
+    // Only initialize database on server-side
+    if (this.databaseManager) {
+      this.initializeDatabase();
+    }
   }
 
   async initializeDatabase() {
@@ -621,6 +650,9 @@ class ProfileManager {
     }
 
     const saltRounds = 10;
+    if (!bcrypt) {
+      throw new Error('bcrypt not available - this method only works on the server');
+    }
     const hashedPassword = await bcrypt.hash(password, saltRounds);
     
     const profile = new UserProfile(username, email, hashedPassword, new Date().toISOString(), gamingPreferences);
@@ -1098,7 +1130,7 @@ class ProfileManager {
       const { Friendship, User } = require('../server/models/index');
       const friendships = await Friendship.findAll({
         where: {
-          [require('sequelize').Op.or]: [
+          [(typeof require !== 'undefined' && typeof window === 'undefined' ? require('sequelize').Op.or : null)]: [
             { userId: userId, status: status },
             { friendId: userId, status: status }
           ]
@@ -1211,7 +1243,7 @@ class ProfileManager {
       const { Friendship } = require('../server/models/index');
       const friendship = await Friendship.findOne({
         where: {
-          [require('sequelize').Op.or]: [
+          [(typeof require !== 'undefined' && typeof window === 'undefined' ? require('sequelize').Op.or : null)]: [
             { userId: userId, friendId: friendId },
             { userId: friendId, friendId: userId }
           ]
@@ -1313,7 +1345,7 @@ class ProfileManager {
       const { Friendship } = require('../server/models/index');
       const friendship = await Friendship.findOne({
         where: {
-          [require('sequelize').Op.or]: [
+          [(typeof require !== 'undefined' && typeof window === 'undefined' ? require('sequelize').Op.or : null)]: [
             { userId: userId, friendId: friendId },
             { userId: friendId, friendId: userId }
           ],
@@ -1352,7 +1384,8 @@ class ProfileManager {
   }
 }
 
-if (typeof module !== 'undefined' && module.exports) {
+// Server-side exports (only when running in Node.js)
+if (typeof module !== 'undefined' && module.exports && typeof window === 'undefined') {
   module.exports = { 
     UserProfile, 
     ProfileManager, 
@@ -1363,6 +1396,7 @@ if (typeof module !== 'undefined' && module.exports) {
   };
 }
 
+// Client-side code (only when running in browser)
 if (typeof window !== 'undefined') {
 
     window.connectSteam = async function() {
@@ -1417,28 +1451,102 @@ if (typeof window !== 'undefined') {
                 importBtn.disabled = true;
             }
 
-            const pathParts = window.location.pathname.split('/');
-            const username = pathParts[pathParts.length - 1];
+            // Extract username from URL path (e.g., /profile/allieM -> allieM)
+            const pathParts = window.location.pathname.split('/').filter(part => part.length > 0);
+            let username = pathParts[pathParts.length - 1];
+            
+            // If we're on /profile, try to get username from session or page
+            if (!username || username === 'profile') {
+                // Try to get from profile page element
+                const usernameElement = document.querySelector('.profile-username, h1, .username');
+                if (usernameElement) {
+                    username = usernameElement.textContent.trim();
+                }
+                
+                // Try to get from session via API
+                if (!username || username === 'profile') {
+                    try {
+                        const sessionResponse = await fetch('/api/auth/status', { credentials: 'include' });
+                        if (sessionResponse.ok) {
+                            const sessionData = await sessionResponse.json();
+                            if (sessionData.user && sessionData.user.username) {
+                                username = sessionData.user.username;
+                            }
+                        }
+                    } catch (e) {
+                        console.error('[Import Steam] Error getting session:', e);
+                    }
+                }
+            }
 
+            console.log('[Import Steam] Extracted username:', username);
+            console.log('[Import Steam] Full pathname:', window.location.pathname);
+            console.log('[Import Steam] Path parts:', pathParts);
+            
+            if (!username || username === 'profile' || username.length === 0) {
+                alert('Could not determine your username. Please make sure you are logged in and on your profile page.');
+                const importBtn = document.getElementById('importSteamLibraryBtn');
+                if (importBtn) {
+                    importBtn.innerHTML = 'Import Steam Library';
+                    importBtn.disabled = false;
+                }
+                return;
+            }
+
+            console.log('[Import Steam] Calling sync endpoint for:', username);
+            
             const response = await fetch(`/api/steam/sync/${username}`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
-                }
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                credentials: 'include'
             });
             
+            console.log('[Import Steam] Response status:', response.status);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('[Import Steam] Error response status:', response.status);
+                console.error('[Import Steam] Error response text:', errorText);
+                let errorData;
+                try {
+                    errorData = JSON.parse(errorText);
+                } catch (e) {
+                    errorData = { 
+                        error: errorText || 'Failed to import Steam library',
+                        message: errorText || 'Failed to import Steam library'
+                    };
+                }
+                const errorMessage = errorData.error || errorData.message || errorData.details || 'Failed to import Steam library';
+                console.error('[Import Steam] Parsed error:', errorMessage);
+                throw new Error(errorMessage);
+            }
+            
             const result = await response.json();
+            console.log('[Import Steam] Sync result:', result);
             
             if (result.success) {
-                console.log(`Successfully imported ${result.gamesCount} games from Steam`);
+                const gamesCount = result.gamesCount || 0;
+                console.log(`Successfully imported ${gamesCount} games from Steam`);
+                
+                let message = `Successfully imported ${gamesCount} games from Steam!`;
+                if (result.totalPlaytime) {
+                    message += ` (${result.totalPlaytime} hours played)`;
+                }
+                if (result.totalAchievements) {
+                    message += ` (${result.totalAchievements} achievements unlocked)`;
+                }
 
-                showNotification(`Successfully imported ${result.gamesCount} games from Steam!`, 'success');
-
+                alert(message);
+                
+                // Reload page to show updated data
                 setTimeout(() => {
                     window.location.reload();
-                }, 1500);
+                }, 1000);
             } else {
-                throw new Error(result.error || 'Failed to import Steam library');
+                throw new Error(result.error || result.message || 'Failed to import Steam library');
             }
         } catch (error) {
             console.error('Error importing Steam library:', error);

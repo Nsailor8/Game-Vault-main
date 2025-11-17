@@ -5,24 +5,110 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Search Results - Game Vault</title>
     <link rel="stylesheet" href="/styles.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="app-container">
-        
+    <div class="container">
         <%- include('partials/header', { activePage: 'search', homeLink: '/' }) %>
-
         
         <main class="main-content">
-            <div class="search-results-page">
-                <div class="search-header">
-                    <div class="search-info">
-                        <h1 id="searchTitle">Search Results</h1>
-                        <p id="searchSubtitle">Loading search results...</p>
-                    </div>
-                    <div class="search-actions">
+            <!-- Search Results Section -->
+            <section class="content-section active">
+                <div class="section-header">
+                    <h2 id="searchTitle">🔍 Search Results</h2>
+                    <div class="library-actions">
+                        <button class="btn btn-secondary" onclick="showAdvancedSearch()" id="advancedSearchBtn">
+                            <i class="fas fa-sliders-h"></i> Filters
+                        </button>
                         <button class="btn btn-secondary" onclick="goBack()">
-                            <i class="fas fa-arrow-left"></i> Back to Home
+                            <i class="fas fa-arrow-left"></i> Back
+                        </button>
+                    </div>
+                </div>
+                <p id="searchSubtitle" style="margin-top: 10px; margin-bottom: 20px; color: #666;">Loading search results...</p>
+
+                <!-- Advanced Search / Filters Panel -->
+                <div id="advancedSearchPanel" class="advanced-search-panel" style="display: none; margin-bottom: 20px; padding: 20px; background: #f8f9ff; border-radius: 15px; border: 1px solid rgba(102, 126, 234, 0.2);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="margin: 0; color: #667eea;">
+                            <i class="fas fa-filter"></i> Search Filters
+                        </h3>
+                        <button class="btn btn-sm btn-secondary" onclick="closeAdvancedSearch()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="filter-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                        <!-- Sort Options -->
+                        <div class="filter-group">
+                            <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #333;">
+                                <i class="fas fa-sort"></i> Sort By
+                            </label>
+                            <select id="sortBy" class="filter-select" onchange="applyFilters()">
+                                <option value="rating">Highest Rated</option>
+                                <option value="newest">Newest Release</option>
+                                <option value="oldest">Oldest Release</option>
+                                <option value="title">Title A-Z</option>
+                                <option value="metacritic">Metacritic Score</option>
+                            </select>
+                        </div>
+
+                        <!-- Platform Filter -->
+                        <div class="filter-group">
+                            <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #333;">
+                                <i class="fas fa-desktop"></i> Platform
+                            </label>
+                            <select id="platformFilter" class="filter-select" onchange="applyFilters()">
+                                <option value="">All Platforms</option>
+                                <option value="Windows">Windows</option>
+                                <option value="Mac">Mac</option>
+                                <option value="Linux">Linux</option>
+                                <option value="PlayStation">PlayStation</option>
+                                <option value="Xbox">Xbox</option>
+                                <option value="Nintendo">Nintendo</option>
+                            </select>
+                        </div>
+
+                        <!-- Minimum Rating -->
+                        <div class="filter-group">
+                            <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #333;">
+                                <i class="fas fa-star"></i> Min Rating
+                            </label>
+                            <select id="minRating" class="filter-select" onchange="applyFilters()">
+                                <option value="0">Any Rating</option>
+                                <option value="1">1+ Stars</option>
+                                <option value="2">2+ Stars</option>
+                                <option value="3">3+ Stars</option>
+                                <option value="4">4+ Stars</option>
+                                <option value="5">5 Stars</option>
+                            </select>
+                        </div>
+
+                        <!-- Minimum Metacritic -->
+                        <div class="filter-group">
+                            <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #333;">
+                                <i class="fas fa-chart-line"></i> Min Metacritic
+                            </label>
+                            <select id="minMetacritic" class="filter-select" onchange="applyFilters()">
+                                <option value="0">Any Score</option>
+                                <option value="50">50+</option>
+                                <option value="60">60+</option>
+                                <option value="70">70+</option>
+                                <option value="80">80+</option>
+                                <option value="90">90+</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Active Filters -->
+                    <div id="activeFilters" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <!-- Active filter tags will appear here -->
+                    </div>
+
+                    <!-- Clear Filters Button -->
+                    <div style="margin-top: 15px; display: flex; justify-content: flex-end;">
+                        <button class="btn btn-sm btn-secondary" onclick="clearFilters()">
+                            <i class="fas fa-redo"></i> Clear All Filters
                         </button>
                     </div>
                 </div>
@@ -44,8 +130,7 @@
                 
                 <div id="mockDataNotice" class="mock-data-notice" style="display: none;">
                     <i class="fas fa-info-circle"></i>
-                    <strong>Demo Mode:</strong> This is sample data. To search real games, configure your RAWG.io API key.
-                    <a href="https://rawg.io/apidocs" target="_blank">Get API Key</a>
+                    <strong>Loading:</strong> The Steam game database is being loaded. If you see sample data, the Steam app list is still loading (this may take a moment on first use).
                 </div>
 
                 
@@ -63,26 +148,69 @@
                     <i class="fas fa-search"></i>
                     <h3>No Games Found</h3>
                     <p>Try a different search term</p>
-                    <button class="btn btn-primary" onclick="goBack()">Back to Home</button>
+                    <button class="btn btn-primary" onclick="goBack()" style="margin-top: 20px;">Back to Home</button>
                 </div>
-            </div>
+            </section>
         </main>
 
         
         <%- include('partials/footer') %>
     </div>
 
+    <script src="/app.js"></script>
     <script>
 
         const urlParams = new URLSearchParams(window.location.search);
         const query = urlParams.get('q');
         const page = parseInt(urlParams.get('page')) || 1;
 
+        // Initialize search when page loads
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Wait for app to initialize and check auth status
+            // Don't reset user state if check fails - preserve existing session
+            if (window.app) {
+                try {
+                    await window.app.checkAuthStatus();
+                } catch (error) {
+                    console.error('Auth check error (non-fatal):', error);
+                    // Don't reset UI if check fails - user might still be logged in
+                    // Only update UI if we successfully got a user
+                }
+            } else {
+                setTimeout(async () => {
+                    if (window.app) {
+                        try {
+                            await window.app.checkAuthStatus();
+                        } catch (error) {
+                            console.error('Auth check error (non-fatal):', error);
+                            // Don't reset UI if check fails
+                        }
+                    }
+                }, 500);
+            }
 
-        document.addEventListener('DOMContentLoaded', function() {
+            // Load search history (don't let errors block search)
+            try {
+                loadSearchHistory();
+            } catch (error) {
+                console.error('Error in loadSearchHistory (non-fatal):', error);
+            }
+
+            // Perform search if query exists
             if (query) {
+                console.log('🔍 [CLIENT] Query found in URL:', query);
+                // Add to search history (don't let errors block search)
+                try {
+                    addToSearchHistory(query);
+                } catch (error) {
+                    console.error('Error in addToSearchHistory (non-fatal):', error);
+                }
+                
+                // Perform the search - this is the critical part
+                console.log('🔍 [CLIENT] Calling performSearch now...');
                 performSearch(query, page);
             } else {
+                console.log('🔍 [CLIENT] No query found, showing error');
                 showError('No search query provided');
             }
         });
@@ -90,25 +218,43 @@
         async function performSearch(searchQuery, pageNum = 1) {
             try {
                 showLoading();
-                console.log('Searching for:', searchQuery);
+                console.log('🔍 [CLIENT] Starting search for:', searchQuery);
+                console.log('🔍 [CLIENT] Making API call to: /api/games/search?q=' + encodeURIComponent(searchQuery));
 
-                const response = await fetch(`/api/games/search?q=${encodeURIComponent(searchQuery)}&page=${pageNum}&pageSize=20`);
+                const apiUrl = `/api/games/search?q=${encodeURIComponent(searchQuery)}&page=${pageNum}&pageSize=20`;
+                console.log('🔍 [CLIENT] Full URL:', apiUrl);
+                
+                const response = await fetch(apiUrl, {
+                    credentials: 'include', // Important: include session cookies
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
                 console.log('Response status:', response.status);
                 
                 if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Search API error:', errorText);
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
                 const data = await response.json();
                 console.log('Search response:', data);
+                console.log('Search success:', data.success);
+                console.log('Games count:', data.games?.length || 0);
+                console.log('Error:', data.error);
 
-                if (data.success) {
-                    displaySearchResults(data.games, data.totalResults, data.currentPage, data.totalPages, searchQuery);
+                if (data.success && data.games && Array.isArray(data.games)) {
+                    displaySearchResults(data.games, data.totalResults || data.games.length, data.currentPage || pageNum, data.totalPages || 1, searchQuery);
                     if (data.isMockData) {
                         showMockDataNotice();
                     }
                 } else {
-                    showError(data.error || 'Failed to search games');
+                    // Handle error from API
+                    const errorMessage = data.error || 'Failed to search games';
+                    console.error('Search failed:', errorMessage);
+                    console.error('Full response:', data);
+                    showError(errorMessage);
                 }
             } catch (error) {
                 console.error('Error searching games:', error);
@@ -161,57 +307,8 @@
                 return;
             }
 
-            games.forEach(game => {
-                const gameCard = document.createElement('div');
-                gameCard.className = 'game-card-large';
-                gameCard.innerHTML = `
-                    <div class="game-image-large">
-                        ${game.backgroundImage ? 
-                            `<img src="${game.backgroundImage}" alt="${game.name}" onerror="this.style.display='none'">` : 
-                            '<div class="no-image-large"><i class="fas fa-gamepad"></i></div>'
-                        }
-                        <div class="game-overlay">
-                            <div class="game-rating">
-                                ${game.rating ? `
-                                    <div class="star-rating-display">
-                                        ${generateStarRating(game.rating)}
-                                    </div>
-                                    <span class="rating-value">${game.rating.toFixed(1)}/5</span>
-                                ` : '<span class="no-rating">No rating</span>'}
-                                ${game.metacritic ? `<span class="metacritic-score">${game.metacritic}</span>` : ''}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="game-info-large">
-                        <h3 class="game-title-large">${game.name}</h3>
-                        <div class="game-meta-large">
-                            ${game.released ? `<span class="release-date"><i class="fas fa-calendar"></i> ${new Date(game.released).getFullYear()}</span>` : ''}
-                            ${game.playtime ? `<span class="playtime"><i class="fas fa-clock"></i> ${game.playtime}h</span>` : ''}
-                        </div>
-                        <div class="game-platforms-large">
-                            ${game.platforms.slice(0, 4).map(platform => 
-                                `<span class="platform-tag-large">${platform.name}</span>`
-                            ).join('')}
-                            ${game.platforms.length > 4 ? `<span class="platform-tag-large">+${game.platforms.length - 4} more</span>` : ''}
-                        </div>
-                        <div class="game-genres-large">
-                            ${game.genres.slice(0, 3).map(genre => 
-                                `<span class="genre-tag-large">${genre.name}</span>`
-                            ).join('')}
-                        </div>
-                        <div class="game-description">
-                            ${game.description ? game.description.substring(0, 200) + '...' : 'No description available'}
-                        </div>
-                        <div class="game-actions-large">
-                            <button class="btn btn-primary" onclick="viewGameDetails(${game.id})">
-                                <i class="fas fa-info-circle"></i> View Details
-                            </button>
-                            <button class="btn btn-secondary" onclick="addToWishlist(${game.id}, '${game.name}')">
-                                <i class="fas fa-heart"></i> Add to Wishlist
-                            </button>
-                        </div>
-                    </div>
-                `;
+            games.forEach((game, index) => {
+                const gameCard = createGameCard(game);
                 resultsContainer.appendChild(gameCard);
             });
 
@@ -262,13 +359,50 @@
         }
 
         function viewGameDetails(gameId) {
-            alert(`Viewing details for game ID: ${gameId}`);
-
+            if (window.app && window.app.viewGameDetails) {
+                window.app.viewGameDetails(gameId);
+            } else {
+                console.error('App not initialized or viewGameDetails not available');
+            }
         }
 
-        function addToWishlist(gameId, gameName) {
-            alert(`Added "${gameName}" to wishlist!`);
-
+        async function addToWishlist(gameId, gameName) {
+            // Check if app is initialized
+            if (window.app && window.app.handleAddToLibrary) {
+                await window.app.handleAddToLibrary(gameId, gameName);
+            } else {
+                // App not initialized yet, check session directly
+                console.log('[Add to Wishlist] App not initialized, checking session directly...');
+                try {
+                    const authCheck = await fetch('/api/auth/check', {
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    const authData = await authCheck.json();
+                    if (authData.success && authData.user && authData.user.username) {
+                        // Session exists, try to initialize app or wait for it
+                        if (window.app) {
+                            window.app.currentUser = authData.user;
+                            await window.app.handleAddToLibrary(gameId, gameName);
+                        } else {
+                            // Wait a bit for app to initialize
+                            setTimeout(async () => {
+                                if (window.app) {
+                                    window.app.currentUser = authData.user;
+                                    await window.app.handleAddToLibrary(gameId, gameName);
+                                } else {
+                                    alert('Please wait for the page to finish loading, then try again.');
+                                }
+                            }, 500);
+                        }
+                    } else {
+                        alert('Please log in to add games to your library');
+                    }
+                } catch (error) {
+                    console.error('[Add to Wishlist] Error checking auth:', error);
+                    alert('Please log in to add games to your library');
+                }
+            }
         }
 
         function retrySearch() {
@@ -279,6 +413,286 @@
 
         function goBack() {
             window.location.href = '/';
+        }
+
+        // === FILTER FUNCTIONS ===
+        
+        function showAdvancedSearch() {
+            const panel = document.getElementById('advancedSearchPanel');
+            panel.style.display = 'block';
+        }
+
+        function closeAdvancedSearch() {
+            const panel = document.getElementById('advancedSearchPanel');
+            panel.style.display = 'none';
+        }
+
+        function clearFilters() {
+            document.getElementById('sortBy').value = 'rating';
+            document.getElementById('platformFilter').value = '';
+            document.getElementById('minRating').value = '0';
+            document.getElementById('minMetacritic').value = '0';
+            applyFilters();
+        }
+
+        function applyFilters() {
+            // Get all filter values
+            const sortBy = document.getElementById('sortBy').value;
+            const platform = document.getElementById('platformFilter').value;
+            const minRating = parseFloat(document.getElementById('minRating').value);
+            const minMetacritic = parseInt(document.getElementById('minMetacritic').value);
+
+            // Get all game cards
+            const gamesContainer = document.getElementById('searchResults');
+            const gameCards = gamesContainer.querySelectorAll('.game-card-simple');
+            
+            if (gameCards.length === 0) return;
+
+            // Store game data for filtering
+            const gamesData = Array.from(gameCards).map(card => {
+                const gameInfo = card.getAttribute('data-game-info');
+                return gameInfo ? JSON.parse(gameInfo) : null;
+            }).filter(g => g !== null);
+
+            // Filter games
+            let filteredGames = gamesData.filter(game => {
+                // Platform filter
+                if (platform) {
+                    const gamePlatforms = game.platforms || [];
+                    const hasPlatform = gamePlatforms.some(p => 
+                        p.name && p.name.toLowerCase().includes(platform.toLowerCase())
+                    );
+                    if (!hasPlatform) return false;
+                }
+
+                // Rating filter
+                if (minRating > 0 && (!game.rating || game.rating < minRating)) {
+                    return false;
+                }
+
+                // Metacritic filter
+                if (minMetacritic > 0 && (!game.metacritic || game.metacritic < minMetacritic)) {
+                    return false;
+                }
+
+                return true;
+            });
+
+            // Sort games
+            filteredGames.sort((a, b) => {
+                switch (sortBy) {
+                    case 'title':
+                        return a.name.localeCompare(b.name);
+                    
+                    case 'newest':
+                        const dateA = new Date(a.released || '1900-01-01');
+                        const dateB = new Date(b.released || '1900-01-01');
+                        return dateB - dateA;
+                    
+                    case 'oldest':
+                        const dateAOld = new Date(a.released || '9999-12-31');
+                        const dateBOld = new Date(b.released || '9999-12-31');
+                        return dateAOld - dateBOld;
+                    
+                    case 'metacritic':
+                        return (b.metacritic || 0) - (a.metacritic || 0);
+                    
+                    case 'rating':
+                    default:
+                        const scoreA = (a.metacritic || 0) * 10 + (a.rating || 0) * 2;
+                        const scoreB = (b.metacritic || 0) * 10 + (b.rating || 0) * 2;
+                        return scoreB - scoreA;
+                }
+            });
+
+            // Update active filters display
+            updateActiveFilters(sortBy, platform, minRating, minMetacritic);
+
+            // Re-render filtered games
+            gamesContainer.innerHTML = '';
+            if (filteredGames.length === 0) {
+                gamesContainer.parentElement.innerHTML += `
+                    <div class="empty-state" style="display: block;">
+                        <i class="fas fa-filter"></i>
+                        <h3>No Games Match Filters</h3>
+                        <p>Try adjusting your filter criteria</p>
+                        <button class="btn btn-primary" onclick="clearFilters()" style="margin-top: 20px;">
+                            Clear Filters
+                        </button>
+                    </div>
+                `;
+            } else {
+                filteredGames.forEach(game => {
+                    const gameCard = createGameCard(game);
+                    gamesContainer.appendChild(gameCard);
+                });
+            }
+        }
+
+        function updateActiveFilters(sortBy, platform, minRating, minMetacritic) {
+            const activeFiltersContainer = document.getElementById('activeFilters');
+            let html = '';
+
+            if (sortBy !== 'rating') {
+                html += `<span class="filter-tag"><i class="fas fa-sort"></i> ${getSortLabel(sortBy)} <i class="fas fa-times" onclick="removeFilter('sort')"></i></span>`;
+            }
+
+            if (platform) {
+                html += `<span class="filter-tag"><i class="fas fa-desktop"></i> ${platform} <i class="fas fa-times" onclick="removeFilter('platform')"></i></span>`;
+            }
+
+            if (minRating > 0) {
+                html += `<span class="filter-tag"><i class="fas fa-star"></i> ${minRating}+ Rating <i class="fas fa-times" onclick="removeFilter('rating')"></i></span>`;
+            }
+
+            if (minMetacritic > 0) {
+                html += `<span class="filter-tag"><i class="fas fa-chart-line"></i> MC ${minMetacritic}+ <i class="fas fa-times" onclick="removeFilter('metacritic')"></i></span>`;
+            }
+
+            activeFiltersContainer.innerHTML = html;
+        }
+
+        function getSortLabel(sortBy) {
+            const labels = {
+                'title': 'Title',
+                'newest': 'Newest',
+                'oldest': 'Oldest',
+                'metacritic': 'Metacritic',
+                'rating': 'Highest Rated'
+            };
+            return labels[sortBy] || sortBy;
+        }
+
+        function removeFilter(filterType) {
+            switch (filterType) {
+                case 'sort':
+                    document.getElementById('sortBy').value = 'rating';
+                    break;
+                case 'platform':
+                    document.getElementById('platformFilter').value = '';
+                    break;
+                case 'rating':
+                    document.getElementById('minRating').value = '0';
+                    break;
+                case 'metacritic':
+                    document.getElementById('minMetacritic').value = '0';
+                    break;
+            }
+            applyFilters();
+        }
+
+        function createGameCard(game) {
+            const gameCard = document.createElement('div');
+            gameCard.className = 'game-card-simple';
+            gameCard.onclick = () => viewGameDetails(game.id);
+            gameCard.style.cursor = 'pointer';
+            gameCard.setAttribute('data-game-info', JSON.stringify(game));
+            
+            const escapedName = game.name.replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+            const imageUrl = game.backgroundImage || game.background_image || game.image || null;
+            
+            let ratingHTML = '';
+            if (game.rating || game.metacritic) {
+                ratingHTML = '<div class="game-card-rating">';
+                if (game.rating) {
+                    ratingHTML += `<span class="rating-badge"><i class="fas fa-star"></i> ${game.rating.toFixed(1)}</span>`;
+                }
+                if (game.metacritic) {
+                    ratingHTML += `<span class="metacritic-badge">M: ${game.metacritic}</span>`;
+                }
+                ratingHTML += '</div>';
+            }
+            
+            gameCard.innerHTML = `
+                <div class="game-image-simple">
+                    ${imageUrl ? 
+                        `<img src="${imageUrl}" alt="${escapedName}" class="game-image" loading="lazy" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\\'no-image\\'><i class=\\'fas fa-gamepad\\'></i></div>'">` : 
+                        '<div class="no-image"><i class="fas fa-gamepad"></i></div>'
+                    }
+                    ${ratingHTML}
+                </div>
+                <div class="game-name-simple">
+                    <h3 class="game-title-simple">${escapedName}</h3>
+                </div>
+                <div class="game-card-actions" style="padding: 10px; display: flex; gap: 8px; justify-content: center;">
+                    <button class="btn btn-primary" onclick="event.stopPropagation(); viewGameDetails(${game.id || game.appid || 0})">
+                        <i class="fas fa-info-circle"></i> View Details
+                    </button>
+                    ${game.steamOwned ? 
+                        `<a href="steam://run/${game.id || game.appid || 0}" class="btn btn-steam" onclick="event.stopPropagation();">
+                            <i class="fab fa-steam"></i> Play on Steam
+                        </a>` : 
+                        `<button class="btn btn-secondary" onclick="event.stopPropagation(); addToWishlist(${game.id || game.appid || 0}, '${escapedName.replace(/'/g, "\\'")}')">
+                            <i class="fas fa-book"></i> Add to Library
+                        </button>`
+                    }
+                </div>
+            `;
+            
+            return gameCard;
+        }
+
+        // === SEARCH HISTORY FUNCTIONS ===
+
+        function addToSearchHistory(query) {
+            if (!query || query.trim() === '') return;
+            
+            let history = JSON.parse(localStorage.getItem('gameVaultSearchHistory') || '[]');
+            
+            // Remove if already exists
+            history = history.filter(item => item.toLowerCase() !== query.toLowerCase());
+            
+            // Add to front
+            history.unshift(query);
+            
+            // Keep only last 10
+            history = history.slice(0, 10);
+            
+            // Save
+            localStorage.setItem('gameVaultSearchHistory', JSON.stringify(history));
+            
+            // Update display
+            loadSearchHistory();
+        }
+
+        function loadSearchHistory() {
+            try {
+                const history = JSON.parse(localStorage.getItem('gameVaultSearchHistory') || '[]');
+                const container = document.getElementById('searchHistory');
+                const historyContainer = document.getElementById('searchHistoryContainer');
+                
+                // Check if elements exist before using them
+                if (!historyContainer) {
+                    console.log('Search history container not found, skipping...');
+                    return;
+                }
+                
+                if (history.length === 0) {
+                    historyContainer.style.display = 'none';
+                    return;
+                }
+                
+                historyContainer.style.display = 'block';
+                if (container) {
+                    container.innerHTML = history.map(item => `
+                        <button class="history-item btn btn-sm btn-secondary" onclick="searchHistoryItem('${item.replace(/'/g, "\\'")}')">
+                            <i class="fas fa-history"></i> ${item}
+                        </button>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Error loading search history:', error);
+                // Don't block search if history fails
+            }
+        }
+
+        function clearSearchHistory() {
+            localStorage.removeItem('gameVaultSearchHistory');
+            document.getElementById('searchHistoryContainer').style.display = 'none';
+        }
+
+        function searchHistoryItem(query) {
+            window.location.href = `/search?q=${encodeURIComponent(query)}`;
         }
 
         // Generate star rating display (1-5 stars with half stars)

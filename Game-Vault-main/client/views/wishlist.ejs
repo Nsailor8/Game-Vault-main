@@ -1,41 +1,71 @@
 <!DOCTYPE html>
 <html lang="en">
-  <%- include('partials/head', { pageTitle: 'Wishlist' }) %>
+  <%- include('partials/head', { pageTitle: 'My Wishlist' }) %>
 <body>
   <%- include('partials/header') %>
 
   <div class="container">
     <main class="main-content">
-      
+      <!-- Wishlist Section -->
       <section id="wishlistSection" class="content-section active">
         <div class="section-header">
-          <h2>Wishlist</h2>
-          <div class="wishlist-actions">
-            <button id="checkSteamOwnershipBtn" class="btn btn-steam">
-              <i class="fab fa-steam"></i> Check Steam Ownership
+          <h2><i class="fas fa-heart"></i> My Wishlist</h2>
+          <div class="library-actions">
+            <button class="btn btn-secondary" onclick="window.location.href='/library'">
+              <i class="fas fa-arrow-left"></i> Back to Libraries
             </button>
-            <button id="addWishlistBtn" class="btn btn-primary">Add Game</button>
           </div>
         </div>
         
+        <!-- Steam Ownership Status -->
         <div id="steamOwnershipStatus" class="steam-ownership-status" style="display: none;">
           <div class="ownership-header">
             <h3><i class="fab fa-steam"></i> Steam Ownership Status</h3>
             <span id="steamOwnershipCount" class="ownership-count">0 games owned</span>
           </div>
           <div id="steamOwnedGamesList" class="steam-owned-games">
-            
+            <!-- Steam owned games will be populated here -->
           </div>
         </div>
 
-        <div class="wishlists-content">
-          <div id="wishlistContainer" class="list-container">
-            
+        <div class="libraries-content">
+          <!-- Libraries List -->
+          <div id="libraryContainer" class="list-container">
+            <!-- Library items will be populated here by JavaScript -->
             <div class="empty-state">
               <i class="fas fa-heart"></i>
               <h3>Loading...</h3>
               <p>Please wait while we load your wishlist.</p>
             </div>
+          </div>
+          
+          <!-- Selected Library Games -->
+          <div id="selectedLibrarySection" style="display: none; margin-top: 2rem;">
+            <div class="section-header">
+              <h3 id="selectedLibraryTitle">Wishlist Games</h3>
+              <div class="library-actions">
+                <button id="addGameToLibraryBtn" class="btn btn-primary" onclick="if(window.app) window.app.showAddGameToLibraryModal();" style="display: none;">
+                  <i class="fas fa-plus"></i> Add Game
+                </button>
+                <button class="btn btn-secondary" onclick="backToWishlistView();">
+                  <i class="fas fa-arrow-left"></i> Back to Wishlist
+                </button>
+              </div>
+            </div>
+            <div id="libraryGames" class="games-grid">
+              <!-- Games will be populated here when a library is selected -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Game Suggestions Section -->
+        <div id="gameSuggestionsSection" style="display: none; margin-top: 2rem; width: 100%;">
+          <div class="section-header">
+            <h3 style="color: #d4af37; text-shadow: 0 0 10px rgba(212, 175, 55, 0.5);">Game Suggestions</h3>
+            <p style="color: #b0b0b0;">Games similar to your wishlist</p>
+          </div>
+          <div id="gameSuggestions" class="games-grid">
+            <!-- Suggested games will be populated here -->
           </div>
         </div>
       </section>
@@ -44,13 +74,66 @@
 
   <%- include('partials/loginModal') %>
 
-  <script src="/app.js"></script>
+  <script src="/app.js?v=2"></script>
   <script>
-
-    document.addEventListener('DOMContentLoaded', () => {
+    // Initialize the app when the page loads
+    document.addEventListener('DOMContentLoaded', async () => {
       console.log('Wishlist page - DOM Content Loaded');
       
-
+      // Override updateLibraries to only show wishlist on this page
+      if (window.app) {
+        const originalUpdateLibraries = window.app.updateLibraries;
+        window.app.updateLibraries = function() {
+          // On wishlist page, only load wishlist library, not all libraries
+          if (window.location.pathname === '/wishlist') {
+            console.log('[Wishlist Page] Overriding updateLibraries to only show wishlist');
+            loadWishlistLibrary();
+            return;
+          }
+          // On other pages, use original function
+          if (originalUpdateLibraries) {
+            return originalUpdateLibraries.call(this);
+          }
+        };
+      }
+      
+      // Wait for app to initialize
+      if (window.app) {
+        // Check auth status first
+        await window.app.checkAuthStatus();
+        
+        // If user is logged in, load ONLY wishlist (not all libraries)
+        if (window.app.currentUser) {
+          // Make sure we're not calling updateLibraries which shows all libraries
+          loadWishlistLibrary();
+        }
+      } else {
+        // Wait a bit for app to initialize
+        setTimeout(async () => {
+          if (window.app) {
+            // Override updateLibraries after app initializes
+            const originalUpdateLibraries = window.app.updateLibraries;
+            window.app.updateLibraries = function() {
+              if (window.location.pathname === '/wishlist') {
+                console.log('[Wishlist Page] Overriding updateLibraries to only show wishlist');
+                loadWishlistLibrary();
+                return;
+              }
+              if (originalUpdateLibraries) {
+                return originalUpdateLibraries.call(this);
+              }
+            };
+            
+            await window.app.checkAuthStatus();
+            if (window.app.currentUser) {
+              // Make sure we're not calling updateLibraries which shows all libraries
+              loadWishlistLibrary();
+            }
+          }
+        }, 500);
+      }
+      
+      // Add event listener for Steam ownership check button
       const checkSteamOwnershipBtn = document.getElementById('checkSteamOwnershipBtn');
       if (checkSteamOwnershipBtn) {
         checkSteamOwnershipBtn.addEventListener('click', async () => {
@@ -60,18 +143,395 @@
               if (result) {
                 displaySteamOwnershipStatus(result);
               } else {
-                alert('Failed to check Steam ownership. Make sure you have a Steam account linked.');
+                if (window.app) {
+                  window.app.showAlert('Failed to check Steam ownership. Make sure you have a Steam account linked.', 'Error', 'error');
+                } else {
+                  alert('Failed to check Steam ownership. Make sure you have a Steam account linked.');
+                }
               }
             } catch (error) {
               console.error('Error checking Steam ownership:', error);
-              alert('Error checking Steam ownership');
+              if (window.app) {
+                window.app.showAlert('Error checking Steam ownership', 'Error', 'error');
+              } else {
+                alert('Error checking Steam ownership');
+              }
             }
           } else {
-            alert('Please log in to check Steam ownership');
+            if (window.app) {
+              window.app.showAlert('Please log in to check Steam ownership', 'Login Required', 'warning');
+            } else {
+              alert('Please log in to check Steam ownership');
+            }
           }
         });
       }
     });
+
+    async function loadWishlistLibrary() {
+      const container = document.getElementById('libraryContainer');
+      if (!container) {
+        return;
+      }
+      
+      if (!window.app || !window.app.currentUser || !window.app.currentUser.username) {
+        container.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>Login Required</h3><p>Please log in to view your wishlist!</p></div>';
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/wishlists/${window.app.currentUser.username}`, {
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        const data = await response.json();
+        
+        if (data.success && Array.isArray(data.wishlists)) {
+          // Filter to ONLY show wishlist type, exclude ALL other types (default/automatic/custom)
+          // Filter out all libraries that are NOT type 'wishlist'
+          const allLibraries = data.wishlists || [];
+          const wishlist = allLibraries.find(lib => lib.type === 'wishlist');
+          
+          // Log for debugging
+          console.log('[Wishlist Page] All libraries:', allLibraries.map(l => ({ name: l.name, type: l.type })));
+          console.log('[Wishlist Page] Filtered wishlist:', wishlist);
+          
+          if (!wishlist) {
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>No Wishlist Found</h3><p>Your wishlist library will be created automatically when you add your first game.</p></div>';
+            return;
+          }
+          
+          // Double check - ensure we only show wishlist type
+          if (wishlist.type !== 'wishlist') {
+            console.error('[Wishlist Page] Error: Found library is not wishlist type:', wishlist.type);
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>No Wishlist Found</h3><p>Your wishlist library will be created automatically when you add your first game.</p></div>';
+            return;
+          }
+
+          // Display ONLY the wishlist library card - explicitly filter out default/automatic
+          // Clear container completely first
+          container.innerHTML = '';
+          container.className = 'list-container libraries-grid'; // Reset classes
+          
+          // IMPORTANT: Only create ONE card - the wishlist library
+          // Do NOT iterate through allLibraries - only show the filtered wishlist
+          const libraryItem = document.createElement('div');
+          libraryItem.className = 'library-card';
+          const typeBadge = '<span class="badge badge-warning">Wishlist</span>';
+          libraryItem.innerHTML = `
+            <div class="library-card-header">
+              <h3>${wishlist.name}</h3>
+              ${typeBadge}
+            </div>
+            <div class="library-card-body">
+              <div class="library-info">
+                <div class="library-game-count">
+                  <i class="fas fa-gamepad"></i> ${wishlist.gameCount || 0} games
+                </div>
+                <p class="library-description">${wishlist.description || 'Games you want to play'}</p>
+                <div class="library-date">
+                  <i class="fas fa-calendar"></i> Created: ${new Date(wishlist.createdDate).toLocaleDateString()}
+                </div>
+              </div>
+              <div class="library-card-actions">
+                <button class="btn btn-primary" onclick="if(window.app) window.app.selectLibrary(${wishlist.id})">
+                  <i class="fas fa-eye"></i> View
+                </button>
+              </div>
+            </div>
+          `;
+          // Append ONLY the wishlist card - no other libraries
+          container.appendChild(libraryItem);
+          
+          // Verify only one card was added
+          const cards = container.querySelectorAll('.library-card');
+          if (cards.length > 1) {
+            console.warn('[Wishlist Page] Warning: Multiple library cards found, removing extras');
+            // Remove all but the first (wishlist) card
+            for (let i = 1; i < cards.length; i++) {
+              cards[i].remove();
+            }
+          }
+          
+          // Load suggestions after wishlist is loaded
+          console.log('[Wishlist] Wishlist loaded, calling loadGameSuggestions with ID:', wishlist.id);
+          if (wishlist.id) {
+            loadGameSuggestions(wishlist.id);
+          } else {
+            console.error('[Wishlist] Wishlist ID is missing:', wishlist);
+          }
+        } else {
+          container.innerHTML = '<div class="empty-state"><i class="fas fa-heart"></i><h3>No Wishlist Found</h3><p>Your wishlist library will be created automatically when you add your first game.</p></div>';
+        }
+      } catch (error) {
+        console.error('Error loading wishlist:', error);
+        const container = document.getElementById('libraryContainer');
+        if (container) {
+          container.innerHTML = '<div class="empty-state"><i class="fas fa-exclamation-triangle"></i><h3>Error</h3><p>Failed to load wishlist. Please try again.</p></div>';
+        }
+      }
+    }
+
+    async function loadGameSuggestions(wishlistId) {
+      console.log('[Wishlist] Loading game suggestions for wishlist:', wishlistId);
+      const suggestionsSection = document.getElementById('gameSuggestionsSection');
+      const suggestionsContainer = document.getElementById('gameSuggestions');
+      
+      if (!suggestionsSection || !suggestionsContainer) {
+        console.error('[Wishlist] Suggestions section or container not found');
+        return;
+      }
+
+      try {
+        // Get wishlist games first
+        console.log('[Wishlist] Fetching wishlist games...');
+        const gamesResponse = await fetch(`/api/wishlists/${window.app.currentUser.username}/${wishlistId}`, {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        const gamesData = await gamesResponse.json();
+        console.log('[Wishlist] Games data:', gamesData);
+        
+        if (!gamesData.success || !gamesData.games || gamesData.games.length === 0) {
+          console.log('[Wishlist] No games in wishlist, hiding suggestions');
+          suggestionsSection.style.display = 'none';
+          return;
+        }
+
+        // Extract game names/titles from wishlist
+        const wishlistGameNames = gamesData.games.map(game => game.title || game.gameTitle || game.name).filter(Boolean);
+        console.log('[Wishlist] Wishlist game names:', wishlistGameNames);
+        
+        if (wishlistGameNames.length === 0) {
+          console.log('[Wishlist] No valid game names found, hiding suggestions');
+          suggestionsSection.style.display = 'none';
+          return;
+        }
+
+        // Search for similar games based on wishlist game names
+        // Use multiple search strategies to get diverse suggestions
+        const searchTerms = wishlistGameNames.slice(0, 5); // Use first 5 games for more suggestions
+        const suggestions = new Map(); // Use Map to track by ID to avoid duplicates
+        
+        // Strategy 1: Search by individual game names
+        console.log('[Wishlist] Starting search with terms:', searchTerms);
+        for (const term of searchTerms) {
+          try {
+            console.log('[Wishlist] Searching for:', term);
+            const searchResponse = await fetch(`/api/games/search?q=${encodeURIComponent(term)}&page=1&pageSize=15`, {
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            
+            const searchData = await searchResponse.json();
+            console.log('[Wishlist] Search results for', term, ':', searchData.games ? searchData.games.length : 0, 'games');
+            
+            if (searchData.success && searchData.games) {
+              // Filter out games already in wishlist
+              const wishlistSteamIds = gamesData.games.map(g => g.steamId || g.steam_id || g.gameId || g.id).filter(Boolean);
+              console.log('[Wishlist] Wishlist Steam IDs:', wishlistSteamIds);
+              
+              searchData.games.forEach(game => {
+                const gameSteamId = game.id || game.steamId;
+                // Don't suggest games already in wishlist, and must have image
+                if (!wishlistSteamIds.includes(gameSteamId) && game.backgroundImage && gameSteamId) {
+                  // Use Steam ID as key to avoid duplicates
+                  if (!suggestions.has(gameSteamId)) {
+                    suggestions.set(gameSteamId, {
+                      id: game.id,
+                      steamId: gameSteamId,
+                      name: game.name,
+                      backgroundImage: game.backgroundImage,
+                      released: game.released,
+                      rating: game.rating
+                    });
+                    console.log('[Wishlist] Added suggestion:', game.name);
+                  }
+                }
+              });
+            }
+          } catch (searchError) {
+            console.error('[Wishlist] Error searching for suggestions:', searchError);
+          }
+        }
+        
+        console.log('[Wishlist] After strategy 1, suggestions count:', suggestions.size);
+
+        // Strategy 2: Search for popular/trending games if we don't have enough
+        if (suggestions.size < 6) {
+          try {
+            const popularTerms = ['action', 'adventure', 'rpg', 'strategy', 'indie'];
+            for (const term of popularTerms.slice(0, 3)) {
+              const searchResponse = await fetch(`/api/games/search?q=${encodeURIComponent(term)}&page=1&pageSize=10`, {
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' }
+              });
+              
+              const searchData = await searchResponse.json();
+              
+              if (searchData.success && searchData.games) {
+                const wishlistSteamIds = gamesData.games.map(g => g.steamId || g.steam_id || g.gameId).filter(Boolean);
+                
+                searchData.games.forEach(game => {
+                  const gameSteamId = game.id || game.steamId;
+                  if (!wishlistSteamIds.includes(gameSteamId) && game.backgroundImage && gameSteamId && suggestions.size < 12) {
+                    if (!suggestions.has(gameSteamId)) {
+                      suggestions.set(gameSteamId, {
+                        id: game.id,
+                        steamId: gameSteamId,
+                        name: game.name,
+                        backgroundImage: game.backgroundImage,
+                        released: game.released,
+                        rating: game.rating
+                      });
+                    }
+                  }
+                });
+              }
+              
+              if (suggestions.size >= 12) break;
+            }
+          } catch (error) {
+            console.error('Error getting popular game suggestions:', error);
+          }
+        }
+
+        // Convert Map to array, shuffle, and limit to 12 suggestions
+        const suggestedGames = Array.from(suggestions.values())
+          .sort(() => Math.random() - 0.5) // Shuffle for variety
+          .slice(0, 12);
+
+        console.log('[Wishlist] Final suggested games count:', suggestedGames.length);
+
+        if (suggestedGames.length === 0) {
+          console.log('[Wishlist] No suggestions found, hiding section');
+          suggestionsSection.style.display = 'none';
+          return;
+        }
+
+        // Display suggestions
+        console.log('[Wishlist] Displaying', suggestedGames.length, 'suggestions');
+        suggestionsSection.style.display = 'block';
+        suggestionsContainer.innerHTML = '';
+        suggestionsContainer.className = 'games-grid';
+
+        suggestedGames.forEach(game => {
+          const gameCard = document.createElement('div');
+          gameCard.className = 'game-card-simple';
+          gameCard.innerHTML = `
+            <div class="game-image-simple">
+              ${game.backgroundImage ? 
+                `<img src="${game.backgroundImage}" alt="${game.name}" class="game-image" onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\\'no-image\\'><i class=\\'fas fa-gamepad\\'></i></div>'">` : 
+                '<div class="no-image"><i class="fas fa-gamepad"></i></div>'
+              }
+            </div>
+            <div class="game-name-simple">
+              <h3 class="game-title-simple">${game.name}</h3>
+            </div>
+            <div style="padding: 10px; background: rgba(20, 20, 20, 0.95); border-top: 1px solid rgba(212, 175, 55, 0.2);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 5px;">
+                ${game.released ? `<span style="color: #b0b0b0; font-size: 0.7rem;"><i class="fas fa-calendar"></i> ${new Date(game.released).getFullYear()}</span>` : ''}
+                ${game.rating ? `<span style="color: #d4af37; font-size: 0.7rem;"><i class="fas fa-star"></i> ${game.rating.toFixed(1)}</span>` : ''}
+              </div>
+              <button class="btn btn-primary" onclick="addSuggestionToWishlist(${game.id}, '${game.name.replace(/'/g, "\\'")}', '${(game.backgroundImage || '').replace(/'/g, "\\'")}')" style="width: 100%; font-size: 0.8rem; padding: 6px 12px;">
+                <i class="fas fa-plus"></i> Add to Wishlist
+              </button>
+            </div>
+          `;
+          suggestionsContainer.appendChild(gameCard);
+        });
+
+      } catch (error) {
+        console.error('Error loading game suggestions:', error);
+        suggestionsSection.style.display = 'none';
+      }
+    }
+
+    async function addSuggestionToWishlist(gameId, gameName, gameImage) {
+      if (!window.app || !window.app.currentUser || !window.app.currentUser.username) {
+        if (window.app) {
+          window.app.showAlert('Please log in to add games', 'Login Required', 'warning');
+        }
+        return;
+      }
+
+      try {
+        // Get wishlist library ID
+        const response = await fetch(`/api/wishlists/${window.app.currentUser.username}`, {
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (!data.success || !data.wishlists) {
+          throw new Error('Failed to get wishlist');
+        }
+
+        const wishlistLib = data.wishlists.find(lib => lib.type === 'wishlist');
+        if (!wishlistLib) {
+          throw new Error('Wishlist library not found');
+        }
+
+        // Add game to wishlist
+        const addResponse = await fetch(`/api/wishlists/${window.app.currentUser.username}/add-game`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            gameId: gameId,
+            gameName: gameName,
+            wishlistId: wishlistLib.id,
+            gameData: {
+              backgroundImage: gameImage
+            }
+          })
+        });
+
+        const addData = await addResponse.json();
+        if (addData.success) {
+          if (window.app) {
+            window.app.showAlert('Game added to wishlist!', 'Success', 'success');
+          }
+          // Reload wishlist and suggestions
+          loadWishlistLibrary();
+        } else {
+          throw new Error(addData.error || 'Failed to add game');
+        }
+      } catch (error) {
+        console.error('Error adding suggestion to wishlist:', error);
+        if (window.app) {
+          window.app.showAlert('Failed to add game to wishlist', 'Error', 'error');
+        }
+      }
+    }
+
+    function backToWishlistView() {
+      const selectedSection = document.getElementById('selectedLibrarySection');
+      const libraryContainer = document.getElementById('libraryContainer');
+      const addGameBtn = document.getElementById('addGameToLibraryBtn');
+      
+      if (selectedSection) {
+        selectedSection.style.display = 'none';
+      }
+      // Hide Add Game button when going back
+      if (addGameBtn) {
+        addGameBtn.style.display = 'none';
+      }
+      // Show the libraries container and ensure grid layout
+      if (libraryContainer) {
+        libraryContainer.style.display = 'block';
+        // Ensure the grid class is present for side-by-side layout
+        if (!libraryContainer.classList.contains('libraries-grid')) {
+          libraryContainer.classList.add('libraries-grid');
+        }
+      }
+      // Reload wishlist (only wishlist, not all libraries)
+      loadWishlistLibrary();
+    }
 
     function displaySteamOwnershipStatus(result) {
       const statusDiv = document.getElementById('steamOwnershipStatus');
@@ -87,7 +547,7 @@
             <div class="steam-owned-game">
               <span class="game-name">${game.gameName}</span>
               <span class="wishlist-name">in ${game.wishlistName}</span>
-              <a href="steam:
+              <a href="steam://run/${game.steamId}" class="btn btn-steam btn-sm">
                 <i class="fab fa-steam"></i> Play
               </a>
             </div>

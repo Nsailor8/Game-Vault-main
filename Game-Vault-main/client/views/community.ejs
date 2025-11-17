@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+  <%- include('partials/head', { pageTitle: 'Community' }) %>
+<body>
+  <%- include('partials/header', { activePage: 'community' }) %>
+
+  <div class="container">
+    <main class="main-content">
+      <section id="communitySection" class="content-section active community-section">
+        <div class="section-header">
+          <div class="section-title-group">
+            <h2>Community</h2>
+            <p class="section-subtitle">Discuss games, share experiences, and connect with fellow gamers.</p>
+          </div>
+          <div class="section-actions">
+            <button id="createPostBtn" class="btn btn-primary" onclick="
+              if(typeof window.showCreatePostModal === 'function') { 
+                window.showCreatePostModal(); 
+              } else { 
+                console.log('Waiting for app.js to load...');
+                setTimeout(() => {
+                  if(typeof window.showCreatePostModal === 'function') {
+                    window.showCreatePostModal();
+                  } else {
+                    console.error('showCreatePostModal function still not available after delay');
+                    alert('Please refresh the page and try again.');
+                  }
+                }, 500);
+              } 
+              return false;
+            ">
+              <i class="fas fa-plus"></i> Create Post
+            </button>
+          </div>
+        </div>
+
+        <!-- Filters & Controls -->
+        <div class="community-toolbar">
+          <div class="toolbar-left">
+            <div class="search-input">
+              <i class="fas fa-search"></i>
+              <input type="text" id="communitySearch" placeholder="Search posts or games...">
+            </div>
+            <div class="filter-group">
+              <label class="sr-only" for="communityCategory">Category</label>
+              <select id="communityCategory" class="filter-control">
+                <option value="all" selected>All Categories</option>
+                <option value="general">General</option>
+                <option value="game-discussion">Game Discussion</option>
+                <option value="help">Help</option>
+                <option value="off-topic">Off-Topic</option>
+                <option value="announcements">Announcements</option>
+              </select>
+
+              <label class="sr-only" for="communitySort">Sort</label>
+              <select id="communitySort" class="filter-control">
+                <option value="newest" selected>Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="most-liked">Most Liked</option>
+                <option value="most-viewed">Most Viewed</option>
+                <option value="most-commented">Most Commented</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Posts Container -->
+        <div id="communityPostsContainer" class="community-posts-container">
+          <div class="loading-spinner" id="communityLoading">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Loading posts...</p>
+          </div>
+        </div>
+
+        <!-- Pagination -->
+        <div id="communityPagination" class="community-pagination"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Create Post Modal -->
+  <div id="createPostModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="if(window.app && window.app.closeCreatePostModal) { window.app.closeCreatePostModal(); } else { document.getElementById('createPostModal').style.display = 'none'; }">&times;</span>
+      <h2>Create New Post</h2>
+      <form id="createPostForm">
+        <div class="form-group">
+          <label for="postTitle">Title *</label>
+          <input type="text" id="postTitle" name="title" required minlength="3" maxlength="200" placeholder="Enter post title...">
+        </div>
+        <div class="form-group">
+          <label for="postCategory">Category *</label>
+          <select id="postCategory" name="category" required>
+            <option value="general">General</option>
+            <option value="game-discussion">Game Discussion</option>
+            <option value="help">Help</option>
+            <option value="off-topic">Off-Topic</option>
+            <option value="announcements">Announcements</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="postGameTitle">Game (Optional)</label>
+          <input type="text" id="postGameTitle" name="gameTitle" placeholder="Enter game name if discussing a specific game...">
+        </div>
+        <div class="form-group">
+          <label for="postContent">Content *</label>
+          <textarea id="postContent" name="content" required minlength="10" maxlength="10000" rows="10" placeholder="Write your post content here..."></textarea>
+          <div class="char-count">
+            <span id="postCharCount">0</span> / 10000 characters
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="postTags">Tags (Optional)</label>
+          <input type="text" id="postTags" name="tags" placeholder="Enter tags separated by commas...">
+          <small>Example: multiplayer, strategy, indie</small>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" onclick="if(window.app && window.app.closeCreatePostModal) { window.app.closeCreatePostModal(); } else { document.getElementById('createPostModal').style.display = 'none'; }">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Post</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Post Details Modal -->
+  <div id="postDetailsModal" class="modal">
+    <div class="modal-content post-details-content">
+      <span class="close" onclick="app.closePostDetailsModal()">&times;</span>
+      <div id="postDetailsContainer"></div>
+    </div>
+  </div>
+
+  <%- include('partials/footer') %>
+
+  <script src="/app.js?v=2"></script>
+  <script>
+    // Initialize community page
+    document.addEventListener('DOMContentLoaded', async function() {
+      console.log('[Community Page] DOM loaded, initializing...');
+      
+      // Wait for app.js to load
+      let attempts = 0;
+      const maxAttempts = 5;
+      
+      // Manual setup function (defined early so it can be called from retry logic)
+      const setupCommunityManually = async () => {
+        try {
+          if (window.app && window.app.checkAuthStatus) {
+            await window.app.checkAuthStatus();
+          }
+          
+          // Manually set up event listeners and load posts
+          const createPostBtn = document.getElementById('createPostBtn');
+          if (createPostBtn) {
+            createPostBtn.onclick = () => {
+              if (typeof window.showCreatePostModal === 'function') {
+                window.showCreatePostModal();
+              }
+            };
+          }
+          
+          // Set up form submission
+          const createPostForm = document.getElementById('createPostForm');
+          if (createPostForm) {
+            createPostForm.onsubmit = (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (window.app && typeof window.app.createPost === 'function') {
+                window.app.createPost();
+              } else {
+                // Fallback: submit directly
+                submitPostDirectly();
+              }
+            };
+          }
+          
+          // Set up character count
+          const postContent = document.getElementById('postContent');
+          const postCharCount = document.getElementById('postCharCount');
+          if (postContent && postCharCount) {
+            postContent.oninput = () => {
+              postCharCount.textContent = postContent.value.length;
+            };
+          }
+          
+          // Function to submit post directly
+          const submitPostDirectly = async () => {
+            if (!window.app || !window.app.currentUser) {
+              alert('Please sign in to create a post.');
+              return;
+            }
+            
+            const title = document.getElementById('postTitle')?.value.trim();
+            const content = document.getElementById('postContent')?.value.trim();
+            const gameTitle = document.getElementById('postGameTitle')?.value.trim();
+            const category = document.getElementById('postCategory')?.value;
+            const tagsInput = document.getElementById('postTags')?.value.trim();
+            const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
+            
+            if (!title || !content) {
+              alert('Title and content are required');
+              return;
+            }
+            
+            try {
+              const response = await fetch('/api/community/posts', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, content, gameTitle: gameTitle || null, category, tags })
+              });
+              
+              const result = await response.json();
+              
+              if (result.success) {
+                alert('Post created successfully!');
+                document.getElementById('createPostModal').style.display = 'none';
+                loadPostsDirectly();
+              } else {
+                alert(result.error || 'Failed to create post');
+              }
+            } catch (error) {
+              console.error('Error creating post:', error);
+              alert('Error creating post. Please try again.');
+            }
+          };
+          
+          // Set up filters and load posts
+          const loadPostsDirectly = async () => {
+            const category = document.getElementById('communityCategory')?.value || 'all';
+            const sortBy = document.getElementById('communitySort')?.value || 'newest';
+            const search = document.getElementById('communitySearch')?.value || '';
+            
+            const params = new URLSearchParams({
+              page: 1,
+              pageSize: 20,
+              category: category,
+              sortBy: sortBy
+            });
+            
+            if (search) {
+              params.append('game', search);
+            }
+            
+            try {
+              const response = await fetch(`/api/community/posts?${params}`, {
+                credentials: 'include'
+              });
+              
+              const result = await response.json();
+              
+              if (result.success) {
+                const posts = result.posts || [];
+                const container = document.getElementById('communityPostsContainer');
+                if (container) {
+                  if (posts.length === 0) {
+                    container.innerHTML = `
+                      <div class="empty-state">
+                        <i class="fas fa-comments"></i>
+                        <h3>No Posts Yet</h3>
+                        <p>Be the first to start a discussion!</p>
+                        ${window.app && window.app.currentUser ? `
+                          <button class="btn btn-primary" onclick="if(typeof window.showCreatePostModal === 'function') { window.showCreatePostModal(); } return false;">
+                            <i class="fas fa-plus"></i> Create Post
+                          </button>
+                        ` : ''}
+                      </div>
+                    `;
+                  } else {
+                    // Simple post rendering
+                    container.innerHTML = posts.map(post => `
+                      <article class="community-post-card">
+                        <header class="post-header">
+                          <h3><a href="#" onclick="if(window.viewPostDetails) { window.viewPostDetails(${post.id}); } return false;">${post.title || 'Untitled'}</a></h3>
+                          <div class="post-meta">
+                            <span><i class="far fa-user"></i> ${post.user ? post.user.username : 'Anonymous'}</span>
+                            <span><i class="far fa-clock"></i> ${new Date(post.createdAt).toLocaleDateString()}</span>
+                          </div>
+                        </header>
+                        <div class="post-content-preview">${(post.content || '').substring(0, 200)}${post.content && post.content.length > 200 ? '...' : ''}</div>
+                        <footer class="post-footer">
+                          <div class="post-stats">
+                            <span><i class="fas fa-heart"></i> ${post.likes || 0}</span>
+                            <span><i class="fas fa-comments"></i> ${post.commentCount || 0}</span>
+                          </div>
+                          <a href="#" class="btn btn-secondary btn-sm" onclick="if(window.viewPostDetails) { window.viewPostDetails(${post.id}); } return false;" style="background: linear-gradient(135deg, #d4af37 0%, #f4d03f 100%) !important; background-color: #d4af37 !important; color: #000 !important; border: 2px solid #d4af37 !important;">
+                            View Discussion <i class="fas fa-chevron-right"></i>
+                          </a>
+                        </footer>
+                      </article>
+                    `).join('');
+                  }
+                }
+              }
+            } catch (error) {
+              console.error('Error loading posts:', error);
+            }
+          };
+          
+          // Set up filters
+          const categoryFilter = document.getElementById('communityCategory');
+          const sortFilter = document.getElementById('communitySort');
+          const searchInput = document.getElementById('communitySearch');
+          
+          if (categoryFilter) {
+            categoryFilter.onchange = () => loadPostsDirectly();
+          }
+          if (sortFilter) {
+            sortFilter.onchange = () => loadPostsDirectly();
+          }
+          if (searchInput) {
+            let searchTimeout;
+            searchInput.oninput = () => {
+              clearTimeout(searchTimeout);
+              searchTimeout = setTimeout(() => loadPostsDirectly(), 500);
+            };
+          }
+          
+          // Load posts initially
+          loadPostsDirectly();
+        } catch (error) {
+          console.error('[Community Page] Error in manual setup:', error);
+        }
+      };
+      
+      const initCommunity = async () => {
+        if (window.app) {
+          console.log('[Community Page] App found, checking for initializeCommunityPage method');
+          
+          // Check if method exists on instance or prototype
+          const hasMethod = typeof window.app.initializeCommunityPage === 'function' ||
+                           (window.app.constructor && typeof window.app.constructor.prototype.initializeCommunityPage === 'function');
+          
+          if (hasMethod) {
+            try {
+              console.log('[Community Page] Calling initializeCommunityPage');
+              if (window.app.checkAuthStatus) {
+                await window.app.checkAuthStatus();
+              }
+              if (window.app.initializeCommunityPage) {
+                await window.app.initializeCommunityPage();
+              } else {
+                // Try calling from prototype
+                await window.app.constructor.prototype.initializeCommunityPage.call(window.app);
+              }
+              return true;
+            } catch (error) {
+              console.error('[Community Page] Error calling initializeCommunityPage:', error);
+              // Fallback: initialize manually
+              return false;
+            }
+          } else {
+            console.warn('[Community Page] initializeCommunityPage method not found, initializing manually');
+            return false;
+          }
+        }
+        return false;
+      };
+      
+      // Try to initialize immediately
+      let initialized = await initCommunity();
+      
+      // If not initialized, wait a bit and try again
+      if (!initialized) {
+        // Wait for app.js to fully load
+        await new Promise(resolve => setTimeout(resolve, 500));
+        initialized = await initCommunity();
+      }
+      
+      // If still not initialized, try again after delay with limited retries
+      if (!initialized) {
+        const retryInterval = setInterval(async () => {
+          attempts++;
+          if (attempts > 5) { // Limit to 5 retries instead of 20
+            clearInterval(retryInterval);
+            console.log('[Community Page] Max retries reached, setting up manually');
+            if (window.app && typeof setupCommunityManually === 'function') {
+              setupCommunityManually();
+            }
+            return;
+          }
+          
+          console.log(`[Community Page] Retry attempt ${attempts}/5`);
+          
+          initialized = await initCommunity();
+          
+          if (initialized) {
+            clearInterval(retryInterval);
+          }
+        }, 200); // Check every 200ms instead of longer intervals
+        
+        // Set a timeout to stop retrying after 3 seconds
+        setTimeout(() => {
+          clearInterval(retryInterval);
+          if (!initialized && window.app) {
+            console.log('[Community Page] Setting up manually after timeout');
+            setupCommunityManually();
+          }
+        }, 3000);
+      }
+    });
+  </script>
+</body>
+</html>
+

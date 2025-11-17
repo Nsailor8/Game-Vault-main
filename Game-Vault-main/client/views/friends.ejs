@@ -21,47 +21,63 @@
             </div>
           </div>
 
-          <!-- Friends List -->
-          <div class="friends-list">
-            <h3>Friends (<span id="friendsCount">0</span>)</h3>
-            <div id="friendsList" class="list-container">
-              <div class="empty-state">
-                <i class="fas fa-user-friends"></i>
-                <h3>No friends yet</h3>
-                <p>Send friend requests to start building your network!</p>
+          <!-- Main Content Grid -->
+          <div class="friends-main-grid">
+            <!-- Friends List -->
+            <div class="friends-list">
+              <h3>Friends (<span id="friendsCount">0</span>)</h3>
+              <div id="friendsList" class="list-container">
+                <!-- Friends will be dynamically populated by updateFriends() -->
+              </div>
+            </div>
+
+            <!-- Requests Column -->
+            <div class="requests-column">
+              <!-- Received Requests -->
+              <div class="received-requests">
+                <h3>Friend Requests (<span id="receivedRequestsCount">0</span>)</h3>
+                <div id="receivedRequests" class="list-container">
+                  <div class="empty-state">
+                    <i class="fas fa-user-plus"></i>
+                    <h3>No friend requests</h3>
+                    <p>You'll see friend requests here when people want to add you!</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Sent Requests -->
+              <div class="sent-requests">
+                <h3>Sent Requests (<span id="sentRequestsCount">0</span>)</h3>
+                <div id="sentRequests" class="list-container">
+                  <div class="empty-state">
+                    <i class="fas fa-paper-plane"></i>
+                    <h3>No sent requests</h3>
+                    <p>Your sent friend requests will appear here!</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- Received Requests -->
-          <div class="received-requests">
-            <h3>Friend Requests (<span id="receivedRequestsCount">0</span>)</h3>
-            <div id="receivedRequests" class="list-container">
-              <div class="empty-state">
-                <i class="fas fa-user-plus"></i>
-                <h3>No friend requests</h3>
-                <p>You'll see friend requests here when people want to add you!</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Sent Requests -->
-          <div class="sent-requests">
-            <h3>Sent Requests (<span id="sentRequestsCount">0</span>)</h3>
-            <div id="sentRequests" class="list-container">
-              <div class="empty-state">
-                <i class="fas fa-paper-plane"></i>
-                <h3>No sent requests</h3>
-                <p>Your sent friend requests will appear here!</p>
-              </div>
-            </div>
-          </div>
         </div>
       </section>
     </main>
   </div>
 
   <%- include('partials/loginModal') %>
+
+  <!-- Friend Profile Modal -->
+  <div id="friendProfileModal" class="modal" style="display: none;">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h2 id="friendUsername">Friend Name</h2>
+        <span class="close">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p>Friend profile will load here.</p>
+      </div>
+    </div>
+  </div>
 
   <script src="/app.js"></script>
   <script>

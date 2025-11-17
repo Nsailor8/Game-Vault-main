@@ -7,12 +7,18 @@ const Wishlist = require('./Wishlist');
 const WishlistGame = require('./WishlistGame');
 const Friendship = require('./Friendship');
 const Achievement = require('./Achievement');
+const ReviewHelpfulVote = require('./ReviewHelpfulVote');
+const Post = require('./Post');
+const Comment = require('./Comment');
 
 const setupAssociations = () => {
 
   User.hasMany(Review, { foreignKey: 'userId', as: 'reviews' });
   User.hasMany(Wishlist, { foreignKey: 'userId', as: 'wishlists' });
   User.hasMany(Achievement, { foreignKey: 'userId', as: 'achievements' });
+  User.hasMany(ReviewHelpfulVote, { foreignKey: 'userId', as: 'reviewHelpfulVotes', onDelete: 'CASCADE' });
+  User.hasMany(Post, { foreignKey: 'userId', as: 'posts' });
+  User.hasMany(Comment, { foreignKey: 'userId', as: 'comments' });
 
   User.belongsToMany(User, {
     through: Friendship,
@@ -28,6 +34,10 @@ const setupAssociations = () => {
   // Review associations
   Review.belongsTo(User, { foreignKey: 'userId', as: 'user' });
   Review.belongsTo(Game, { foreignKey: 'gameId', as: 'game' });
+  Review.hasMany(ReviewHelpfulVote, { foreignKey: 'reviewId', as: 'helpfulVotesRecords', onDelete: 'CASCADE' });
+
+  ReviewHelpfulVote.belongsTo(Review, { foreignKey: 'reviewId', as: 'review' });
+  ReviewHelpfulVote.belongsTo(User, { foreignKey: 'userId', as: 'voter' });
 
   Game.hasMany(Review, { foreignKey: 'gameId', as: 'reviews' });
   Game.belongsToMany(Wishlist, { 
@@ -47,6 +57,16 @@ const setupAssociations = () => {
 
   WishlistGame.belongsTo(Wishlist, { foreignKey: 'wishlistId' });
   WishlistGame.belongsTo(Game, { foreignKey: 'gameId' });
+
+  // Post associations
+  Post.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+  Post.hasMany(Comment, { foreignKey: 'postId', as: 'comments', onDelete: 'CASCADE' });
+
+  // Comment associations
+  Comment.belongsTo(Post, { foreignKey: 'postId', as: 'post' });
+  Comment.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+  Comment.belongsTo(Comment, { foreignKey: 'parentCommentId', as: 'parentComment' });
+  Comment.hasMany(Comment, { foreignKey: 'parentCommentId', as: 'replies', onDelete: 'CASCADE' });
 };
 
 setupAssociations();
@@ -71,5 +91,8 @@ module.exports = {
   WishlistGame,
   Friendship,
   Achievement,
+  ReviewHelpfulVote,
+  Post,
+  Comment,
   syncDatabase
 };

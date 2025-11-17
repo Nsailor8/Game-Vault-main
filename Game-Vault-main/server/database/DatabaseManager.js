@@ -19,10 +19,251 @@ class DatabaseManager {
       await sequelize.authenticate();
       this.isConnected = true;
       console.log('✅ Database connection established successfully.');
+      
+      // Run migrations to add missing columns
+      await this.runMigrations();
+      
       return true;
     } catch (error) {
       console.error('❌ Unable to connect to the database:', error);
       return false;
+    }
+  }
+
+  async runMigrations() {
+    try {
+      // Check if 'type' column exists in wishlists table
+      const [results] = await sequelize.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'wishlists' AND column_name = 'type';
+      `);
+      
+      if (results.length === 0) {
+        console.log('🔄 Adding "type" column to wishlists table...');
+        
+        try {
+          // First, create the ENUM type if it doesn't exist
+          await sequelize.query(`
+            DO $$ BEGIN
+              CREATE TYPE "enum_wishlists_type" AS ENUM ('automatic', 'wishlist', 'custom');
+            EXCEPTION
+              WHEN duplicate_object THEN null;
+            END $$;
+          `);
+          
+          // Add the column with the ENUM type
+          await sequelize.query(`
+            ALTER TABLE wishlists 
+            ADD COLUMN type "enum_wishlists_type" DEFAULT 'custom' NOT NULL;
+          `);
+          
+          console.log('✅ Successfully added "type" column to wishlists table');
+        } catch (migrationError) {
+          console.error('❌ Error adding "type" column:', migrationError.message);
+          // Try alternative approach with VARCHAR if ENUM fails
+          try {
+            await sequelize.query(`
+              ALTER TABLE wishlists 
+              ADD COLUMN type VARCHAR(20) DEFAULT 'custom' NOT NULL;
+            `);
+            console.log('✅ Successfully added "type" column as VARCHAR');
+          } catch (altError) {
+            console.error('❌ Alternative migration also failed:', altError.message);
+            throw altError;
+          }
+        }
+      } else {
+        console.log('✅ "type" column already exists in wishlists table');
+      }
+
+      // Check if 'steam_id' column exists in wishlist_games table
+      const [steamIdResults] = await sequelize.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'wishlist_games' AND column_name = 'steam_id';
+      `);
+      
+      if (steamIdResults.length === 0) {
+        console.log('🔄 Adding "steam_id" column to wishlist_games table...');
+        
+        try {
+          // Add the column
+          await sequelize.query(`
+            ALTER TABLE wishlist_games 
+            ADD COLUMN steam_id INTEGER;
+          `);
+          console.log('✅ Successfully added "steam_id" column to wishlist_games table');
+        } catch (migrationError) {
+          console.error('❌ Error adding "steam_id" column:', migrationError.message);
+          throw migrationError;
+        }
+      } else {
+        console.log('✅ "steam_id" column already exists in wishlist_games table');
+      }
+
+      // Check if 'gameId' column is nullable in wishlist_games table
+      const [gameIdResults] = await sequelize.query(`
+        SELECT is_nullable 
+        FROM information_schema.columns 
+        WHERE table_name = 'wishlist_games' AND column_name = 'gameId';
+      `);
+      
+      if (gameIdResults.length > 0 && gameIdResults[0].is_nullable === 'NO') {
+        console.log('🔄 Making "gameId" column nullable in wishlist_games table...');
+        
+        try {
+          // Make the column nullable to match the model
+          await sequelize.query(`
+            ALTER TABLE wishlist_games 
+            ALTER COLUMN "gameId" DROP NOT NULL;
+          `);
+          console.log('✅ Successfully made "gameId" column nullable in wishlist_games table');
+        } catch (migrationError) {
+          console.error('❌ Error making "gameId" nullable:', migrationError.message);
+          throw migrationError;
+        }
+      } else if (gameIdResults.length > 0 && gameIdResults[0].is_nullable === 'YES') {
+        console.log('✅ "gameId" column is already nullable in wishlist_games table');
+      }
+
+      // Check if 'avatar_path' column exists in users table
+      const [avatarResults] = await sequelize.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'avatar_path';
+      `);
+      
+      if (avatarResults.length === 0) {
+        console.log('🔄 Adding "avatar_path" column to users table...');
+        try {
+          await sequelize.query(`
+            ALTER TABLE users 
+            ADD COLUMN avatar_path VARCHAR(255) DEFAULT NULL;
+          `);
+          console.log('✅ Successfully added "avatar_path" column to users table');
+        } catch (migrationError) {
+          console.error('❌ Error adding "avatar_path" column:', migrationError.message);
+        }
+      } else {
+        console.log('✅ "avatar_path" column already exists in users table');
+      }
+
+      // Check if 'profile_picture_path' column exists in users table
+      const [profilePicResults] = await sequelize.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = 'profile_picture_path';
+      `);
+      
+      if (profilePicResults.length === 0) {
+        console.log('🔄 Adding "profile_picture_path" column to users table...');
+        try {
+          await sequelize.query(`
+            ALTER TABLE users 
+            ADD COLUMN profile_picture_path VARCHAR(255) DEFAULT '';
+          `);
+          console.log('✅ Successfully added "profile_picture_path" column to users table');
+        } catch (migrationError) {
+          console.error('❌ Error adding "profile_picture_path" column:', migrationError.message);
+        }
+      } else {
+        console.log('✅ "profile_picture_path" column already exists in users table');
+      }
+
+      // Check if 'posts' table exists
+      const [postsTableResults] = await sequelize.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'posts';
+      `);
+      
+      if (postsTableResults.length === 0) {
+        console.log('🔄 Creating "posts" table...');
+        try {
+          // Create ENUM type for category if it doesn't exist
+          await sequelize.query(`
+            DO $$ BEGIN
+              CREATE TYPE "enum_posts_category" AS ENUM ('general', 'game-discussion', 'help', 'off-topic', 'announcements');
+            EXCEPTION
+              WHEN duplicate_object THEN null;
+            END $$;
+          `);
+          
+          await sequelize.query(`
+            CREATE TABLE posts (
+              id SERIAL PRIMARY KEY,
+              "userId" INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+              title VARCHAR(200) NOT NULL,
+              content TEXT NOT NULL,
+              "gameTitle" VARCHAR(200),
+              category "enum_posts_category" NOT NULL DEFAULT 'general',
+              tags JSONB DEFAULT '[]'::jsonb,
+              likes INTEGER NOT NULL DEFAULT 0,
+              views INTEGER NOT NULL DEFAULT 0,
+              "isPinned" BOOLEAN NOT NULL DEFAULT false,
+              "isLocked" BOOLEAN NOT NULL DEFAULT false,
+              "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+              "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+              CONSTRAINT posts_title_length CHECK (char_length(title) >= 3 AND char_length(title) <= 200),
+              CONSTRAINT posts_content_length CHECK (char_length(content) >= 10 AND char_length(content) <= 10000)
+            );
+          `);
+          await sequelize.query(`
+            CREATE INDEX idx_posts_userId ON posts("userId");
+            CREATE INDEX idx_posts_gameTitle ON posts("gameTitle");
+            CREATE INDEX idx_posts_category ON posts(category);
+            CREATE INDEX idx_posts_createdAt ON posts("createdAt");
+          `);
+          console.log('✅ Successfully created "posts" table');
+        } catch (migrationError) {
+          console.error('❌ Error creating "posts" table:', migrationError.message);
+        }
+      } else {
+        console.log('✅ "posts" table already exists');
+      }
+
+      // Check if 'comments' table exists
+      const [commentsTableResults] = await sequelize.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' AND table_name = 'comments';
+      `);
+      
+      if (commentsTableResults.length === 0) {
+        console.log('🔄 Creating "comments" table...');
+        try {
+          await sequelize.query(`
+            CREATE TABLE comments (
+              id SERIAL PRIMARY KEY,
+              "postId" INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+              "userId" INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+              content TEXT NOT NULL,
+              "parentCommentId" INTEGER REFERENCES comments(id) ON DELETE CASCADE,
+              likes INTEGER NOT NULL DEFAULT 0,
+              "createdAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+              "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+              CONSTRAINT comments_content_length CHECK (char_length(content) >= 1 AND char_length(content) <= 5000)
+            );
+          `);
+          await sequelize.query(`
+            CREATE INDEX idx_comments_postId ON comments("postId");
+            CREATE INDEX idx_comments_userId ON comments("userId");
+            CREATE INDEX idx_comments_parentCommentId ON comments("parentCommentId");
+            CREATE INDEX idx_comments_createdAt ON comments("createdAt");
+          `);
+          console.log('✅ Successfully created "comments" table');
+        } catch (migrationError) {
+          console.error('❌ Error creating "comments" table:', migrationError.message);
+        }
+      } else {
+        console.log('✅ "comments" table already exists');
+      }
+    } catch (error) {
+      console.error('❌ Error running migrations:', error);
+      // Don't throw - allow server to continue, but log the error
+      console.error('Migration error details:', error.message);
+      console.error('⚠️  Server will continue, but library creation may fail until migration is fixed');
     }
   }
 
@@ -65,6 +306,17 @@ class DatabaseManager {
       const [user, created] = await User.upsert(userDataToSave);
       
       console.log(`${created ? 'Created' : 'Updated'} user ${userData.username} in database.`);
+      
+      // If this is a new user, create default libraries
+      if (created && user.id) {
+        try {
+          await this.createDefaultLibraries(user.id);
+        } catch (error) {
+          console.error('Error creating default libraries for new user:', error);
+          // Don't throw - libraries can be created later
+        }
+      }
+      
       return user;
     } catch (error) {
       console.error('Error saving user:', error);
@@ -87,13 +339,99 @@ class DatabaseManager {
       // Include password_hash for authentication purposes
       // Use raw query or explicitly include password_hash in attributes
       // Note: avatar_path may not exist yet, so we handle it gracefully
+      // Query with explicit attributes to ensure user_id is included
       const user = await User.findOne({ 
         where: { username },
-        attributes: { 
-          exclude: [] // Don't exclude anything - we need password_hash
-        },
+        attributes: [
+          'user_id', 'username', 'email', 'password_hash', 'join_date', 
+          'is_active', 'is_admin', 'last_login', 'bio', 
+          'gaming_preferences', 'statistics', 
+          'steam_id', 'steam_profile', 'steam_linked_at', 'steam_games', 'steam_last_sync',
+          'avatar_path', 'profile_picture_path'
+        ],
         raw: false // Return Sequelize instance, not plain object
       });
+      
+      // Ensure user_id is accessible - explicitly set it in multiple places
+      if (user) {
+        try {
+          // Try to get user_id from the instance
+          let userId = null;
+          
+          // Method 1: getDataValue
+          if (user.getDataValue) {
+            try {
+              userId = user.getDataValue('user_id');
+            } catch (e) {
+              // Ignore
+            }
+          }
+          
+          // Method 2: dataValues
+          if (!userId && user.dataValues && user.dataValues.user_id) {
+            userId = user.dataValues.user_id;
+          }
+          
+          // Method 3: Primary key attribute
+          if (!userId) {
+            try {
+              // Sequelize stores primary key in a special way
+              const pk = user[User.primaryKeyAttribute] || user._modelOptions?.primaryKeyAttribute;
+              if (pk && user[pk]) {
+                userId = user[pk];
+              }
+            } catch (e) {
+              // Ignore
+            }
+          }
+          
+          // If we found user_id, ensure it's accessible everywhere
+          if (userId) {
+            if (user.dataValues) {
+              user.dataValues.user_id = userId;
+            }
+            user.user_id = userId;
+            // Also set as id for compatibility
+            user.id = userId;
+          } else {
+            // Fallback: Use raw query to get user_id directly from database
+            console.warn(`⚠️ Could not extract user_id from Sequelize instance, trying raw query...`);
+            try {
+              const { QueryTypes } = require('sequelize');
+              const results = await sequelize.query(
+                `SELECT user_id FROM users WHERE username = :username LIMIT 1`,
+                {
+                  replacements: { username },
+                  type: QueryTypes.SELECT
+                }
+              );
+              
+              // QueryTypes.SELECT returns an array of objects directly
+              if (results && Array.isArray(results) && results.length > 0) {
+                const firstRow = results[0];
+                if (firstRow && firstRow.user_id) {
+                  userId = firstRow.user_id;
+                  // Set it on the user object
+                  if (user.dataValues) {
+                    user.dataValues.user_id = userId;
+                  }
+                  user.user_id = userId;
+                  user.id = userId;
+                  console.log(`✅ Successfully retrieved user_id via raw query: ${userId}`);
+                } else {
+                  console.error(`❌ Raw query returned row but no user_id field. Row:`, firstRow);
+                }
+              } else {
+                console.error(`❌ Raw query returned no results for username: ${username}`);
+              }
+            } catch (rawQueryError) {
+              console.error(`❌ Raw query error:`, rawQueryError.message, rawQueryError.stack);
+            }
+          }
+        } catch (e) {
+          console.warn('Error ensuring user_id is accessible:', e.message);
+        }
+      }
       
       if (user) {
         // Check if avatar_path column exists by trying to access it
@@ -304,16 +642,107 @@ class DatabaseManager {
       const wishlist = await Wishlist.create({
         userId: wishlistData.userId,
         name: wishlistData.name,
-        description: wishlistData.description,
-        isPublic: wishlistData.isPublic,
-        priority: wishlistData.priority
+        description: wishlistData.description || '',
+        isPublic: wishlistData.isPublic || false,
+        priority: wishlistData.priority || 'medium',
+        type: wishlistData.type || 'custom'
       });
       
-      console.log(`Wishlist "${wishlistData.name}" created`);
+      console.log(`Library "${wishlistData.name}" created (type: ${wishlistData.type || 'custom'})`);
       return wishlist;
     } catch (error) {
-      console.error('Error creating wishlist:', error);
+      console.error('Error creating library:', error);
       throw error;
+    }
+  }
+
+  async createDefaultLibraries(userId) {
+    try {
+      // Check if default libraries already exist
+      const existingAutomatic = await Wishlist.findOne({
+        where: { userId, type: 'automatic' }
+      });
+      const existingWishlist = await Wishlist.findOne({
+        where: { userId, type: 'wishlist' }
+      });
+
+      const created = [];
+
+      if (!existingAutomatic) {
+        const automatic = await this.createWishlist({
+          userId,
+          name: 'My Library',
+          description: 'Your personal game library',
+          type: 'automatic',
+          isPublic: false,
+          priority: 'medium'
+        });
+        created.push(automatic);
+      }
+
+      if (!existingWishlist) {
+        const wishlist = await this.createWishlist({
+          userId,
+          name: 'Wishlist',
+          description: 'Games you want to play',
+          type: 'wishlist',
+          isPublic: false,
+          priority: 'medium'
+        });
+        created.push(wishlist);
+      }
+
+      if (created.length > 0) {
+        console.log(`Created ${created.length} default library/libraries for user ${userId}`);
+      }
+      return created;
+    } catch (error) {
+      console.error('Error creating default libraries:', error);
+      throw error;
+    }
+  }
+
+  async updateLibrary(libraryId, updates) {
+    try {
+      const [updatedRowsCount] = await Wishlist.update(updates, {
+        where: { id: libraryId }
+      });
+      if (updatedRowsCount > 0) {
+        console.log(`Library ${libraryId} updated`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error updating library:', error);
+      throw error;
+    }
+  }
+
+  async deleteLibrary(libraryId) {
+    try {
+      // First delete all games in the library
+      await WishlistGame.destroy({ where: { wishlistId: libraryId } });
+      // Then delete the library
+      const result = await Wishlist.destroy({ where: { id: libraryId } });
+      if (result > 0) {
+        console.log(`Library ${libraryId} deleted`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error deleting library:', error);
+      throw error;
+    }
+  }
+
+  async getLibraryByType(userId, type) {
+    try {
+      return await Wishlist.findOne({
+        where: { userId, type }
+      });
+    } catch (error) {
+      console.error('Error getting library by type:', error);
+      return null;
     }
   }
 
@@ -321,29 +750,63 @@ class DatabaseManager {
     try {
       return await Wishlist.findAll({
         where: { userId },
-        order: [['createdAt', 'DESC']]
+        order: [
+          // Sort by type first: automatic, wishlist, then custom
+          [sequelize.literal("CASE WHEN type = 'automatic' THEN 0 WHEN type = 'wishlist' THEN 1 ELSE 2 END"), 'ASC'],
+          ['createdAt', 'ASC']
+        ]
       });
     } catch (error) {
-      console.error('Error getting user wishlists:', error);
+      console.error('Error getting user libraries:', error);
       return [];
     }
   }
 
   async addGameToWishlist(wishlistId, gameData) {
     try {
+      // Only use Steam games - treat gameId as Steam ID
+      // gameId from Steam API is the Steam app ID
+      const steamId = gameData.gameId || gameData.steamId || null;
+      
+      // Don't check local games table - all games are Steam games
+      // gameId will be null since we're not using local games
+      const localGameId = null;
+      
+      if (!steamId) {
+        throw new Error('Steam ID is required');
+      }
+      
+      // Store background image URL in notes if provided (as JSON for easy retrieval)
+      let notes = gameData.notes || '';
+      if (gameData.backgroundImage && !notes) {
+        // Store image URL in notes as JSON if notes is empty
+        notes = JSON.stringify({ backgroundImage: gameData.backgroundImage });
+      } else if (gameData.backgroundImage && notes) {
+        // If notes already exists, try to parse and merge
+        try {
+          const notesObj = JSON.parse(notes);
+          notesObj.backgroundImage = gameData.backgroundImage;
+          notes = JSON.stringify(notesObj);
+        } catch (e) {
+          // If notes is not JSON, append image info
+          notes = notes + ' | IMAGE:' + gameData.backgroundImage;
+        }
+      }
+      
       const wishlistGame = await WishlistGame.create({
         wishlistId: wishlistId,
-        gameId: gameData.gameId,
-        gameTitle: gameData.title,
-        platform: gameData.platform,
-        priority: gameData.priority,
-        notes: gameData.notes
+        gameId: localGameId,  // Always null - we only use Steam games
+        steamId: steamId,  // Store Steam ID (app ID)
+        gameTitle: gameData.title || gameData.name || 'Unknown Game',
+        platform: gameData.platform || 'PC',
+        priority: gameData.priority || 'medium',
+        notes: notes
       });
       
-      console.log(`Game ${gameData.title} added to wishlist`);
+      console.log(`Game ${gameData.title || gameData.name} added to library (steamId: ${steamId})`);
       return wishlistGame;
     } catch (error) {
-      console.error('Error adding game to wishlist:', error);
+      console.error('Error adding game to library:', error);
       throw error;
     }
   }
@@ -464,6 +927,86 @@ class DatabaseManager {
         totalWishlists: 0,
         averageReviewsPerUser: 0
       };
+    }
+  }
+
+  async createAdmin(username, email, password) {
+    try {
+      const bcrypt = require('bcrypt');
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
+      const admin = await User.create({
+        username: username,
+        email: email,
+        password_hash: hashedPassword,
+        is_admin: true,
+        is_active: true,
+        join_date: new Date()
+      });
+      
+      console.log(`Admin user "${username}" created successfully`);
+      return admin;
+    } catch (error) {
+      console.error('Error creating admin:', error);
+      throw error;
+    }
+  }
+
+  async promoteToAdmin(username) {
+    try {
+      const user = await User.findOne({ where: { username: username } });
+      if (!user) {
+        throw new Error(`User "${username}" not found`);
+      }
+      
+      await user.update({ is_admin: true });
+      console.log(`User "${username}" promoted to admin`);
+      return true;
+    } catch (error) {
+      console.error('Error promoting user to admin:', error);
+      throw error;
+    }
+  }
+
+  async demoteFromAdmin(username) {
+    try {
+      const user = await User.findOne({ where: { username: username } });
+      if (!user) {
+        throw new Error(`User "${username}" not found`);
+      }
+      
+      await user.update({ is_admin: false });
+      console.log(`User "${username}" demoted from admin`);
+      return true;
+    } catch (error) {
+      console.error('Error demoting user from admin:', error);
+      throw error;
+    }
+  }
+
+  async getAdmins() {
+    try {
+      const admins = await User.findAll({
+        where: { is_admin: true },
+        attributes: ['user_id', 'username', 'email', 'join_date', 'is_active']
+      });
+      return admins;
+    } catch (error) {
+      console.error('Error getting admins:', error);
+      return [];
+    }
+  }
+
+  async isAdmin(username) {
+    try {
+      const user = await User.findOne({ 
+        where: { username: username },
+        attributes: ['is_admin']
+      });
+      return user ? user.is_admin : false;
+    } catch (error) {
+      console.error('Error checking admin status:', error);
+      return false;
     }
   }
 

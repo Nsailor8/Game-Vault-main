@@ -145,8 +145,12 @@
             const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             theme = prefersDark ? 'dark' : 'light';
         }
-        document.documentElement.setAttribute('data-theme', theme);
-        document.body.classList.add(`theme-${theme}`);
+        if (document.documentElement) {
+            document.documentElement.setAttribute('data-theme', theme);
+        }
+        if (document.body) {
+            document.body.classList.add(`theme-${theme}`);
+        }
     }
     
     if (window.GameVaultSettings.settings.fontSize) {
@@ -156,7 +160,8 @@
             large: '18px',
             xlarge: '20px'
         };
-        document.documentElement.style.fontSize = fontSizeMap[window.GameVaultSettings.settings.fontSize] || fontSizeMap.medium;
+        if (document.documentElement) {
+            document.documentElement.style.fontSize = fontSizeMap[window.GameVaultSettings.settings.fontSize] || fontSizeMap.medium;
+        }
     }
 })();
-

@@ -9,18 +9,26 @@
             <form id="reviewForm">
                 <div class="form-group">
                     <label for="reviewGameTitle">Game Title *</label>
-                    <input type="text" id="reviewGameTitle" name="gameTitle" required 
-                           placeholder="Enter the game title" maxlength="200">
+                    <div style="position: relative;">
+                        <input type="text" id="reviewGameTitle" name="gameTitle" required 
+                               placeholder="Enter the game title" maxlength="200">
+                        <div id="addReviewGameSuggestions" class="game-suggestions" style="display: none;"></div>
+                    </div>
                 </div>
                 
                 <div class="form-group">
                     <label for="reviewRating">Rating *</label>
                     <div class="rating-input">
                         <div class="star-rating" id="starRating">
+                            <span class="star" data-rating="0.5">★</span>
                             <span class="star" data-rating="1">★</span>
+                            <span class="star" data-rating="1.5">★</span>
                             <span class="star" data-rating="2">★</span>
+                            <span class="star" data-rating="2.5">★</span>
                             <span class="star" data-rating="3">★</span>
+                            <span class="star" data-rating="3.5">★</span>
                             <span class="star" data-rating="4">★</span>
+                            <span class="star" data-rating="4.5">★</span>
                             <span class="star" data-rating="5">★</span>
                         </div>
                         <input type="hidden" id="reviewRating" name="rating" value="5" required>
@@ -48,8 +56,7 @@
                 <div class="form-group">
                     <label class="checkbox-label">
                         <input type="checkbox" id="reviewPublic" name="isPublic" checked>
-                        <span class="checkmark"></span>
-                        Make this review public
+                        <span>Make this review public</span>
                     </label>
                 </div>
             </form>
@@ -79,18 +86,26 @@
                 
                 <div class="form-group">
                     <label for="editGameTitle">Game Title *</label>
-                    <input type="text" id="editGameTitle" name="gameTitle" required 
-                           placeholder="Enter the game title" maxlength="200">
+                    <div style="position: relative;">
+                        <input type="text" id="editGameTitle" name="gameTitle" required 
+                               placeholder="Enter the game title" maxlength="200">
+                        <div id="editReviewGameSuggestions" class="game-suggestions" style="display: none;"></div>
+                    </div>
                 </div>
                 
                 <div class="form-group">
                     <label for="editRating">Rating *</label>
                     <div class="rating-input">
                         <div class="star-rating" id="editStarRating">
+                            <span class="star" data-rating="0.5">★</span>
                             <span class="star" data-rating="1">★</span>
+                            <span class="star" data-rating="1.5">★</span>
                             <span class="star" data-rating="2">★</span>
+                            <span class="star" data-rating="2.5">★</span>
                             <span class="star" data-rating="3">★</span>
+                            <span class="star" data-rating="3.5">★</span>
                             <span class="star" data-rating="4">★</span>
+                            <span class="star" data-rating="4.5">★</span>
                             <span class="star" data-rating="5">★</span>
                         </div>
                         <input type="hidden" id="editRating" name="rating" value="5" required>
@@ -117,8 +132,7 @@
                 <div class="form-group">
                     <label class="checkbox-label">
                         <input type="checkbox" id="editReviewPublic" name="isPublic" checked>
-                        <span class="checkmark"></span>
-                        Make this review public
+                        <span>Make this review public</span>
                     </label>
                 </div>
             </form>
