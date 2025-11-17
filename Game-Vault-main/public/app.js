@@ -6820,6 +6820,9 @@ class SteamIntegration {
                 // Render posts (will show empty state if no posts)
                 this.renderCommunityPosts(posts);
                 this.renderCommunityPagination();
+                
+                // Attach event listeners to like buttons after rendering
+                this.attachLikeButtonListeners();
             } else {
                 if (container) {
                     container.innerHTML = `<p class="error-text">${this.escapeHtml(result.error || 'Failed to load posts')}</p>`;
@@ -6882,8 +6885,8 @@ class SteamIntegration {
                 ` : ''}
                 <footer class="post-footer">
                     <div class="post-stats">
-                        <button class="stat-btn" onclick="app.likePost(${post.id})">
-                            <i class="fas fa-heart"></i> ${post.likes || 0}
+                        <button type="button" class="stat-btn like-heart-btn" data-post-id="${post.id}" style="background: rgba(212, 175, 55, 0.3) !important; border: 2px solid #d4af37 !important; color: #d4af37 !important; padding: 10px 18px !important; border-radius: 6px !important; cursor: pointer !important; font-weight: 700 !important; display: inline-flex !important; align-items: center !important; gap: 8px !important; pointer-events: auto !important; position: relative !important; z-index: 1000 !important; min-width: 90px !important; font-size: 14px !important; transition: all 0.2s ease !important;" onmouseover="this.style.background='rgba(212, 175, 55, 0.5)'; this.style.transform='scale(1.05)';" onmouseout="this.style.background='rgba(212, 175, 55, 0.3)'; this.style.transform='scale(1)';">
+                            <i class="fas fa-heart" style="color: #d4af37 !important; font-size: 16px !important;"></i> <span style="color: #d4af37 !important; font-weight: 700 !important;">${post.likes || 0}</span>
                         </button>
                         <span class="stat-item"><i class="fas fa-comments"></i> ${post.commentCount || 0}</span>
                         <span class="stat-item"><i class="fas fa-eye"></i> ${post.views || 0}</span>
@@ -7121,10 +7124,13 @@ class SteamIntegration {
                     ${post.tags.map(tag => `<span class="tag-chip">${this.escapeHtml(tag)}</span>`).join('')}
                 </div>
             ` : ''}
-            <div class="post-details-actions">
-                <button class="btn btn-primary" onclick="app.likePost(${post.id})">
-                    <i class="fas fa-heart"></i> Like (${post.likes || 0})
+            <div class="post-details-actions" style="display: flex !important; align-items: center !important; justify-content: space-between !important; padding: 20px 0 !important; border-top: 1px solid rgba(212, 175, 55, 0.2) !important; border-bottom: 1px solid rgba(212, 175, 55, 0.2) !important; margin: 20px 0 !important; gap: 20px !important;">
+                <button type="button" class="btn btn-primary like-post-btn" data-post-id="${post.id}" style="background: linear-gradient(135deg, #d4af37 0%, #f4d03f 100%) !important; color: #000 !important; border: 2px solid #d4af37 !important; font-weight: 600 !important; padding: 12px 24px !important; cursor: pointer !important; font-size: 16px !important; display: inline-flex !important; align-items: center !important; gap: 8px !important; pointer-events: auto !important; position: relative !important; z-index: 100 !important; min-width: 150px !important;">
+                    <i class="fas fa-heart" style="color: #000 !important;"></i> <span style="color: #000 !important; font-weight: 600;">Like (${post.likes || 0})</span>
                 </button>
+                <div class="post-stats-inline" style="display: flex !important; align-items: center !important; gap: 15px !important;">
+                    <span class="stat-item" style="color: rgba(255, 255, 255, 0.6) !important; font-size: 14px !important; display: flex !important; align-items: center !important; gap: 6px !important;"><i class="fas fa-eye" style="color: rgba(255, 255, 255, 0.6) !important;"></i> ${post.views || 0} views</span>
+                </div>
             </div>
             <div class="post-details-comments">
                 <h3>Comments (${comments.length})</h3>
@@ -7139,6 +7145,21 @@ class SteamIntegration {
                 </div>
             </div>
         `;
+        
+        // Attach like button listener for post details
+        const likeBtn = container.querySelector('.like-post-btn');
+        if (likeBtn) {
+            likeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const postId = parseInt(likeBtn.getAttribute('data-post-id'), 10);
+                console.log('[Post Details Like] Clicked, postId:', postId);
+                if (postId && !isNaN(postId)) {
+                    this.likePost(postId);
+                }
+            });
+            console.log('[Post Details Like] Button listener attached');
+        }
     }
 
     renderComments(comments) {
@@ -7287,30 +7308,65 @@ class SteamIntegration {
         }
     }
 
+    attachLikeButtonListeners() {
+        // Attach click listeners to all like buttons using event delegation
+        const container = document.getElementById('communityPostsContainer');
+        if (!container) return;
+        
+        // Remove old listeners and add new ones
+        container.removeEventListener('click', this.handleLikeButtonClick);
+        this.handleLikeButtonClick = (e) => {
+            const button = e.target.closest('.like-heart-btn');
+            if (button) {
+                e.preventDefault();
+                e.stopPropagation();
+                const postId = parseInt(button.getAttribute('data-post-id'), 10);
+                console.log('[Like Button] Clicked, postId:', postId);
+                if (postId && !isNaN(postId)) {
+                    this.likePost(postId);
+                } else {
+                    console.error('[Like Button] Invalid postId:', button.getAttribute('data-post-id'));
+                }
+            }
+        };
+        container.addEventListener('click', this.handleLikeButtonClick);
+        console.log('[Like Button] Event delegation attached to container');
+    }
+
     async likePost(postId) {
+        console.log('[Like Post] Button clicked for post:', postId);
+        console.log('[Like Post] Current user:', this.currentUser);
+        
         if (!this.currentUser) {
             this.showAlert('Please sign in to like posts', 'Sign In Required', 'warning');
             return;
         }
 
         try {
+            console.log('[Like Post] Sending request to:', `/api/community/posts/${postId}/like`);
             const response = await fetch(`/api/community/posts/${postId}/like`, {
                 method: 'POST',
                 credentials: 'include'
             });
 
             const result = await response.json();
+            console.log('[Like Post] Response:', result);
 
             if (result.success) {
+                console.log('[Like Post] Success! New likes count:', result.likes);
                 this.loadCommunityPosts(); // Refresh posts
                 // If viewing post details, reload it
                 const modal = document.getElementById('postDetailsModal');
                 if (modal && (modal.style.display === 'flex' || modal.style.display === 'block')) {
                     this.viewPostDetails(postId);
                 }
+            } else {
+                console.error('Failed to like post:', result.error);
+                this.showAlert(result.error || 'Failed to like post', 'Error', 'error');
             }
         } catch (error) {
             console.error('Error liking post:', error);
+            this.showAlert('An error occurred while liking the post', 'Error', 'error');
         }
     }
 

@@ -1128,9 +1128,11 @@ class ProfileManager {
   async getFriendships(userId, status = 'accepted') {
     try {
       const { Friendship, User } = require('../server/models/index');
+      const Sequelize = require('sequelize');
+      const { Op } = Sequelize;
       const friendships = await Friendship.findAll({
         where: {
-          [(typeof require !== 'undefined' && typeof window === 'undefined' ? require('sequelize').Op.or : null)]: [
+          [Op.or]: [
             { userId: userId, status: status },
             { friendId: userId, status: status }
           ]
@@ -1153,17 +1155,34 @@ class ProfileManager {
 
       return friendships.map(friendship => {
         const friend = friendship.userId === userId ? friendship.friend : friendship.user;
+        
+        // Safety check - if friend is null/undefined, skip this friendship
+        if (!friend) {
+          console.warn('[getFriendships] Friend is null/undefined for friendship:', friendship.id);
+          return null;
+        }
+        
+        // Extract user_id properly - user_id is the primary key
+        const friendUserId = friend.user_id || friend.getDataValue?.('user_id') || friend.dataValues?.user_id;
+        const friendPlain = friend.toJSON ? friend.toJSON() : friend;
+        const extractedFriendId = friendUserId || friendPlain.user_id;
+        
+        if (!extractedFriendId) {
+          console.warn('[getFriendships] Could not extract friendId for friendship:', friendship.id);
+          return null;
+        }
+        
         return {
           id: friendship.id,
-          friendId: friend.user_id,
-          username: friend.username,
-          email: friend.email,
-          joinDate: friend.join_date,
-          bio: friend.bio,
+          friendId: extractedFriendId,
+          username: friend.username || friendPlain.username,
+          email: friend.email || friendPlain.email,
+          joinDate: friend.join_date || friendPlain.join_date,
+          bio: friend.bio || friendPlain.bio,
           friendshipDate: friendship.acceptedDate || friendship.sentDate,
           status: friendship.status
         };
-      });
+      }).filter(f => f !== null); // Remove null entries
     } catch (error) {
       console.error('Error getting friendships:', error);
       return [];
@@ -1188,16 +1207,36 @@ class ProfileManager {
         ]
       });
 
-      return requests.map(request => ({
-        id: request.id,
-        friendId: request.friend.user_id,
-        username: request.friend.username,
-        email: request.friend.email,
-        joinDate: request.friend.join_date,
-        bio: request.friend.bio,
-        sentDate: request.sentDate,
-        status: request.status
-      }));
+      return requests.map(request => {
+        const friend = request.friend;
+        
+        // Safety check
+        if (!friend) {
+          console.warn('[getSentFriendRequests] Friend is null/undefined for request:', request.id);
+          return null;
+        }
+        
+        // Extract user_id properly - user_id is the primary key
+        const friendUserId = friend.user_id || friend.getDataValue?.('user_id') || friend.dataValues?.user_id;
+        const friendPlain = friend.toJSON ? friend.toJSON() : friend;
+        const extractedFriendId = friendUserId || friendPlain.user_id;
+        
+        if (!extractedFriendId) {
+          console.warn('[getSentFriendRequests] Could not extract friendId for request:', request.id);
+          return null;
+        }
+        
+        return {
+          id: request.id,
+          friendId: extractedFriendId,
+          username: friend.username || friendPlain.username,
+          email: friend.email || friendPlain.email,
+          joinDate: friend.join_date || friendPlain.join_date,
+          bio: friend.bio || friendPlain.bio,
+          sentDate: request.sentDate,
+          status: request.status
+        };
+      }).filter(r => r !== null); // Remove null entries
     } catch (error) {
       console.error('Error getting sent friend requests:', error);
       return [];
@@ -1222,16 +1261,36 @@ class ProfileManager {
         ]
       });
 
-      return requests.map(request => ({
-        id: request.id,
-        userId: request.user.user_id,
-        username: request.user.username,
-        email: request.user.email,
-        joinDate: request.user.join_date,
-        bio: request.user.bio,
-        sentDate: request.sentDate,
-        status: request.status
-      }));
+      return requests.map(request => {
+        const user = request.user;
+        
+        // Safety check
+        if (!user) {
+          console.warn('[getReceivedFriendRequests] User is null/undefined for request:', request.id);
+          return null;
+        }
+        
+        // Extract user_id properly - user_id is the primary key
+        const userUserId = user.user_id || user.getDataValue?.('user_id') || user.dataValues?.user_id;
+        const userPlain = user.toJSON ? user.toJSON() : user;
+        const extractedUserId = userUserId || userPlain.user_id;
+        
+        if (!extractedUserId) {
+          console.warn('[getReceivedFriendRequests] Could not extract userId for request:', request.id);
+          return null;
+        }
+        
+        return {
+          id: request.id,
+          userId: extractedUserId,
+          username: user.username || userPlain.username,
+          email: user.email || userPlain.email,
+          joinDate: user.join_date || userPlain.join_date,
+          bio: user.bio || userPlain.bio,
+          sentDate: request.sentDate,
+          status: request.status
+        };
+      }).filter(r => r !== null); // Remove null entries
     } catch (error) {
       console.error('Error getting received friend requests:', error);
       return [];
@@ -1241,9 +1300,11 @@ class ProfileManager {
   async getFriendship(userId, friendId) {
     try {
       const { Friendship } = require('../server/models/index');
+      const Sequelize = require('sequelize');
+      const { Op } = Sequelize;
       const friendship = await Friendship.findOne({
         where: {
-          [(typeof require !== 'undefined' && typeof window === 'undefined' ? require('sequelize').Op.or : null)]: [
+          [Op.or]: [
             { userId: userId, friendId: friendId },
             { userId: friendId, friendId: userId }
           ]

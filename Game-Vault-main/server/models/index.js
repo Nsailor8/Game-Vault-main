@@ -24,12 +24,22 @@ const setupAssociations = () => {
     through: Friendship,
     as: 'friends',
     foreignKey: 'userId',
-    otherKey: 'friendId'
+    otherKey: 'friendId',
+    sourceKey: 'user_id',
+    targetKey: 'user_id'
   });
   
-  // Friendship belongsTo associations
-  Friendship.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-  Friendship.belongsTo(User, { foreignKey: 'friendId', as: 'friend' });
+  // Friendship belongsTo associations - use sourceKey to map to user_id
+  Friendship.belongsTo(User, { 
+    foreignKey: 'userId', 
+    as: 'user',
+    targetKey: 'user_id'
+  });
+  Friendship.belongsTo(User, { 
+    foreignKey: 'friendId', 
+    as: 'friend',
+    targetKey: 'user_id'
+  });
   
   // Review associations
   Review.belongsTo(User, { foreignKey: 'userId', as: 'user' });

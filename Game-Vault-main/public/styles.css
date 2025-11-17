@@ -6665,6 +6665,111 @@ textarea {
     border-top: 1px solid rgba(212, 175, 55, 0.2);
 }
 
+.post-stats {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.stat-btn {
+    background: transparent;
+    border: 1px solid rgba(212, 175, 55, 0.5);
+    color: rgba(255, 255, 255, 0.8);
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    pointer-events: auto !important;
+    position: relative;
+    z-index: 10;
+    user-select: none;
+}
+
+.stat-btn:hover {
+    background: rgba(212, 175, 55, 0.2);
+    border-color: #d4af37;
+    color: #d4af37;
+    transform: translateY(-2px);
+}
+
+.stat-btn:active {
+    transform: translateY(0);
+}
+
+.stat-btn i {
+    color: rgba(255, 255, 255, 0.8);
+    transition: color 0.3s ease;
+}
+
+.stat-btn:hover i {
+    color: #d4af37;
+}
+
+.stat-item {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.stat-item i {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.post-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 15px;
+}
+
+.post-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.like-btn-header {
+    pointer-events: auto !important;
+    position: relative;
+    z-index: 100 !important;
+}
+
+.post-details-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 0;
+    border-top: 1px solid rgba(212, 175, 55, 0.2);
+    border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+    margin: 20px 0;
+    gap: 20px;
+}
+
+.post-details-actions .like-post-btn {
+    pointer-events: auto !important;
+    position: relative;
+    z-index: 10;
+    min-width: 150px;
+}
+
+.post-details-actions .like-post-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(212, 175, 55, 0.3);
+}
+
+.post-stats-inline {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
 .post-footer .btn-secondary,
 .post-footer .btn-secondary.btn-sm,
 .post-footer a.btn-secondary,

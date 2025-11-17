@@ -1,5 +1,7 @@
 const axios = require('axios');
 const https = require('https');
+const fs = require('fs');
+const path = require('path');
 
 class GameSearchService {
     constructor() {
@@ -209,17 +211,18 @@ class GameSearchService {
                 return aName.length - bName.length;
             });
 
-            // Limit to first 50 matches for performance
-            const maxGamesToFetch = Math.min(50, matchingGames.length);
+            // Limit to first 100 matches for better results (increased from 50)
+            const maxGamesToFetch = Math.min(100, matchingGames.length);
             const gamesToFetch = matchingGames.slice(0, maxGamesToFetch);
 
-            // Get detailed information for games
-            const batchSize = 2;
-            const delayBetweenRequests = 300;
-            const delayBetweenBatches = 1000;
+            // Get detailed information for games - optimized for speed
+            const batchSize = 5; // Increased batch size for parallel processing
+            const delayBetweenRequests = 100; // Reduced from 300ms to 100ms
+            const delayBetweenBatches = 200; // Reduced from 1000ms to 200ms
             gamesWithDetails = [];
-            const maxGamesToTry = Math.min(50, gamesToFetch.length); // Try more games
+            const maxGamesToTry = Math.min(maxGamesToFetch, gamesToFetch.length);
 
+            // Process games in parallel batches for better performance
             for (let i = 0; i < maxGamesToTry; i += batchSize) {
                 // Check circuit breaker
                 if (this.steamApiBlocked) {
@@ -229,33 +232,37 @@ class GameSearchService {
                 
                 const batch = gamesToFetch.slice(i, i + batchSize);
                 
-                // Process batch sequentially with delays
-                for (const game of batch) {
+                // Process batch in parallel (much faster)
+                const batchPromises = batch.map(async (game) => {
                     try {
                         const details = await this.getSteamGameDetails(game.appid);
                         if (details) {
                             const formattedGame = this.formatSteamGameData(game, details);
-                            if (formattedGame && formattedGame.name && formattedGame.backgroundImage) {
+                            // Be less strict - include games even if they don't have background images
+                            // We'll filter later if needed, but show more results
+                            if (formattedGame && formattedGame.name) {
+                                // Include games with or without images for now
                                 gamesWithDetails.push(formattedGame);
                                 // Reset error counter on success
                                 this.consecutive403Errors = 0;
-                            } else if (formattedGame && formattedGame.name && !formattedGame.backgroundImage) {
-                                console.log(`⚠️ Skipping ${game.name} (${game.appid}) - no image available`);
+                                return formattedGame;
                             }
-                        } else {
-                            // Skip games without details (they won't have images)
-                            console.log(`⚠️ Skipping ${game.name} (${game.appid}) - no details available (no image)`);
                         }
-                        // Delay between requests
-                        await new Promise(resolve => setTimeout(resolve, delayBetweenRequests));
+                        return null;
                     } catch (error) {
                         // Log but continue - don't fail entire search for individual game errors
-                        console.log(`⚠️ Skipping app ${game.appid} (${game.name}) due to error: ${error.message}`);
-                        // Skip games without details (they won't have images)
+                        // Only log if it's not a common error (like 404)
+                        if (error.response?.status !== 404) {
+                            console.log(`⚠️ Skipping app ${game.appid} (${game.name}) due to error: ${error.message}`);
+                        }
+                        return null;
                     }
-                }
+                });
                 
-                // Delay between batches
+                // Wait for batch to complete
+                await Promise.all(batchPromises);
+                
+                // Small delay between batches to avoid rate limiting (reduced significantly)
                 if (i + batchSize < maxGamesToTry) {
                     await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
                 }
@@ -263,24 +270,10 @@ class GameSearchService {
 
             console.log(`📊 [Steam Search] Fetched details for ${gamesWithDetails.length} games`);
 
-            // Filter out games without images
-            gamesWithDetails = gamesWithDetails.filter(game => game && game.backgroundImage);
+            // Filter out invalid games but keep games without images (we'll prioritize ones with images)
+            gamesWithDetails = gamesWithDetails.filter(game => game && game.name);
             
-            // If we got no games with details, return empty results (no games with images)
-            if (gamesWithDetails.length === 0 && matchingGames.length > 0) {
-                console.log(`⚠️ [Steam Search] Could not fetch details for any games with images`);
-                // Don't return games without images - return empty instead
-                return {
-                    success: true,
-                    games: [],
-                    totalResults: 0,
-                    currentPage: page,
-                    totalPages: 0,
-                    isMockData: false
-                };
-            }
-            
-            // If we still have no games, return empty results
+            // If we got no games with details, return empty results
             if (gamesWithDetails.length === 0) {
                 console.log(`⚠️ [Steam Search] No games found for query: "${query}"`);
                 console.log(`   Matching games in app list: ${matchingGames.length}`);
@@ -294,26 +287,32 @@ class GameSearchService {
                 };
             }
 
-            // Filter games with ratings, but be lenient - include all games if we don't have enough with ratings
-            const ratedGames = gamesWithDetails.filter(g => {
-                if (!g) return false;
-                const hasMetacritic = g.metacritic !== null && g.metacritic !== undefined && g.metacritic > 0;
-                const hasRating = g.rating !== null && g.rating !== undefined && g.rating > 0;
-                return hasMetacritic || hasRating;
-            });
+            // Use all games (with images prioritized)
+            let gamesToSort = gamesWithDetails;
 
-            // Use rated games if we have enough, otherwise use all games
-            let gamesToSort = ratedGames.length >= pageSize ? ratedGames : gamesWithDetails;
-
-            // Sort by rating score (highest first) - prioritize metacritic, then user rating, then review count
+            // Sort by relevance: images first, then by rating/score
             gamesToSort.sort((a, b) => {
+                // First priority: games with images
+                const aHasImage = !!(a.backgroundImage);
+                const bHasImage = !!(b.backgroundImage);
+                if (aHasImage && !bHasImage) return -1;
+                if (!aHasImage && bHasImage) return 1;
+                
+                // Second priority: rating score (highest first)
                 const scoreA = (a.metacritic || 0) * 10 + (a.rating || 0) * 3 + Math.min(a.ratingsCount || 0, 50000) / 1000;
                 const scoreB = (b.metacritic || 0) * 10 + (b.rating || 0) * 3 + Math.min(b.ratingsCount || 0, 50000) / 1000;
-                return scoreB - scoreA;
+                if (scoreB !== scoreA) return scoreB - scoreA;
+                
+                // Third priority: games with names that match better (shorter names for exact matches)
+                return (a.name || '').length - (b.name || '').length;
             });
 
-            const topGames = gamesToSort.slice(0, pageSize);
-            console.log(`✅ [Steam Search] Returning ${topGames.length} games (page ${page}, ${pageSize} per page)`);
+            // Apply pagination
+            const startIndex = (page - 1) * pageSize;
+            const endIndex = startIndex + pageSize;
+            const topGames = gamesToSort.slice(startIndex, endIndex);
+            
+            console.log(`✅ [Steam Search] Returning ${topGames.length} games (page ${page}, ${pageSize} per page, total: ${gamesToSort.length})`);
 
             return {
                 success: true,
@@ -414,25 +413,202 @@ class GameSearchService {
 
     async _loadSteamAppList() {
         try {
-            console.log('🔄 Steam API GetAppList endpoint appears to be deprecated.');
-            console.log('   Using alternative approach: search will query Steam Store API directly.');
-            console.log('   This means searches will be slower but will work correctly.');
+            console.log('🔄 Loading Steam app list...');
             
-            // Return empty array - we'll search directly via Steam Store API instead
-            // This prevents the 404 error and allows searches to work
-            this.appListCache = [];
-            this.appListCacheTime = Date.now();
+            // First, try to load from local backup file
+            const dataDir = path.join(__dirname, '..', '..', 'data');
+            const appListFile = path.join(dataDir, 'steam-app-list.json');
             
-            console.log('✅ App list cache initialized (empty - will use direct search)');
-            return [];
+            if (fs.existsSync(appListFile)) {
+                try {
+                    console.log('   Checking local backup file...');
+                    const fileData = fs.readFileSync(appListFile, 'utf8');
+                    const jsonData = JSON.parse(fileData);
+                    
+                    if (jsonData && jsonData.apps && Array.isArray(jsonData.apps) && jsonData.apps.length > 0) {
+                        const apps = jsonData.apps;
+                        const downloadedAt = jsonData.downloadedAt ? new Date(jsonData.downloadedAt) : null;
+                        const daysOld = downloadedAt ? Math.floor((Date.now() - downloadedAt.getTime()) / (1000 * 60 * 60 * 24)) : null;
+                        
+                        console.log(`✅ Loaded ${apps.length} games from local backup file`);
+                        if (downloadedAt) {
+                            console.log(`   File downloaded: ${downloadedAt.toLocaleDateString()} (${daysOld !== null ? daysOld + ' days ago' : 'unknown'})`);
+                        }
+                        
+                        // Cache the app list
+                        this.appListCache = apps;
+                        this.appListCacheTime = Date.now();
+                        
+                        // If file is older than 7 days, try to update in background (don't wait)
+                        if (daysOld !== null && daysOld > 7) {
+                            console.log('   ⚠️ Local backup is older than 7 days, attempting to update in background...');
+                            this._updateLocalBackupInBackground();
+                        }
+                        
+                        return apps;
+                    }
+                } catch (fileError) {
+                    console.log(`   Local file read failed: ${fileError.message}, trying API...`);
+                }
+            } else {
+                console.log('   No local backup file found, fetching from API...');
+            }
+            
+            // Try to fetch from Steam API
+            const steamAppListUrl = 'https://api.steampowered.com/ISteamApps/GetAppList/v2/';
+            
+            try {
+                console.log('   Attempting to fetch from Steam API...');
+                const response = await axios.get(steamAppListUrl, {
+                    timeout: 30000, // 30 second timeout for large file
+                    headers: {
+                        'Accept': 'application/json',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                });
+                
+                if (response.data && response.data.applist && response.data.applist.apps) {
+                    const apps = response.data.applist.apps;
+                    console.log(`✅ Successfully loaded ${apps.length} games from Steam API`);
+                    
+                    // Save to local backup file
+                    this._saveLocalBackup(apps, 'Steam API');
+                    
+                    // Cache the app list
+                    this.appListCache = apps;
+                    this.appListCacheTime = Date.now();
+                    
+                    return apps;
+                } else {
+                    console.warn('⚠️ Steam API returned unexpected format, trying alternative source...');
+                    throw new Error('Unexpected response format');
+                }
+            } catch (apiError) {
+                console.log(`   Steam API failed: ${apiError.message}`);
+                console.log('   Trying alternative: SteamDB community list...');
+                
+                // Fallback: Try SteamDB's app list (if available)
+                // Note: This is a large file, so we use a longer timeout
+                try {
+                    const steamDbUrl = 'https://raw.githubusercontent.com/SteamDatabase/SteamTracking/master/AppList.json';
+                    const response = await axios.get(steamDbUrl, {
+                        timeout: 45000, // 45 second timeout
+                        headers: {
+                            'Accept': 'application/json',
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        }
+                    });
+                    
+                    if (response.data && Array.isArray(response.data)) {
+                        const apps = response.data.map(item => ({
+                            appid: item.appid || item.id,
+                            name: item.name || item.Name
+                        })).filter(app => app.appid && app.name);
+                        
+                        console.log(`✅ Successfully loaded ${apps.length} games from SteamDB`);
+                        
+                        // Save to local backup file
+                        this._saveLocalBackup(apps, 'SteamDB');
+                        
+                        // Cache the app list
+                        this.appListCache = apps;
+                        this.appListCacheTime = Date.now();
+                        
+                        return apps;
+                    }
+                } catch (steamDbError) {
+                    console.log(`   SteamDB source also failed: ${steamDbError.message}`);
+                }
+                
+                // If all API sources fail, try to use local backup even if we already tried
+                if (fs.existsSync(appListFile)) {
+                    try {
+                        console.log('   Attempting to use local backup file as last resort...');
+                        const fileData = fs.readFileSync(appListFile, 'utf8');
+                        const jsonData = JSON.parse(fileData);
+                        
+                        if (jsonData && jsonData.apps && Array.isArray(jsonData.apps) && jsonData.apps.length > 0) {
+                            const apps = jsonData.apps;
+                            console.log(`✅ Using local backup: ${apps.length} games`);
+                            
+                            this.appListCache = apps;
+                            this.appListCacheTime = Date.now();
+                            
+                            return apps;
+                        }
+                    } catch (backupError) {
+                        console.log(`   Local backup also failed: ${backupError.message}`);
+                    }
+                }
+                
+                // If everything fails, log warning but continue with empty list
+                console.warn('⚠️ Could not load Steam app list from any source.');
+                console.warn('   Searches will still work but may be slower (using direct Steam Store API).');
+                console.warn('   Run "node scripts/download-steam-app-list.js" to create a local backup.');
+                
+                // Return empty array as fallback - searches will use direct API
+                this.appListCache = [];
+                this.appListCacheTime = Date.now();
+                return [];
+            }
         } catch (error) {
-            console.error('❌ Error initializing Steam app list:', error.message);
+            console.error('❌ Error loading Steam app list:', error.message);
+            console.error('   Searches will still work but may be slower (using direct Steam Store API).');
             
             // Return empty array as fallback
             this.appListCache = [];
             this.appListCacheTime = Date.now();
             return [];
         }
+    }
+
+    _saveLocalBackup(apps, source) {
+        try {
+            const dataDir = path.join(__dirname, '..', '..', 'data');
+            const appListFile = path.join(dataDir, 'steam-app-list.json');
+            
+            // Ensure data directory exists
+            if (!fs.existsSync(dataDir)) {
+                fs.mkdirSync(dataDir, { recursive: true });
+            }
+            
+            const dataToSave = {
+                source: source,
+                downloadedAt: new Date().toISOString(),
+                appCount: apps.length,
+                apps: apps
+            };
+            
+            fs.writeFileSync(appListFile, JSON.stringify(dataToSave, null, 2), 'utf8');
+            console.log(`💾 Saved ${apps.length} games to local backup: ${appListFile}`);
+        } catch (error) {
+            console.warn(`⚠️ Failed to save local backup: ${error.message}`);
+        }
+    }
+
+    _updateLocalBackupInBackground() {
+        // Don't await - run in background
+        setImmediate(async () => {
+            try {
+                const steamAppListUrl = 'https://api.steampowered.com/ISteamApps/GetAppList/v2/';
+                const response = await axios.get(steamAppListUrl, {
+                    timeout: 30000,
+                    headers: {
+                        'Accept': 'application/json',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                });
+                
+                if (response.data && response.data.applist && response.data.applist.apps) {
+                    const apps = response.data.applist.apps;
+                    this._saveLocalBackup(apps, 'Steam API (background update)');
+                    console.log(`✅ Background update: Saved ${apps.length} games to local backup`);
+                }
+            } catch (error) {
+                // Silently fail - this is just a background update
+                console.log(`   Background update failed: ${error.message}`);
+            }
+        });
     }
 
     async searchSteamStoreDirect(query, page = 1, pageSize = 20) {

@@ -12,7 +12,7 @@ const Friendship = sequelize.define('Friendship', {
     allowNull: false,
     references: {
       model: 'users',
-      key: 'id'
+      key: 'user_id'
     }
   },
   friendId: {
@@ -20,7 +20,7 @@ const Friendship = sequelize.define('Friendship', {
     allowNull: false,
     references: {
       model: 'users',
-      key: 'id'
+      key: 'user_id'
     }
   },
   status: {

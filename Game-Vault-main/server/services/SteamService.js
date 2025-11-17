@@ -678,49 +678,25 @@ class SteamService {
             console.log('[Steam Link] Steam profile after reload:', savedUser.steam_profile ? 'yes' : 'no');
             console.log('[Steam Link] ==========================================');
 
-            // Auto-sync games immediately after linking
-            console.log('[Steam Link] Starting automatic game sync...');
+            // Start game sync in background (don't wait for it to complete)
+            // This allows the redirect to happen immediately while games sync in the background
+            console.log('[Steam Link] Starting automatic game sync in background...');
             console.log('[Steam Link] User Steam ID for sync:', savedUser.steam_id);
             
-            const syncResult = await this.syncUserGames(savedUser);
-            console.log('[Steam Link] Steam games sync result:', syncResult.success ? `success - ${syncResult.gamesCount || 0} games synced` : 'failed - ' + syncResult.error);
-            
-            if (syncResult.success) {
-                console.log('[Steam Link] Sync successful, reloading user to get synced games...');
-                // Reload user again after sync to get the synced games
-                await savedUser.reload();
-                
-                const gamesAfterSync = savedUser.steam_games || savedUser.getDataValue?.('steam_games') || savedUser.dataValues?.steam_games;
-                console.log('[Steam Link] Games after sync reload:', gamesAfterSync ? (Array.isArray(gamesAfterSync) ? `${gamesAfterSync.length} games` : typeof gamesAfterSync) : 'null');
-                
-                // Verify games were saved by querying database directly
-                const { User } = require('../models/index');
-                const verifyUser = await User.findOne({ 
-                    where: { username: user.username },
-                    attributes: ['username', 'steam_games', 'steam_last_sync', 'statistics']
+            // Run sync in background - don't await it
+            this.syncUserGames(savedUser)
+                .then(syncResult => {
+                    console.log('[Steam Link] Background sync completed:', syncResult.success ? `success - ${syncResult.gamesCount || 0} games synced` : 'failed - ' + syncResult.error);
+                })
+                .catch(syncError => {
+                    console.error('[Steam Link] Background sync error:', syncError);
                 });
-                if (verifyUser) {
-                    const verifiedGames = verifyUser.steam_games || verifyUser.getDataValue?.('steam_games') || verifyUser.dataValues?.steam_games;
-                    const verifiedStats = verifyUser.statistics || verifyUser.getDataValue?.('statistics') || verifyUser.dataValues?.statistics;
-                    console.log('[Steam Link] Final verification - games in database:', verifiedGames ? (Array.isArray(verifiedGames) ? `${verifiedGames.length} games` : typeof verifiedGames) : 'null');
-                    console.log('[Steam Link] Final verification - statistics:', verifiedStats ? JSON.stringify(verifiedStats) : 'none');
-                    console.log('[Steam Link] Final verification - totalGamesPlayed:', verifiedStats?.totalGamesPlayed || 0);
-                } else {
-                    console.error('[Steam Link] Verification query failed - user not found!');
-                }
-            } else {
-                console.error('[Steam Link] Game sync failed:', syncResult.error);
-                console.error('[Steam Link] Sync error details:', syncResult);
-            }
             
-            // Always return success for linking, even if sync fails
-            // The account is linked, games just couldn't be synced
+            // Return immediately - sync is happening in background
             return {
                 success: true,
-                message: 'Steam account linked successfully',
-                syncResult: syncResult,
-                gamesSynced: syncResult.success,
-                gamesCount: syncResult.gamesCount || 0,
+                message: 'Steam account linked successfully. Games are syncing in the background.',
+                syncInProgress: true,
                 steamId: savedUser.steam_id
             };
         } catch (error) {

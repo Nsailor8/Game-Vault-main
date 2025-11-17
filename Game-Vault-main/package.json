@@ -8,7 +8,9 @@
     "dev": "nodemon server.js",
     "test": "node --test",
     "test:vpn": "node test-vpn-connection.js",
-    "check:ip": "node check-ip.js"
+    "check:ip": "node check-ip.js",
+    "download-steam-app-list": "node scripts/download-steam-app-list.js",
+    "convert-steam-app-list": "node scripts/convert-steam-app-list.js"
   },
   "keywords": [
     "gaming",

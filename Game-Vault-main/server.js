@@ -197,8 +197,11 @@ app.use(async (req, res, next) => {
                     const dbUser = await User.findOne({ where: { username: username } });
                     if (dbUser) {
                         console.log('[Session Middleware] Restoring session user from database:', username);
+                        // Extract user_id properly - user_id is the primary key
+                        const userId = dbUser.user_id || dbUser.getDataValue?.('user_id') || dbUser.dataValues?.user_id;
                         req.session.user = {
-                            id: dbUser.id,
+                            id: userId,
+                            user_id: userId,
                             username: dbUser.username,
                             email: dbUser.email,
                             joinDate: dbUser.join_date,
@@ -1688,18 +1691,19 @@ app.get('/api/auth/steam/return', (req, res, next) => {
                         steam_last_sync: userData.steam_last_sync || userData.getDataValue?.('steam_last_sync') || userData.dataValues?.steam_last_sync
                     };
                     
-                    // Auto-sync games if this is a sign-in and games haven't been synced recently
+                    // Auto-sync games in background if this is a sign-in and games haven't been synced recently
                     if (isSteamSignIn && (!userData.steam_last_sync || (new Date() - new Date(userData.steam_last_sync)) > 24 * 60 * 60 * 1000)) {
-                        console.log('[Steam Return] Auto-syncing games for signed-in user...');
+                        console.log('[Steam Return] Starting background game sync for signed-in user...');
                         const dbUser = await User.findOne({ where: { username: existingUser.username } });
                         if (dbUser) {
-                            try {
-                                await steamService.syncUserGames(dbUser);
-                                console.log('[Steam Return] Games auto-synced successfully');
-                            } catch (syncError) {
-                                console.error('[Steam Return] Error auto-syncing games:', syncError);
-                                // Don't fail sign-in if sync fails
-                            }
+                            // Run sync in background - don't await it
+                            steamService.syncUserGames(dbUser)
+                                .then(() => {
+                                    console.log('[Steam Return] Background games sync completed successfully');
+                                })
+                                .catch(syncError => {
+                                    console.error('[Steam Return] Error in background game sync:', syncError);
+                                });
                         }
                     }
                     
@@ -1748,14 +1752,14 @@ app.get('/api/auth/steam/return', (req, res, next) => {
                 const newUser = await databaseManager.saveUser(newUserData);
                 console.log('[Steam Return] New user created:', username);
                 
-                // Link Steam account and auto-sync games
+                // Link Steam account (sync happens in background)
                 const dbUser = await User.findOne({ where: { username } });
                 if (dbUser) {
                     try {
                         const linkResult = await steamService.linkSteamAccount(dbUser, req.user.steamId, steamProfile);
-                        console.log('[Steam Return] Steam account linked and games synced:', linkResult.success);
+                        console.log('[Steam Return] Steam account linked:', linkResult.success);
                         
-                        // Reload user to get synced data
+                        // Reload user to get linked data (games will sync in background)
                         const updatedUser = await profileManager.getUserByUsername(username);
                         if (updatedUser) {
                                     req.session.user = {
@@ -1771,11 +1775,11 @@ app.get('/api/auth/steam/return', (req, res, next) => {
                                 steam_games: updatedUser.steam_games || updatedUser.getDataValue?.('steam_games') || updatedUser.dataValues?.steam_games,
                                 steam_last_sync: updatedUser.steam_last_sync || updatedUser.getDataValue?.('steam_last_sync') || updatedUser.dataValues?.steam_last_sync
                             };
-                            console.log('[Steam Return] New user session created with Steam data');
+                            console.log('[Steam Return] New user session created with Steam data (games syncing in background)');
                         }
                     } catch (linkError) {
                         console.error('[Steam Return] Error linking Steam to new account:', linkError);
-                        // Still create session even if sync fails
+                        // Still create session even if link fails
                                     req.session.user = {
                             username: newUser.username || newUser.getDataValue?.('username') || newUser.dataValues?.username,
                             email: newUser.email || newUser.getDataValue?.('email') || newUser.dataValues?.email,
@@ -1799,11 +1803,11 @@ app.get('/api/auth/steam/return', (req, res, next) => {
                     if (!matchingSteamId) {
                         console.log('[Steam Return] Found matching user without Steam linked:', matchingUser.username);
                             
-                            // Link Steam account to the matching user
+                            // Link Steam account to the matching user (sync happens in background)
                         const dbUser = await User.findOne({ where: { username: matchingUser.username } });
                         if (dbUser) {
                             const linkResult = await steamService.linkSteamAccount(dbUser, req.user.steamId, steamProfile);
-                            console.log('[Steam Return] Steam account linked to matching user:', linkResult.success ? 'success' : 'failed');
+                            console.log('[Steam Return] Steam account linked to matching user:', linkResult.success ? 'success (games syncing in background)' : 'failed');
                             
                             // Reload user data from database to get all fields including Steam data
                             const updatedUser = await profileManager.getUserByUsername(matchingUser.username);
@@ -1823,7 +1827,7 @@ app.get('/api/auth/steam/return', (req, res, next) => {
                                     steam_last_sync: updatedUser.steam_last_sync || updatedUser.getDataValue?.('steam_last_sync') || updatedUser.dataValues?.steam_last_sync
                                 };
                                 
-                                console.log('[Steam Return] Session created with complete user data including Steam info');
+                                console.log('[Steam Return] Session created with complete user data including Steam info (games syncing in background)');
                             }
                         }
                         } else {
@@ -1862,15 +1866,21 @@ app.get('/api/auth/steam/return', (req, res, next) => {
         let returnUrl = req.session.returnUrl;
         delete req.session.returnUrl;
         
+        // If no return URL, redirect to profile page with username as query param or just profile
         if (!returnUrl && req.session.user && req.session.user.username) {
-            returnUrl = `/profile/${req.session.user.username}`;
+            // Use query parameter format which is more reliable for client-side routing
+            returnUrl = `/profile?username=${encodeURIComponent(req.session.user.username)}`;
         } else if (!returnUrl) {
             returnUrl = '/profile';
         }
         
-        // Determine separator for return URL
+        // Ensure returnUrl doesn't have duplicate query params
+        // If returnUrl already has query params, append with &, otherwise use ?
         const separator = returnUrl.includes('?') ? '&' : '?';
-        res.redirect(`${returnUrl}${separator}steam_auth=success`);
+        const redirectUrl = `${returnUrl}${separator}steam_auth=success`;
+        
+        console.log('[Steam Return] Redirecting to:', redirectUrl);
+        res.redirect(redirectUrl);
     } catch (error) {
         console.error('[Steam Return] ==========================================');
         console.error('[Steam Return] ERROR processing Steam return:', error);
@@ -1893,7 +1903,8 @@ app.post('/api/auth/steam/signin', async (req, res) => {
         if (req.body.returnUrl) {
             req.session.returnUrl = req.body.returnUrl;
         } else {
-            req.session.returnUrl = '/';
+            // Default to profile if user exists, otherwise home
+            req.session.returnUrl = '/profile';
         }
         
         // Save session before redirect
@@ -1961,7 +1972,8 @@ app.post('/api/auth/steam/link/:username?', async (req, res) => {
             req.session.returnUrl = req.body.returnUrl;
             console.log('[Steam Link] Stored return URL:', req.body.returnUrl);
         } else {
-            req.session.returnUrl = `/profile/${username}`;
+            // Use query parameter format for better compatibility with client-side routing
+            req.session.returnUrl = `/profile?username=${encodeURIComponent(username)}`;
             console.log('[Steam Link] Using default return URL:', req.session.returnUrl);
         }
         
@@ -2105,6 +2117,48 @@ app.get('/api/auth/steam/status/:username?', async (req, res) => {
     } catch (error) {
         console.error('Error checking Steam status:', error);
         res.json({ linked: false });
+    }
+});
+
+// Separate endpoint for syncing Steam games (can be called independently)
+app.post('/api/auth/steam/sync/:username?', async (req, res) => {
+    try {
+        const username = req.params.username || (req.session.user ? req.session.user.username : null);
+        
+        if (!username) {
+            return res.status(400).json({ success: false, error: 'Username required' });
+        }
+
+        // Check if user has Steam linked
+        const user = await User.findOne({ where: { username } });
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        const steamId = user.steam_id || user.getDataValue?.('steam_id') || user.dataValues?.steam_id || null;
+        if (!steamId) {
+            return res.status(400).json({ success: false, error: 'No Steam account linked' });
+        }
+
+        // Start sync in background and return immediately
+        console.log(`[Steam Sync API] Starting background sync for user: ${username}`);
+        steamService.syncUserGames(user)
+            .then(syncResult => {
+                console.log(`[Steam Sync API] Background sync completed for ${username}:`, syncResult.success ? `success - ${syncResult.gamesCount || 0} games` : 'failed');
+            })
+            .catch(syncError => {
+                console.error(`[Steam Sync API] Background sync error for ${username}:`, syncError);
+            });
+
+        // Return immediately - sync is running in background
+        res.json({
+            success: true,
+            message: 'Steam games sync started in background',
+            syncInProgress: true
+        });
+    } catch (error) {
+        console.error('Error starting Steam sync:', error);
+        res.status(500).json({ success: false, error: 'Failed to start sync: ' + error.message });
     }
 });
 
@@ -2816,18 +2870,8 @@ app.get('/api/friends/:username', async (req, res) => {
             }
         }
         
-        // Get user from database - try multiple methods
-        let user = await profileManager.getUserByUsername(username);
-        
-        // If profileManager doesn't work, try direct User model query
-        if (!user) {
-            console.log('[Friends API] profileManager.getUserByUsername failed, trying direct User query');
-            try {
-                user = await User.findOne({ where: { username: username } });
-            } catch (userError) {
-                console.error('[Friends API] Direct User query failed:', userError);
-            }
-        }
+        // Get user from database - use direct User model query for reliable user_id extraction
+        const user = await User.findOne({ where: { username } });
         
         if (!user) {
             console.error('[Friends API] User not found:', username);
@@ -2840,39 +2884,22 @@ app.get('/api/friends/:username', async (req, res) => {
             });
         }
 
-        // Extract user_id with extensive fallbacks
-        let userId = null;
+        // Extract user_id - user_id is the primary key
+        let userId = user.user_id || user.getDataValue?.('user_id') || user.dataValues?.user_id;
         
-        // Method 1: Direct property access
-        userId = user.user_id || user.id;
-        
-        // Method 2: getDataValue
-        if (!userId && user.getDataValue) {
-            userId = user.getDataValue('user_id') || user.getDataValue('id');
-        }
-        
-        // Method 3: dataValues
-        if (!userId && user.dataValues) {
-            userId = user.dataValues.user_id || user.dataValues.id;
-        }
-        
-        // Method 4: toJSON
+        // If still null, try toJSON()
         if (!userId) {
-            try {
-                const userJson = user.toJSON ? user.toJSON() : user;
-                userId = userJson.user_id || userJson.id;
-            } catch (jsonError) {
-                console.warn('[Friends API] toJSON failed:', jsonError);
-            }
+            const userPlain = user.toJSON ? user.toJSON() : user;
+            userId = userPlain.user_id;
         }
         
-        // Method 5: Raw SQL as last resort
+        // Last resort: Raw SQL query
         if (!userId) {
             console.log('[Friends API] Trying raw SQL query to get user_id');
             try {
                 const [results] = await sequelize.query(
                     `SELECT user_id FROM users WHERE username = :username LIMIT 1`,
-                    { replacements: { username: username }, type: QueryTypes.SELECT }
+                    { replacements: { username }, type: QueryTypes.SELECT }
                 );
                 if (results && results.length > 0 && results[0] && results[0].user_id) {
                     userId = results[0].user_id;
@@ -2884,8 +2911,6 @@ app.get('/api/friends/:username', async (req, res) => {
         
         if (!userId) {
             console.error('[Friends API] Could not extract user_id from user:', username);
-            console.error('[Friends API] User object keys:', Object.keys(user));
-            console.error('[Friends API] User object:', JSON.stringify(user, null, 2));
             return res.status(500).json({ 
                 success: false,
                 error: 'Failed to extract user ID',
@@ -2956,22 +2981,41 @@ app.post('/api/friends/:username/request', async (req, res) => {
             return res.status(400).json({ error: 'Cannot send friend request to yourself' });
         }
 
-        // Get both users
-        const user = await profileManager.getUserByUsername(username);
-        const friend = await profileManager.getUserByUsername(friendUsername);
+        // Get both users - use direct User model query for reliable user_id extraction
+        const user = await User.findOne({ where: { username } });
+        const friend = await User.findOne({ where: { username: friendUsername } });
 
         if (!user || !friend) {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Extract user IDs properly
-        const userId = user.user_id || user.getDataValue?.('user_id') || user.dataValues?.user_id || user.id || null;
-        const friendId = friend.user_id || friend.getDataValue?.('user_id') || friend.dataValues?.user_id || friend.id || null;
+        // Extract user IDs properly - user_id is the primary key
+        let userId = user.user_id || user.getDataValue?.('user_id') || user.dataValues?.user_id;
+        let friendId = friend.user_id || friend.getDataValue?.('user_id') || friend.dataValues?.user_id;
+        
+        // If still null, try to get from toJSON() or raw query
+        if (!userId) {
+            const userPlain = user.toJSON ? user.toJSON() : user;
+            userId = userPlain.user_id;
+        }
+        if (!friendId) {
+            const friendPlain = friend.toJSON ? friend.toJSON() : friend;
+            friendId = friendPlain.user_id;
+        }
         
         if (!userId || !friendId) {
-            console.error('[Friend Request] Could not extract user IDs:', { userId, friendId });
+            console.error('[Friend Request] Could not extract user IDs:', { 
+                userId, 
+                friendId,
+                userType: user.constructor?.name,
+                friendType: friend.constructor?.name,
+                userKeys: Object.keys(user.toJSON ? user.toJSON() : user),
+                friendKeys: Object.keys(friend.toJSON ? friend.toJSON() : friend)
+            });
             return res.status(500).json({ error: 'Failed to extract user IDs' });
         }
+        
+        console.log('[Friend Request] Extracted user IDs:', { userId, friendId, username, friendUsername });
 
         // Check if friendship already exists
         const existingFriendship = await profileManager.getFriendship(userId, friendId);
@@ -2982,10 +3026,19 @@ app.post('/api/friends/:username/request', async (req, res) => {
         // Create friend request
         const friendship = await profileManager.createFriendRequest(userId, friendId);
         
+        // Extract friendship data properly for response
+        const friendshipData = {
+            id: friendship.id || friendship.getDataValue?.('id') || friendship.dataValues?.id,
+            userId: userId,
+            friendId: friendId,
+            status: friendship.status || friendship.getDataValue?.('status') || friendship.dataValues?.status,
+            sentDate: friendship.sentDate || friendship.getDataValue?.('sentDate') || friendship.dataValues?.sentDate
+        };
+        
         res.json({
             success: true,
             message: 'Friend request sent successfully',
-            friendship: friendship
+            friendship: friendshipData
         });
     } catch (error) {
         console.error('Error sending friend request:', error);
@@ -2997,13 +3050,18 @@ app.post('/api/friends/:username/accept/:requestId', async (req, res) => {
     try {
         const { username, requestId } = req.params;
         
-        const user = await profileManager.getUserByUsername(username);
+        // Use direct User model query for reliable user_id extraction
+        const user = await User.findOne({ where: { username } });
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Extract user_id properly
-        const userId = user.user_id || user.getDataValue?.('user_id') || user.dataValues?.user_id || user.id || null;
+        // Extract user_id properly - user_id is the primary key
+        let userId = user.user_id || user.getDataValue?.('user_id') || user.dataValues?.user_id;
+        if (!userId) {
+            const userPlain = user.toJSON ? user.toJSON() : user;
+            userId = userPlain.user_id;
+        }
         if (!userId) {
             console.error('[Accept Friend Request] Could not extract user_id from user:', username);
             return res.status(500).json({ error: 'Failed to extract user ID' });
@@ -3012,10 +3070,23 @@ app.post('/api/friends/:username/accept/:requestId', async (req, res) => {
         const friendship = await profileManager.acceptFriendRequest(parseInt(requestId), userId);
         
         if (friendship) {
+            // Extract friendship data properly for response
+            const friendshipId = friendship.id || friendship.getDataValue?.('id') || friendship.dataValues?.id;
+            const friendshipUserId = friendship.userId || friendship.getDataValue?.('userId') || friendship.dataValues?.userId;
+            const friendshipFriendId = friendship.friendId || friendship.getDataValue?.('friendId') || friendship.dataValues?.friendId;
+            
+            const friendshipData = {
+                id: friendshipId,
+                userId: friendshipUserId,
+                friendId: friendshipFriendId,
+                status: friendship.status || friendship.getDataValue?.('status') || friendship.dataValues?.status,
+                acceptedDate: friendship.acceptedDate || friendship.getDataValue?.('acceptedDate') || friendship.dataValues?.acceptedDate
+            };
+            
             res.json({
                 success: true,
                 message: 'Friend request accepted',
-                friendship: friendship
+                friendship: friendshipData
             });
         } else {
             res.status(400).json({ error: 'Friend request not found or already processed' });
@@ -3030,13 +3101,18 @@ app.post('/api/friends/:username/decline/:requestId', async (req, res) => {
     try {
         const { username, requestId } = req.params;
         
-        const user = await profileManager.getUserByUsername(username);
+        // Use direct User model query for reliable user_id extraction
+        const user = await User.findOne({ where: { username } });
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Extract user_id properly
-        const userId = user.user_id || user.getDataValue?.('user_id') || user.dataValues?.user_id || user.id || null;
+        // Extract user_id properly - user_id is the primary key
+        let userId = user.user_id || user.getDataValue?.('user_id') || user.dataValues?.user_id;
+        if (!userId) {
+            const userPlain = user.toJSON ? user.toJSON() : user;
+            userId = userPlain.user_id;
+        }
         if (!userId) {
             console.error('[Decline Friend Request] Could not extract user_id from user:', username);
             return res.status(500).json({ error: 'Failed to extract user ID' });
@@ -3113,13 +3189,18 @@ app.delete('/api/friends/:username/remove/:friendId', async (req, res) => {
     try {
         const { username, friendId } = req.params;
         
-        const user = await profileManager.getUserByUsername(username);
+        // Use direct User model query for reliable user_id extraction
+        const user = await User.findOne({ where: { username } });
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // Extract user_id properly
-        const userId = user.user_id || user.getDataValue?.('user_id') || user.dataValues?.user_id || user.id || null;
+        // Extract user_id properly - user_id is the primary key
+        let userId = user.user_id || user.getDataValue?.('user_id') || user.dataValues?.user_id;
+        if (!userId) {
+            const userPlain = user.toJSON ? user.toJSON() : user;
+            userId = userPlain.user_id;
+        }
         if (!userId) {
             console.error('[Remove Friend] Could not extract user_id from user:', username);
             return res.status(500).json({ error: 'Failed to extract user ID' });
@@ -6408,13 +6489,62 @@ app.post('/api/community/posts/:postId/like', async (req, res) => {
         }
 
         const postId = parseInt(req.params.postId, 10);
-        await Post.increment('likes', { where: { id: postId } });
+        if (isNaN(postId)) {
+            return res.status(400).json({ success: false, error: 'Invalid post ID' });
+        }
         
+        // Find the post first
         const post = await Post.findByPk(postId);
-        res.json({ success: true, likes: post.likes });
+        if (!post) {
+            return res.status(404).json({ success: false, error: 'Post not found' });
+        }
+        
+        // Get current likes count
+        const currentLikes = post.likes || post.getDataValue?.('likes') || post.dataValues?.likes || 0;
+        console.log(`[Like Post] Post ${postId} current likes: ${currentLikes}`);
+        
+        // Increment likes - use raw SQL if Sequelize increment fails
+        try {
+            await Post.increment('likes', { where: { id: postId } });
+        } catch (incrementError) {
+            console.error('[Like Post] Increment failed, trying raw SQL:', incrementError);
+            // Fallback to raw SQL
+            await sequelize.query(
+                `UPDATE posts SET likes = COALESCE(likes, 0) + 1, "updatedAt" = NOW() WHERE id = :postId`,
+                { 
+                    replacements: { postId },
+                    type: QueryTypes.UPDATE 
+                }
+            );
+        }
+        
+        // Reload the post to get updated likes count
+        await post.reload();
+        
+        // Extract likes count properly - try multiple methods
+        let likesCount = post.likes;
+        if (likesCount === undefined || likesCount === null) {
+            likesCount = post.getDataValue?.('likes');
+        }
+        if (likesCount === undefined || likesCount === null) {
+            likesCount = post.dataValues?.likes;
+        }
+        if (likesCount === undefined || likesCount === null) {
+            // Last resort: query directly
+            const [result] = await sequelize.query(
+                `SELECT likes FROM posts WHERE id = :postId`,
+                { replacements: { postId }, type: QueryTypes.SELECT }
+            );
+            likesCount = result?.likes || currentLikes + 1;
+        }
+        
+        console.log(`[Like Post] Post ${postId} new likes: ${likesCount}`);
+        
+        res.json({ success: true, likes: likesCount });
     } catch (error) {
         console.error('Error liking post:', error);
-        res.status(500).json({ success: false, error: 'Failed to like post' });
+        console.error('Error stack:', error.stack);
+        res.status(500).json({ success: false, error: 'Failed to like post', details: error.message });
     }
 });
 
@@ -6426,10 +6556,23 @@ app.post('/api/community/comments/:commentId/like', async (req, res) => {
         }
 
         const commentId = parseInt(req.params.commentId, 10);
+        
+        // Find the comment first
+        const comment = await Comment.findByPk(commentId);
+        if (!comment) {
+            return res.status(404).json({ success: false, error: 'Comment not found' });
+        }
+        
+        // Increment likes
         await Comment.increment('likes', { where: { id: commentId } });
         
-        const comment = await Comment.findByPk(commentId);
-        res.json({ success: true, likes: comment.likes });
+        // Reload the comment to get updated likes count
+        await comment.reload();
+        
+        // Extract likes count properly
+        const likesCount = comment.likes || comment.getDataValue?.('likes') || comment.dataValues?.likes || 0;
+        
+        res.json({ success: true, likes: likesCount });
     } catch (error) {
         console.error('Error liking comment:', error);
         res.status(500).json({ success: false, error: 'Failed to like comment' });
