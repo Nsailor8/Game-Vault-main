@@ -366,11 +366,42 @@
             }
         }
 
-        function addToWishlist(gameId, gameName) {
+        async function addToWishlist(gameId, gameName) {
+            // Check if app is initialized
             if (window.app && window.app.handleAddToLibrary) {
-                window.app.handleAddToLibrary(gameId, gameName);
+                await window.app.handleAddToLibrary(gameId, gameName);
             } else {
-                console.error('App not initialized or handleAddToLibrary not available');
+                // App not initialized yet, check session directly
+                console.log('[Add to Wishlist] App not initialized, checking session directly...');
+                try {
+                    const authCheck = await fetch('/api/auth/check', {
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    const authData = await authCheck.json();
+                    if (authData.success && authData.user && authData.user.username) {
+                        // Session exists, try to initialize app or wait for it
+                        if (window.app) {
+                            window.app.currentUser = authData.user;
+                            await window.app.handleAddToLibrary(gameId, gameName);
+                        } else {
+                            // Wait a bit for app to initialize
+                            setTimeout(async () => {
+                                if (window.app) {
+                                    window.app.currentUser = authData.user;
+                                    await window.app.handleAddToLibrary(gameId, gameName);
+                                } else {
+                                    alert('Please wait for the page to finish loading, then try again.');
+                                }
+                            }, 500);
+                        }
+                    } else {
+                        alert('Please log in to add games to your library');
+                    }
+                } catch (error) {
+                    console.error('[Add to Wishlist] Error checking auth:', error);
+                    alert('Please log in to add games to your library');
+                }
             }
         }
 

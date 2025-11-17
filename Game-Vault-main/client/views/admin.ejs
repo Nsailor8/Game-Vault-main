@@ -51,13 +51,123 @@
             <i class="fas fa-sign-out-alt"></i> Logout
           </button>
         </div>
-        <div id="adminContent" class="list-container">
+        
+        <!-- Admin Tabs -->
+        <div class="admin-tabs">
+          <button class="admin-tab active" data-tab="dashboard">Dashboard</button>
+          <button class="admin-tab" data-tab="reviews">Pending Reviews</button>
+          <button class="admin-tab" data-tab="users">Users</button>
+          <button class="admin-tab" data-tab="admins">Admins</button>
+          <button class="admin-tab" data-tab="logs">System Logs</button>
+        </div>
+
+        <div id="adminContent" class="admin-content">
           
-          <div class="empty-state">
-            <i class="fas fa-cogs"></i>
-            <h3>No admin data available</h3>
-            <p>Login to access administrative tools!</p>
+          <!-- Dashboard Tab -->
+          <div id="dashboardTab" class="admin-tab-content active">
+            <div class="admin-section-header">
+              <h3>Statistics</h3>
+              <button id="refreshStatsBtn" class="btn btn-secondary btn-sm">
+                <i class="fas fa-sync-alt"></i> Refresh
+              </button>
+            </div>
+            <div id="adminStats" class="stats-grid">
+              <!-- Stats will be loaded here -->
+            </div>
           </div>
+
+          <!-- Pending Reviews Tab -->
+          <div id="reviewsTab" class="admin-tab-content">
+            <div class="admin-section-header">
+              <h3>Pending Reviews</h3>
+              <button id="refreshReviewsBtn" class="btn btn-secondary btn-sm">
+                <i class="fas fa-sync-alt"></i> Refresh
+              </button>
+            </div>
+            <div id="pendingReviewsContainer" class="list-container">
+              <div class="empty-state">
+                <i class="fas fa-clipboard-list"></i>
+                <h3>Loading pending reviews...</h3>
+              </div>
+            </div>
+          </div>
+
+          <!-- Users Tab -->
+          <div id="usersTab" class="admin-tab-content">
+            <div class="admin-section-header">
+              <h3>User Management</h3>
+              <button id="refreshUsersBtn" class="btn btn-secondary btn-sm">
+                <i class="fas fa-sync-alt"></i> Refresh
+              </button>
+            </div>
+            <div class="table-container">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Join Date</th>
+                    <th>Status</th>
+                    <th>Role</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="usersTableBody">
+                  <tr>
+                    <td colspan="7" class="loading">Loading users...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Admins Tab -->
+          <div id="adminsTab" class="admin-tab-content">
+            <div class="admin-section-header">
+              <h3>Admin Management</h3>
+              <div>
+                <button id="createAdminBtn" class="btn btn-primary btn-sm">
+                  <i class="fas fa-user-plus"></i> Create Admin
+                </button>
+                <button id="refreshAdminsBtn" class="btn btn-secondary btn-sm">
+                  <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+              </div>
+            </div>
+            <div class="table-container">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Join Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="adminsTableBody">
+                  <tr>
+                    <td colspan="5" class="loading">Loading admins...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- System Logs Tab -->
+          <div id="logsTab" class="admin-tab-content">
+            <div class="admin-section-header">
+              <h3>System Logs</h3>
+              <button id="refreshLogsBtn" class="btn btn-secondary btn-sm">
+                <i class="fas fa-sync-alt"></i> Refresh
+              </button>
+            </div>
+            <div id="systemLogs" class="list-container">
+              <div class="loading">Loading system logs...</div>
+            </div>
+          </div>
+
         </div>
       </section>
     </main>
@@ -89,20 +199,138 @@
     </div>
   </div>
 
+  <!-- Approve Review Modal -->
+  <div id="approveReviewModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <h2>Approve Review</h2>
+        <span class="close" onclick="window.app.closeApproveModal()">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to approve this review? It will be made public.</p>
+        <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+          <button class="btn btn-secondary" onclick="window.app.closeApproveModal()">Cancel</button>
+          <button class="btn btn-primary" id="confirmApproveBtn">Approve</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reject Review Modal -->
+  <div id="rejectReviewModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <h2>Reject Review</h2>
+        <span class="close" onclick="window.app.closeRejectModal()">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to reject this review? It will not be made public.</p>
+        <div class="form-group" style="margin-top: 20px;">
+          <label for="rejectionReasonInput" style="color: #d4af37; font-weight: bold; display: block; margin-bottom: 8px;">Rejection Reason <span style="color: #ff4444;">*</span></label>
+          <textarea id="rejectionReasonInput" class="form-input" rows="4" placeholder="Please provide a reason for rejecting this review..." required style="width: 100%; min-height: 100px; resize: vertical;"></textarea>
+          <small style="color: #b0b0b0; display: block; margin-top: 5px;">This reason will be shown to the user.</small>
+        </div>
+        <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+          <button class="btn btn-secondary" onclick="window.app.closeRejectModal()">Cancel</button>
+          <button class="btn btn-danger" id="confirmRejectBtn">Reject</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <%- include('partials/footer') %>
 
   <script src="/app.js"></script>
   <script>
+    // Password visibility toggle function
+    function togglePasswordVisibility() {
+      const passwordInput = document.getElementById('adminPasswordPage');
+      const toggleIcon = document.getElementById('passwordToggleIcon');
+      
+      if (passwordInput && toggleIcon) {
+        if (passwordInput.type === 'password') {
+          passwordInput.type = 'text';
+          toggleIcon.classList.remove('fa-eye');
+          toggleIcon.classList.add('fa-eye-slash');
+        } else {
+          passwordInput.type = 'password';
+          toggleIcon.classList.remove('fa-eye-slash');
+          toggleIcon.classList.add('fa-eye');
+        }
+      }
+    }
+    
     // Admin login functionality
     document.addEventListener('DOMContentLoaded', () => {
       const adminLoginScreen = document.getElementById('adminLoginScreen');
       const adminPanelContent = document.getElementById('adminPanelContent');
       const adminLoginFormPage = document.getElementById('adminLoginFormPage');
       const adminLoginErrorPage = document.getElementById('adminLoginErrorPage');
+      
+      // Set up password toggle button
+      const togglePasswordBtn = document.getElementById('togglePasswordVisibility');
+      if (togglePasswordBtn) {
+        togglePasswordBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          togglePasswordVisibility();
+        });
+      }
 
-
-      authModal.style.display = 'block';
-      mainContent.style.display = 'none';
+      // Handle admin login form submission
+      if (adminLoginFormPage) {
+        adminLoginFormPage.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          
+          const username = document.getElementById('adminUsernamePage').value;
+          const password = document.getElementById('adminPasswordPage').value;
+          
+          if (!username || !password) {
+            if (adminLoginErrorPage) {
+              adminLoginErrorPage.textContent = 'Please fill in all fields';
+              adminLoginErrorPage.style.display = 'block';
+            }
+            return;
+          }
+          
+          try {
+            const response = await fetch('/api/admin/login', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              credentials: 'include',
+              body: JSON.stringify({ username, password })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+              // Hide login screen and show admin panel
+              if (adminLoginScreen) {
+                adminLoginScreen.style.display = 'none';
+              }
+              if (adminPanelContent) {
+                adminPanelContent.style.display = 'block';
+              }
+              
+              // Initialize admin panel
+              initializeAdminPanel();
+            } else {
+              if (adminLoginErrorPage) {
+                adminLoginErrorPage.textContent = data.error || 'Invalid admin credentials';
+                adminLoginErrorPage.style.display = 'block';
+              }
+            }
+          } catch (error) {
+            console.error('Error logging in as admin:', error);
+            if (adminLoginErrorPage) {
+              adminLoginErrorPage.textContent = 'Error logging in. Please try again.';
+              adminLoginErrorPage.style.display = 'block';
+            }
+          }
+        });
+      }
 
       function initializeAdminPanel() {
         // Wait for app to be initialized
@@ -121,6 +349,44 @@
         };
         
         initAdminPanel();
+      }
+
+      // Set up admin logout button
+      const adminLogoutBtn = document.getElementById('adminLogoutBtn');
+      if (adminLogoutBtn) {
+        adminLogoutBtn.addEventListener('click', async () => {
+          try {
+            const response = await fetch('/api/admin/logout', {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+              // Hide admin panel and show login screen
+              if (adminPanelContent) {
+                adminPanelContent.style.display = 'none';
+              }
+              if (adminLoginScreen) {
+                adminLoginScreen.style.display = 'flex';
+              }
+              
+              // Clear form
+              if (adminLoginFormPage) {
+                adminLoginFormPage.reset();
+              }
+              if (adminLoginErrorPage) {
+                adminLoginErrorPage.style.display = 'none';
+              }
+            }
+          } catch (error) {
+            console.error('Error logging out:', error);
+          }
+        });
       }
 
 
