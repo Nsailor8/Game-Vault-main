@@ -36,37 +36,55 @@ class LoginScreen {
     show() {
         console.log('LoginScreen.show() called');
         console.log('Modal element:', this.modal);
-        this.modal.style.display = 'block';
-        console.log('Modal should now be visible');
+        if (this.modal) {
+            this.modal.style.display = 'block';
+            console.log('Modal should now be visible');
+        } else {
+            console.warn('LoginScreen: authModal element not found');
+        }
     }
 
     hide() {
-        this.modal.style.display = 'none';
+        if (this.modal) {
+            this.modal.style.display = 'none';
+        }
     }
 
     resetToInitialState() {
-
+        if (!this.title || !this.loginForm || !this.signupForm) return;
+        
         this.title.textContent = 'Welcome to Game Vault';
         this.loginForm.style.display = 'block';
         this.signupForm.style.display = 'none';
         
-        document.getElementById('loginUsername').value = '';
-        document.getElementById('loginPassword').value = '';
-        document.getElementById('signupUsername').value = '';
-        document.getElementById('signupEmail').value = '';
-        document.getElementById('signupPassword').value = '';
-        document.getElementById('playStyle').value = 'casual';
-        document.getElementById('favoriteGenres').value = '';
-        document.getElementById('preferredPlatforms').value = '';
+        const loginUsername = document.getElementById('loginUsername');
+        const loginPassword = document.getElementById('loginPassword');
+        const signupUsername = document.getElementById('signupUsername');
+        const signupEmail = document.getElementById('signupEmail');
+        const signupPassword = document.getElementById('signupPassword');
+        const playStyle = document.getElementById('playStyle');
+        const favoriteGenres = document.getElementById('favoriteGenres');
+        const preferredPlatforms = document.getElementById('preferredPlatforms');
+        
+        if (loginUsername) loginUsername.value = '';
+        if (loginPassword) loginPassword.value = '';
+        if (signupUsername) signupUsername.value = '';
+        if (signupEmail) signupEmail.value = '';
+        if (signupPassword) signupPassword.value = '';
+        if (playStyle) playStyle.value = 'casual';
+        if (favoriteGenres) favoriteGenres.value = '';
+        if (preferredPlatforms) preferredPlatforms.value = '';
     }
 
     showLoginForm() {
+        if (!this.loginForm || !this.signupForm || !this.title) return;
         this.loginForm.style.display = 'block';
         this.signupForm.style.display = 'none';
         this.title.textContent = 'Login to Game Vault';
     }
 
     showSignupForm() {
+        if (!this.loginForm || !this.signupForm || !this.title) return;
         this.loginForm.style.display = 'none';
         this.signupForm.style.display = 'block';
         this.title.textContent = 'Join Game Vault';
@@ -814,9 +832,15 @@ class GameVaultApp {
                     }
                 }
 
-                if (this.updateFriends) {
-                    this.updateFriends();
-                    console.log('updateFriends called for', this.currentUser.username);
+                // Only update friends if we're on a page that needs it
+                const currentPath = window.location.pathname;
+                if (this.updateFriends && (currentPath === '/friends' || currentPath.startsWith('/profile'))) {
+                    try {
+                        this.updateFriends();
+                        console.log('updateFriends called for', this.currentUser.username);
+                    } catch (error) {
+                        console.warn('Error updating friends (non-critical):', error);
+                    }
                 }
                 return true;
             } else {
@@ -3727,15 +3751,27 @@ async updateFriends() {
 
     loadLogs() {
         const container = document.getElementById('systemLogs');
-        if (!container) return;
+        if (!container) {
+            console.error('[Admin] System logs container not found');
+            return;
+        }
 
         container.innerHTML = '<div class="loading">Loading system logs...</div>';
 
         fetch('/api/admin/logs', {
             credentials: 'include'
         })
-        .then(response => response.json())
+        .then(response => {
+            console.log('[Admin] Logs response status:', response.status);
+            if (!response.ok) {
+                return response.json().then(err => {
+                    throw new Error(err.error || `HTTP ${response.status}: ${response.statusText}`);
+                });
+            }
+            return response.json();
+        })
         .then(data => {
+            console.log('[Admin] Logs data received:', data);
             if (data.success && data.logs) {
                 if (data.logs.length === 0) {
                     container.innerHTML = '<div class="empty">No system logs available</div>';
@@ -3743,23 +3779,37 @@ async updateFriends() {
                 }
 
                 container.innerHTML = '';
-                data.logs.slice(-50).reverse().forEach(log => {
+                // Sort by timestamp (newest first) and limit to 50
+                const sortedLogs = data.logs
+                    .map(log => ({
+                        ...log,
+                        timestamp: log.timestamp || new Date().toISOString()
+                    }))
+                    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                    .slice(0, 50);
+                
+                sortedLogs.forEach(log => {
                 const logItem = document.createElement('div');
                 logItem.className = 'log-item';
+                    const action = this.escapeHtml(log.action || 'Unknown');
+                    const details = this.escapeHtml(log.details || '');
+                    const timestamp = new Date(log.timestamp).toLocaleString();
                 logItem.innerHTML = `
-                    <strong>${log.action}</strong>: ${log.details}
+                        <strong>${action}</strong>: ${details}
                     <br>
-                    <small>${new Date(log.timestamp).toLocaleString()}</small>
+                        <small>${timestamp}</small>
                 `;
                     container.appendChild(logItem);
             });
             } else {
-                container.innerHTML = '<div class="error">Failed to load system logs</div>';
+                const errorMsg = data.error || 'Failed to load system logs';
+                console.error('[Admin] Logs error:', errorMsg);
+                container.innerHTML = `<div class="error">${this.escapeHtml(errorMsg)}</div>`;
             }
         })
         .catch(error => {
-            console.error('Error fetching logs:', error);
-            container.innerHTML = '<div class="error">Error loading system logs</div>';
+            console.error('[Admin] Error loading logs:', error);
+            container.innerHTML = `<div class="error">Error loading system logs: ${this.escapeHtml(error.message || 'Unknown error')}</div>`;
         });
     }
 
@@ -4726,14 +4776,34 @@ async updateFriends() {
 
             if (response.ok) {
                 const data = await response.json();
-                this.displayFriends(data.friends);
-                this.displayReceivedRequests(data.receivedRequests);
-                this.displaySentRequests(data.sentRequests);
+                if (data.success) {
+                    this.displayFriends(data.friends || []);
+                    this.displayReceivedRequests(data.receivedRequests || []);
+                    this.displaySentRequests(data.sentRequests || []);
+                } else {
+                    // Non-critical error, just log it
+                    console.warn('Failed to load friends:', data.error || 'Unknown error');
+                    // Still display empty lists
+                    this.displayFriends([]);
+                    this.displayReceivedRequests([]);
+                    this.displaySentRequests([]);
+                }
             } else {
-                console.error('Failed to load friends');
+                // Non-critical error, just log it
+                const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                console.warn('Failed to load friends:', errorData.error || 'HTTP ' + response.status);
+                // Still display empty lists
+                this.displayFriends([]);
+                this.displayReceivedRequests([]);
+                this.displaySentRequests([]);
             }
         } catch (error) {
-            console.error('Error loading friends:', error);
+            // Non-critical error, just log it
+            console.warn('Error loading friends (non-critical):', error);
+            // Still display empty lists
+            this.displayFriends([]);
+            this.displayReceivedRequests([]);
+            this.displaySentRequests([]);
         }
     }
 
@@ -5116,14 +5186,14 @@ async updateFriends() {
             alertMessage.textContent = message;
 
             // Show modal
-            modal.style.display = 'block';
+            modal.style.display = 'flex';
 
             // Define event handlers
             let handleEscape, handleOutsideClick, handleOk;
 
             // Handle Escape key
             handleEscape = (e) => {
-                if (e.key === 'Escape' && modal.style.display === 'block') {
+                if (e.key === 'Escape' && modal.style.display === 'flex') {
                     modal.style.display = 'none';
                     document.removeEventListener('keydown', handleEscape);
                     if (handleOutsideClick) modal.removeEventListener('click', handleOutsideClick);
@@ -6654,10 +6724,20 @@ class SteamIntegration {
         // Create post form
         const createPostForm = document.getElementById('createPostForm');
         if (createPostForm) {
+            console.log('[Community] Create post form found, adding submit listener');
             createPostForm.addEventListener('submit', (e) => {
                 e.preventDefault();
-                this.createPost();
+                e.stopPropagation();
+                console.log('[Community] Form submitted, calling createPost');
+                if (this.createPost && typeof this.createPost === 'function') {
+                    this.createPost();
+                } else {
+                    console.error('[Community] createPost method not available');
+                    alert('Error: Cannot submit post. Please refresh the page.');
+                }
             });
+        } else {
+            console.error('[Community] Create post form not found!');
         }
 
         // Post content character count
@@ -6783,7 +6863,7 @@ class SteamIntegration {
                 ${post.isPinned ? '<div class="post-pinned-badge"><i class="fas fa-thumbtack"></i> Pinned</div>' : ''}
                 <header class="post-header">
                     <div class="post-title-section">
-                        <h3><a href="#" onclick="app.viewPostDetails(${post.id}); return false;">${this.escapeHtml(post.title)}</a></h3>
+                        <h3><a href="#" onclick="if(window.app && window.app.viewPostDetails) { window.app.viewPostDetails(${post.id}); } else if(window.viewPostDetails) { window.viewPostDetails(${post.id}); } else { console.error('viewPostDetails not available'); } return false;">${this.escapeHtml(post.title)}</a></h3>
                         <div class="post-meta">
                             <span class="post-author"><i class="far fa-user"></i> ${this.escapeHtml(post.user ? post.user.username : 'Anonymous')}</span>
                             <span class="post-date"><i class="far fa-clock"></i> ${new Date(post.createdAt).toLocaleDateString()}</span>
@@ -6808,7 +6888,7 @@ class SteamIntegration {
                         <span class="stat-item"><i class="fas fa-comments"></i> ${post.commentCount || 0}</span>
                         <span class="stat-item"><i class="fas fa-eye"></i> ${post.views || 0}</span>
                     </div>
-                    <a href="#" class="btn btn-secondary btn-sm" onclick="app.viewPostDetails(${post.id}); return false;">
+                    <a href="#" class="btn btn-secondary btn-sm" onclick="if(window.app && window.app.viewPostDetails) { window.app.viewPostDetails(${post.id}); } else if(window.viewPostDetails) { window.viewPostDetails(${post.id}); } else { console.error('viewPostDetails not available'); } return false;" style="background: linear-gradient(135deg, #d4af37 0%, #f4d03f 100%) !important; background-color: #d4af37 !important; color: #000 !important; border: 2px solid #d4af37 !important;">
                         View Discussion <i class="fas fa-chevron-right"></i>
                     </a>
                 </footer>
@@ -6913,16 +6993,37 @@ class SteamIntegration {
     }
 
     async createPost() {
-        if (!this.currentUser) {
-            this.showAlert('Please sign in to create a post', 'Sign In Required', 'warning');
-            return;
+        // Check and refresh session before creating post
+        if (!this.currentUser || !this.currentUser.username) {
+            console.log('[Create Post] No currentUser, checking session...');
+            try {
+                const authCheck = await fetch('/api/auth/check', {
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const authData = await authCheck.json();
+                if (authData.success && authData.user && authData.user.username) {
+                    this.currentUser = authData.user;
+                    this.updateUI();
+                    console.log('[Create Post] Session restored, user:', this.currentUser.username);
+                } else {
+                    this.showAlert('Please sign in to create a post', 'Sign In Required', 'warning');
+                    this.showLoginModal();
+                    return;
+                }
+            } catch (authError) {
+                console.error('[Create Post] Error checking auth:', authError);
+                this.showAlert('Please sign in to create a post', 'Sign In Required', 'warning');
+                this.showLoginModal();
+                return;
+            }
         }
 
-        const title = document.getElementById('postTitle').value.trim();
-        const content = document.getElementById('postContent').value.trim();
-        const gameTitle = document.getElementById('postGameTitle').value.trim();
-        const category = document.getElementById('postCategory').value;
-        const tagsInput = document.getElementById('postTags').value.trim();
+        const title = document.getElementById('postTitle')?.value.trim();
+        const content = document.getElementById('postContent')?.value.trim();
+        const gameTitle = document.getElementById('postGameTitle')?.value.trim();
+        const category = document.getElementById('postCategory')?.value;
+        const tagsInput = document.getElementById('postTags')?.value.trim();
         const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(t => t) : [];
 
         if (!title || !content) {
@@ -6935,8 +7036,25 @@ class SteamIntegration {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, content, gameTitle: gameTitle || null, category, tags })
+                body: JSON.stringify({ 
+                    title, 
+                    content, 
+                    gameTitle: gameTitle || null, 
+                    category, 
+                    tags,
+                    username: this.currentUser?.username // Include username for session restoration
+                })
             });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                if (response.status === 401) {
+                    this.showAlert('Your session has expired. Please sign in again.', 'Session Expired', 'warning');
+                    this.showLoginModal();
+                    return;
+                }
+                throw new Error(errorData.error || 'Failed to create post');
+            }
 
             const result = await response.json();
 
@@ -6949,7 +7067,7 @@ class SteamIntegration {
             }
         } catch (error) {
             console.error('Error creating post:', error);
-            this.showAlert('Error creating post. Please try again.', 'Error', 'error');
+            this.showAlert(error.message || 'Error creating post. Please try again.', 'Error', 'error');
         }
     }
 
@@ -6960,7 +7078,7 @@ class SteamIntegration {
         if (!modal || !container) return;
 
         window.currentPostId = postId; // Store for reply functionality
-        modal.style.display = 'block';
+        modal.style.display = 'flex';
         container.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
 
         try {
@@ -7011,7 +7129,7 @@ class SteamIntegration {
             <div class="post-details-comments">
                 <h3>Comments (${comments.length})</h3>
                 ${!post.isLocked && this.currentUser ? `
-                    <form id="addCommentForm" onsubmit="app.addComment(${post.id}, null); return false;">
+                    <form id="addCommentForm" onsubmit="event.preventDefault(); if(window.app && window.app.addComment) { window.app.addComment(${post.id}, null); } else { console.error('addComment not available'); } return false;">
                         <textarea id="commentContent" placeholder="Write a comment..." required></textarea>
                         <button type="submit" class="btn btn-primary">Post Comment</button>
                     </form>
@@ -7066,13 +7184,34 @@ class SteamIntegration {
     }
 
     async addComment(postId, parentCommentId) {
-        if (!this.currentUser) {
-            this.showAlert('Please sign in to comment', 'Sign In Required', 'warning');
-            return;
+        // Check authentication first
+        if (!this.currentUser || !this.currentUser.username) {
+            // Try to refresh session
+            try {
+                const authCheck = await fetch('/api/auth/check', {
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const authData = await authCheck.json();
+                if (authData.success && authData.user) {
+                    this.currentUser = authData.user;
+                    this.updateUI();
+                } else {
+                    this.showAlert('Please sign in to comment', 'Sign In Required', 'warning');
+                    return;
+                }
+            } catch (authError) {
+                console.error('Error checking auth:', authError);
+                this.showAlert('Please sign in to comment', 'Sign In Required', 'warning');
+                return;
+            }
         }
 
         const contentInput = document.getElementById('commentContent');
-        if (!contentInput) return;
+        if (!contentInput) {
+            console.error('Comment content input not found');
+            return;
+        }
 
         const content = contentInput.value.trim();
         if (!content) {
@@ -7081,19 +7220,53 @@ class SteamIntegration {
         }
 
         try {
+            // Include username in body for server-side session restoration
+            const requestBody = {
+                content,
+                parentCommentId: parentCommentId || null,
+                username: this.currentUser.username
+            };
+
+            console.log('[Add Comment] Submitting comment:', { postId, content: content.substring(0, 50) + '...', username: this.currentUser.username });
+
             const response = await fetch(`/api/community/posts/${postId}/comments`, {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content, parentCommentId })
+                body: JSON.stringify(requestBody)
             });
 
             const result = await response.json();
 
             if (result.success) {
                 contentInput.value = '';
-                this.viewPostDetails(postId); // Reload post with new comment
+                // Reload post with new comment
+                if (this.viewPostDetails) {
+                    this.viewPostDetails(postId);
+                } else if (window.viewPostDetails) {
+                    window.viewPostDetails(postId);
+                }
             } else {
+                console.error('[Add Comment] Failed:', result.error);
+                if (response.status === 401) {
+                    // Session expired, try to refresh
+                    try {
+                        const authCheck = await fetch('/api/auth/check', {
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        const authData = await authCheck.json();
+                        if (authData.success && authData.user) {
+                            this.currentUser = authData.user;
+                            this.updateUI();
+                            // Retry comment submission
+                            this.addComment(postId, parentCommentId);
+                            return;
+                        }
+                    } catch (retryError) {
+                        console.error('Error retrying after auth refresh:', retryError);
+                    }
+                }
                 this.showAlert(result.error || 'Failed to add comment', 'Error', 'error');
             }
         } catch (error) {
@@ -7132,7 +7305,7 @@ class SteamIntegration {
                 this.loadCommunityPosts(); // Refresh posts
                 // If viewing post details, reload it
                 const modal = document.getElementById('postDetailsModal');
-                if (modal && modal.style.display === 'block') {
+                if (modal && (modal.style.display === 'flex' || modal.style.display === 'block')) {
                     this.viewPostDetails(postId);
                 }
             }
@@ -7158,7 +7331,7 @@ class SteamIntegration {
             if (result.success) {
                 // Reload post details to show updated likes
                 const modal = document.getElementById('postDetailsModal');
-                if (modal && modal.style.display === 'block') {
+                if (modal && (modal.style.display === 'flex' || modal.style.display === 'block')) {
                     const postId = parseInt(window.currentPostId);
                     if (postId) {
                         this.viewPostDetails(postId);
@@ -7273,43 +7446,227 @@ window.generateSteamWishlistLink = function(gameId) {
 // Global function for creating posts (fallback)
 window.showCreatePostModal = function() {
     console.log('[Global] showCreatePostModal called');
-    if (window.app) {
-        // Check if method exists in the instance
-        if (window.app.showCreatePostModal && typeof window.app.showCreatePostModal === 'function') {
-            console.log('[Global] Calling app.showCreatePostModal');
-            window.app.showCreatePostModal();
-            return;
-        }
-        // Check if method exists in prototype
-        const proto = Object.getPrototypeOf(window.app);
-        if (proto && proto.showCreatePostModal && typeof proto.showCreatePostModal === 'function') {
-            console.log('[Global] Calling app.showCreatePostModal from prototype');
-            proto.showCreatePostModal.call(window.app);
-            return;
-        }
-    }
     
-    console.error('[Global] app.showCreatePostModal not available');
-    console.log('[Global] window.app:', window.app);
+    // First, try to call the method on app if it exists
     if (window.app) {
-        console.log('[Global] window.app methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(window.app)));
-        console.log('[Global] window.app.hasOwnProperty("showCreatePostModal"):', window.app.hasOwnProperty('showCreatePostModal'));
-    }
-    
-    // Try again after a short delay
-    setTimeout(() => {
-        if (window.app && window.app.showCreatePostModal && typeof window.app.showCreatePostModal === 'function') {
-            window.app.showCreatePostModal();
-        } else if (window.app) {
-            const proto = Object.getPrototypeOf(window.app);
-            if (proto && proto.showCreatePostModal) {
-                proto.showCreatePostModal.call(window.app);
+        // Check if user is logged in
+        if (!window.app.currentUser || !window.app.currentUser.username) {
+            console.log('[Global] User not logged in, showing login modal');
+            if (window.app.showLoginModal) {
+                window.app.showAlert('Please sign in to create a post', 'Sign In Required', 'warning');
+                window.app.showLoginModal();
             } else {
-                alert('Please refresh the page and try again.');
+                alert('Please sign in to create a post.');
             }
+            return;
+        }
+        
+        // Try to call the method - use call() to ensure proper context
+        try {
+            if (window.app.showCreatePostModal) {
+                console.log('[Global] Calling app.showCreatePostModal');
+                return window.app.showCreatePostModal.call(window.app);
+            }
+        } catch (e) {
+            console.error('[Global] Error calling method:', e);
+        }
+    }
+    
+    // Fallback: Show modal directly if we can find it
+    const modal = document.getElementById('createPostModal');
+    if (modal) {
+        console.log('[Global] Showing modal directly');
+        modal.style.display = 'flex';
+        
+        // Clear form
+        const titleInput = document.getElementById('postTitle');
+        const contentInput = document.getElementById('postContent');
+        const gameTitleInput = document.getElementById('postGameTitle');
+        const tagsInput = document.getElementById('postTags');
+        const categorySelect = document.getElementById('postCategory');
+        const charCount = document.getElementById('postCharCount');
+        
+        if (titleInput) titleInput.value = '';
+        if (contentInput) contentInput.value = '';
+        if (gameTitleInput) gameTitleInput.value = '';
+        if (tagsInput) tagsInput.value = '';
+        if (categorySelect) categorySelect.value = 'general';
+        if (charCount) charCount.textContent = '0';
+        
+        if (titleInput) setTimeout(() => titleInput.focus(), 100);
+    } else {
+        console.error('[Global] Modal not found');
+        if (!window.app || !window.app.currentUser) {
+            alert('Please sign in to create a post.');
         } else {
             alert('Please refresh the page and try again.');
         }
-    }, 500);
+    }
+};
+
+// Global function for viewing post details (fallback)
+window.viewPostDetails = function(postId) {
+    console.log('[Global] viewPostDetails called with postId:', postId);
+    
+    if (window.app && typeof window.app.viewPostDetails === 'function') {
+        try {
+            return window.app.viewPostDetails.call(window.app, postId);
+        } catch (e) {
+            console.error('[Global] Error calling app.viewPostDetails:', e);
+        }
+    }
+    
+    // Fallback: Show modal directly
+    const modal = document.getElementById('postDetailsModal');
+    const container = document.getElementById('postDetailsContainer');
+    
+    if (modal && container) {
+        console.log('[Global] Showing post details modal directly');
+        window.currentPostId = postId;
+        modal.style.display = 'flex';
+        container.innerHTML = '<div class="loading-spinner"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+        
+        // Fetch post details
+        fetch(`/api/community/posts/${postId}`, {
+            credentials: 'include'
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success && result.post) {
+                // Simple rendering if app methods aren't available
+                container.innerHTML = `
+                    <div class="post-details-header">
+                        <h2>${result.post.title || 'Post'}</h2>
+                        <div class="post-details-meta">
+                            <span><i class="far fa-user"></i> ${result.post.user ? result.post.user.username : 'Anonymous'}</span>
+                            <span><i class="far fa-clock"></i> ${new Date(result.post.createdAt).toLocaleDateString()}</span>
+                        </div>
+                    </div>
+                    <div class="post-details-content-text">
+                        ${(result.post.content || '').replace(/\n/g, '<br>')}
+                    </div>
+                    <div class="post-details-comments">
+                        <h3>Comments (${result.comments ? result.comments.length : 0})</h3>
+                        ${window.app && window.app.currentUser ? `
+                            <form onsubmit="event.preventDefault(); const content = document.getElementById('commentContent').value; if(content.trim()) { fetch('/api/community/posts/${postId}/comments', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: content.trim(), parentCommentId: null }) }).then(r => r.json()).then(res => { if(res.success) { window.viewPostDetails(${postId}); } else { if(typeof showCustomAlert === 'function') { showCustomAlert(res.error || 'Failed to add comment', 'Error', 'error'); } else if(window.app && window.app.showAlert) { window.app.showAlert(res.error || 'Failed to add comment', 'Error', 'error'); } else { alert(res.error || 'Failed to add comment'); } } }); }">
+                                <textarea id="commentContent" placeholder="Write a comment..." required style="width: 100%; min-height: 100px; padding: 15px; background: rgba(10, 10, 10, 0.9); border: 2px solid #d4af37; border-radius: 0; color: #e0e0e0; font-family: 'Courier New', monospace; font-size: 0.95rem; margin-bottom: 10px; resize: vertical;"></textarea>
+                                <button type="submit" class="btn btn-primary" style="background: linear-gradient(135deg, #d4af37, #f4d03f); color: #000; border: 2px solid #d4af37;">Post Comment</button>
+                            </form>
+                        ` : '<p class="info-text">Please sign in to comment.</p>'}
+                        ${result.comments && result.comments.length > 0 ? `
+                            <div class="comments-list">
+                                ${result.comments.map(c => `
+                                    <div class="comment-item">
+                                        <div class="comment-header">
+                                            <span class="comment-author"><i class="far fa-user"></i> ${c.user ? c.user.username : 'Anonymous'}</span>
+                                            <span class="comment-date">${new Date(c.createdAt).toLocaleDateString()}</span>
+                                        </div>
+                                        <div class="comment-content">${(c.content || '').replace(/\n/g, '<br>')}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : '<p class="empty-note">No comments yet. Be the first to comment!</p>'}
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `<p class="error-text">${result.error || 'Failed to load post'}</p>`;
+            }
+        })
+        .catch(error => {
+            console.error('[Global] Error loading post:', error);
+            container.innerHTML = '<p class="error-text">Error loading post. Please try again.</p>';
+        });
+    } else {
+        console.error('[Global] Post details modal not found');
+        showCustomAlert('Error: Post details modal not found. Please refresh the page.', 'Error', 'error');
+    }
+};
+
+// Global custom alert function to replace all browser alerts
+window.showCustomAlert = function(message, title = 'Alert', type = 'info') {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('customAlertModal');
+        const alertIcon = document.getElementById('alertIcon');
+        const alertTitle = document.getElementById('alertTitle');
+        const alertMessage = document.getElementById('alertMessage');
+        const alertOkBtn = document.getElementById('alertOkBtn');
+        const alertHeader = alertIcon ? alertIcon.parentElement : null;
+
+        if (!modal || !alertIcon || !alertTitle || !alertMessage || !alertOkBtn) {
+            // Fallback to browser alert if modal elements don't exist
+            if (typeof alert !== 'undefined') {
+                alert(message);
+            }
+            resolve();
+            return;
+        }
+
+        // Set icon and type styling
+        let iconClass = 'fa-info-circle';
+        let headerClass = 'info';
+        
+        if (type === 'success') {
+            iconClass = 'fa-check-circle';
+            headerClass = 'success';
+        } else if (type === 'error') {
+            iconClass = 'fa-exclamation-circle';
+            headerClass = 'error';
+        } else if (type === 'warning') {
+            iconClass = 'fa-exclamation-triangle';
+            headerClass = 'warning';
+        }
+
+        alertIcon.className = `fas ${iconClass}`;
+        if (alertHeader) {
+            alertHeader.className = `alert-modal-header ${headerClass}`;
+        }
+        alertTitle.textContent = title;
+        alertMessage.textContent = message;
+
+        // Show modal
+        modal.style.display = 'flex';
+
+        // Define event handlers
+        let handleEscape, handleOutsideClick, handleOk;
+
+        // Handle Escape key
+        handleEscape = (e) => {
+            if (e.key === 'Escape' && modal.style.display === 'flex') {
+                modal.style.display = 'none';
+                document.removeEventListener('keydown', handleEscape);
+                if (handleOutsideClick) modal.removeEventListener('click', handleOutsideClick);
+                resolve();
+            }
+        };
+
+        // Handle clicking outside modal
+        handleOutsideClick = (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+                modal.removeEventListener('click', handleOutsideClick);
+                document.removeEventListener('keydown', handleEscape);
+                resolve();
+            }
+        };
+
+        // Handle OK button click
+        handleOk = () => {
+            modal.style.display = 'none';
+            document.removeEventListener('keydown', handleEscape);
+            modal.removeEventListener('click', handleOutsideClick);
+            resolve();
+        };
+
+        // Add event listeners
+        alertOkBtn.onclick = null;
+        alertOkBtn.addEventListener('click', handleOk);
+        modal.addEventListener('click', handleOutsideClick);
+        document.addEventListener('keydown', handleEscape);
+    });
+};
+
+// Override global alert() function
+window.alert = function(message) {
+    showCustomAlert(message, 'Alert', 'info');
 };
 

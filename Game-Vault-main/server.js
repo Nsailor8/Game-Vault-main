@@ -2816,35 +2816,130 @@ app.get('/api/friends/:username', async (req, res) => {
             }
         }
         
-        // Get user from database
-        const user = await profileManager.getUserByUsername(username);
+        // Get user from database - try multiple methods
+        let user = await profileManager.getUserByUsername(username);
+        
+        // If profileManager doesn't work, try direct User model query
         if (!user) {
-            return res.status(404).json({ error: 'User not found' });
+            console.log('[Friends API] profileManager.getUserByUsername failed, trying direct User query');
+            try {
+                user = await User.findOne({ where: { username: username } });
+            } catch (userError) {
+                console.error('[Friends API] Direct User query failed:', userError);
+            }
+        }
+        
+        if (!user) {
+            console.error('[Friends API] User not found:', username);
+            return res.status(404).json({ 
+                success: false,
+                error: 'User not found',
+                friends: [],
+                sentRequests: [],
+                receivedRequests: []
+            });
         }
 
-        // Extract user_id properly
-        const userId = user.user_id || user.getDataValue?.('user_id') || user.dataValues?.user_id || user.id || null;
+        // Extract user_id with extensive fallbacks
+        let userId = null;
+        
+        // Method 1: Direct property access
+        userId = user.user_id || user.id;
+        
+        // Method 2: getDataValue
+        if (!userId && user.getDataValue) {
+            userId = user.getDataValue('user_id') || user.getDataValue('id');
+        }
+        
+        // Method 3: dataValues
+        if (!userId && user.dataValues) {
+            userId = user.dataValues.user_id || user.dataValues.id;
+        }
+        
+        // Method 4: toJSON
+        if (!userId) {
+            try {
+                const userJson = user.toJSON ? user.toJSON() : user;
+                userId = userJson.user_id || userJson.id;
+            } catch (jsonError) {
+                console.warn('[Friends API] toJSON failed:', jsonError);
+            }
+        }
+        
+        // Method 5: Raw SQL as last resort
+        if (!userId) {
+            console.log('[Friends API] Trying raw SQL query to get user_id');
+            try {
+                const [results] = await sequelize.query(
+                    `SELECT user_id FROM users WHERE username = :username LIMIT 1`,
+                    { replacements: { username: username }, type: QueryTypes.SELECT }
+                );
+                if (results && results.length > 0 && results[0] && results[0].user_id) {
+                    userId = results[0].user_id;
+                }
+            } catch (sqlError) {
+                console.error('[Friends API] Raw SQL query error:', sqlError);
+            }
+        }
+        
         if (!userId) {
             console.error('[Friends API] Could not extract user_id from user:', username);
-            return res.status(500).json({ error: 'Failed to extract user ID' });
+            console.error('[Friends API] User object keys:', Object.keys(user));
+            console.error('[Friends API] User object:', JSON.stringify(user, null, 2));
+            return res.status(500).json({ 
+                success: false,
+                error: 'Failed to extract user ID',
+                friends: [],
+                sentRequests: [],
+                receivedRequests: []
+            });
         }
-
-        // Get accepted friendships (friends)
-        const friends = await profileManager.getFriendships(userId, 'accepted');
         
-        // Get pending requests (both sent and received)
-        const sentRequests = await profileManager.getSentFriendRequests(userId);
-        const receivedRequests = await profileManager.getReceivedFriendRequests(userId);
+        console.log('[Friends API] Successfully extracted user_id:', userId, 'for username:', username);
+
+        // Get accepted friendships (friends) - with error handling
+        let friends = [];
+        let sentRequests = [];
+        let receivedRequests = [];
+        
+        try {
+            friends = await profileManager.getFriendships(userId, 'accepted') || [];
+        } catch (friendsError) {
+            console.error('[Friends API] Error getting friendships:', friendsError);
+            friends = [];
+        }
+        
+        // Get pending requests (both sent and received) - with error handling
+        try {
+            sentRequests = await profileManager.getSentFriendRequests(userId) || [];
+        } catch (sentError) {
+            console.error('[Friends API] Error getting sent requests:', sentError);
+            sentRequests = [];
+        }
+        
+        try {
+            receivedRequests = await profileManager.getReceivedFriendRequests(userId) || [];
+        } catch (receivedError) {
+            console.error('[Friends API] Error getting received requests:', receivedError);
+            receivedRequests = [];
+        }
 
         res.json({
             success: true,
-            friends: friends,
-            sentRequests: sentRequests,
-            receivedRequests: receivedRequests
+            friends: friends || [],
+            sentRequests: sentRequests || [],
+            receivedRequests: receivedRequests || []
         });
     } catch (error) {
-        console.error('Error getting friends:', error);
-        res.status(500).json({ error: 'Failed to get friends' });
+        console.error('[Friends API] Error getting friends:', error);
+        console.error('[Friends API] Error stack:', error.stack);
+        res.status(500).json({ 
+            success: false,
+            error: 'Failed to get friends',
+            friends: [],
+            sentRequests: [],
+            receivedRequests: []
+        });
     }
 });
 
@@ -5113,29 +5208,52 @@ app.post('/api/admin/create', requireAdmin, async (req, res) => {
 // Admin Logs Endpoint
 app.get('/api/admin/logs', requireAdmin, async (req, res) => {
     try {
-
-        // For now, return a simple log structure
-        // In a real application, you'd have a logs table
-        const logs = [
-            {
-                action: 'Admin Login',
-                details: `Admin ${user.username} logged in`,
-                timestamp: new Date()
-            },
-            {
-                action: 'System Start',
-                details: 'Server started successfully',
-                timestamp: new Date(Date.now() - 3600000) // 1 hour ago
+        console.log('[Admin Logs] Fetching system logs');
+        
+        // Get logs from AdminManager if available
+        let logs = [];
+        if (adminManager && typeof adminManager.getSystemLogs === 'function') {
+            const adminLogs = adminManager.getSystemLogs();
+            if (Array.isArray(adminLogs) && adminLogs.length > 0) {
+                logs = adminLogs.map(log => ({
+                    action: log.action || 'Unknown',
+                    details: log.details || '',
+                    timestamp: log.timestamp || new Date().toISOString()
+                }));
             }
-        ];
+        }
+        
+        // If no logs from AdminManager, provide some default logs
+        if (logs.length === 0) {
+            const adminUser = req.adminUser || req.session.user;
+            const username = adminUser ? (adminUser.username || 'Unknown') : 'Unknown';
+            
+            logs = [
+                {
+                    action: 'System Start',
+                    details: 'Server started successfully',
+                    timestamp: new Date(Date.now() - 3600000).toISOString() // 1 hour ago
+                },
+                {
+                    action: 'Admin Access',
+                    details: `Admin ${username} accessed logs`,
+                    timestamp: new Date().toISOString()
+                }
+            ];
+        }
 
+        console.log('[Admin Logs] Returning', logs.length, 'logs');
         res.json({
             success: true,
             logs: logs
         });
     } catch (error) {
-        console.error('Error fetching logs:', error);
-        res.status(500).json({ success: false, error: 'Failed to fetch logs' });
+        console.error('[Admin Logs] Error fetching logs:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to fetch logs',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 });
 
@@ -6003,14 +6121,98 @@ app.get('/api/community/posts/:postId', async (req, res) => {
 // Create new post
 app.post('/api/community/posts', async (req, res) => {
     try {
+        console.log('[Create Post] Request received');
+        console.log('[Create Post] Session ID:', req.sessionID);
+        console.log('[Create Post] Has session:', !!req.session);
+        console.log('[Create Post] Has session user:', !!req.session?.user);
+        console.log('[Create Post] Session user:', req.session?.user ? {
+            username: req.session.user.username,
+            id: req.session.user.id,
+            user_id: req.session.user.user_id
+        } : 'none');
+        console.log('[Create Post] Cookies:', req.cookies);
+        console.log('[Create Post] Body username:', req.body?.username);
+
+        // Restore session if missing or if user_id is missing
+        if (!req.session.user || (!req.session.user.id && !req.session.user.user_id)) {
+            console.log('[Create Post] Session user missing or invalid, attempting to restore...');
+            const username = req.cookies?.currentUsername || req.body?.username || req.session?.user?.username || null;
+            console.log('[Create Post] Attempting restore with username:', username);
+            
+            if (username) {
+                const restored = await restoreSessionUser(req, username);
+                console.log('[Create Post] Restore result:', restored ? 'success' : 'failed');
+            } else {
+                console.log('[Create Post] No username available for restoration');
+            }
+        }
+
         if (!req.session.user) {
+            console.log('[Create Post] No session user after restoration attempt');
             return res.status(401).json({ success: false, error: 'Authentication required' });
         }
 
-        const userId = req.session.user.id || req.session.user.user_id;
+        // Extract user ID with multiple fallbacks
+        let userId = req.session.user.id || req.session.user.user_id;
+        console.log('[Create Post] Initial userId from session:', userId);
+        
+        if (!userId && req.session.user.username) {
+            // Try to get from database using username
+            try {
+                console.log('[Create Post] Attempting to fetch user from database by username:', req.session.user.username);
+                const dbUser = await User.findOne({ where: { username: req.session.user.username } });
+                if (dbUser) {
+                    // Try multiple methods to extract user_id
+                    userId = dbUser.user_id || 
+                             dbUser.id || 
+                             (dbUser.getDataValue ? dbUser.getDataValue('user_id') : null) ||
+                             (dbUser.dataValues ? dbUser.dataValues.user_id : null);
+                    
+                    // If still no userId, try raw SQL
+                    if (!userId) {
+                        console.log('[Create Post] Trying raw SQL query to get user_id');
+                        try {
+                            const [results] = await sequelize.query(
+                                `SELECT user_id FROM users WHERE username = :username LIMIT 1`,
+                                { replacements: { username: req.session.user.username }, type: QueryTypes.SELECT }
+                            );
+                            if (results && results.length > 0 && results[0] && results[0].user_id) {
+                                userId = results[0].user_id;
+                            }
+                        } catch (sqlError) {
+                            console.error('[Create Post] Raw SQL query error:', sqlError);
+                        }
+                    }
+                    
+                    console.log('[Create Post] userId from database:', userId);
+                    
+                    // Update session with the found user_id
+                    if (userId) {
+                        req.session.user.id = userId;
+                        req.session.user.user_id = userId;
+                        await new Promise((resolve, reject) => {
+                            req.session.save((err) => {
+                                if (err) reject(err);
+                                else resolve();
+                            });
+                        });
+                        console.log('[Create Post] Updated session with user_id:', userId);
+                    }
+                } else {
+                    console.log('[Create Post] User not found in database');
+                }
+            } catch (dbError) {
+                console.error('[Create Post] Error fetching user from database:', dbError);
+            }
+        }
+
         if (!userId) {
+            console.log('[Create Post] Failed to extract user_id, returning error');
+            console.log('[Create Post] Session user state:', JSON.stringify(req.session.user, null, 2));
             return res.status(401).json({ success: false, error: 'Invalid user session' });
         }
+
+        console.log('[Create Post] Using userId:', userId);
 
         const { title, content, gameTitle, category, tags } = req.body;
 
@@ -6060,14 +6262,93 @@ app.post('/api/community/posts', async (req, res) => {
 // Add comment to post
 app.post('/api/community/posts/:postId/comments', async (req, res) => {
     try {
+        console.log('[Create Comment] Request received');
+        console.log('[Create Comment] Session ID:', req.sessionID);
+        console.log('[Create Comment] Has session:', !!req.session);
+        console.log('[Create Comment] Has session user:', !!req.session?.user);
+        console.log('[Create Comment] Cookies:', req.cookies);
+        console.log('[Create Comment] Body username:', req.body?.username);
+
+        // Restore session if missing or if user_id is missing
+        if (!req.session.user || (!req.session.user.id && !req.session.user.user_id)) {
+            console.log('[Create Comment] Session user missing or invalid, attempting to restore...');
+            const username = req.cookies?.currentUsername || req.body?.username || req.session?.user?.username || null;
+            console.log('[Create Comment] Attempting restore with username:', username);
+            
+            if (username) {
+                const restored = await restoreSessionUser(req, username);
+                console.log('[Create Comment] Restore result:', restored ? 'success' : 'failed');
+            } else {
+                console.log('[Create Comment] No username available for restoration');
+            }
+        }
+
         if (!req.session.user) {
+            console.log('[Create Comment] No session user after restoration attempt');
             return res.status(401).json({ success: false, error: 'Authentication required' });
         }
 
-        const userId = req.session.user.id || req.session.user.user_id;
+        // Extract user ID with multiple fallbacks
+        let userId = req.session.user.id || req.session.user.user_id;
+        console.log('[Create Comment] Initial userId from session:', userId);
+        
+        if (!userId && req.session.user.username) {
+            // Try to get from database using username
+            try {
+                console.log('[Create Comment] Attempting to fetch user from database by username:', req.session.user.username);
+                const dbUser = await User.findOne({ where: { username: req.session.user.username } });
+                if (dbUser) {
+                    // Try multiple methods to extract user_id
+                    userId = dbUser.user_id || 
+                             dbUser.id || 
+                             (dbUser.getDataValue ? dbUser.getDataValue('user_id') : null) ||
+                             (dbUser.dataValues ? dbUser.dataValues.user_id : null);
+                    
+                    // If still no userId, try raw SQL
+                    if (!userId) {
+                        console.log('[Create Comment] Trying raw SQL query to get user_id');
+                        try {
+                            const [results] = await sequelize.query(
+                                `SELECT user_id FROM users WHERE username = :username LIMIT 1`,
+                                { replacements: { username: req.session.user.username }, type: QueryTypes.SELECT }
+                            );
+                            if (results && results.length > 0 && results[0] && results[0].user_id) {
+                                userId = results[0].user_id;
+                            }
+                        } catch (sqlError) {
+                            console.error('[Create Comment] Raw SQL query error:', sqlError);
+                        }
+                    }
+                    
+                    console.log('[Create Comment] userId from database:', userId);
+                    
+                    // Update session with the found user_id
+                    if (userId) {
+                        req.session.user.id = userId;
+                        req.session.user.user_id = userId;
+                        await new Promise((resolve, reject) => {
+                            req.session.save((err) => {
+                                if (err) reject(err);
+                                else resolve();
+                            });
+                        });
+                        console.log('[Create Comment] Updated session with user_id:', userId);
+                    }
+                } else {
+                    console.log('[Create Comment] User not found in database');
+                }
+            } catch (dbError) {
+                console.error('[Create Comment] Error fetching user from database:', dbError);
+            }
+        }
+
         if (!userId) {
+            console.log('[Create Comment] Failed to extract user_id, returning error');
+            console.log('[Create Comment] Session user state:', JSON.stringify(req.session.user, null, 2));
             return res.status(401).json({ success: false, error: 'Invalid user session' });
         }
+
+        console.log('[Create Comment] Using userId:', userId);
 
         const postId = parseInt(req.params.postId, 10);
         const { content, parentCommentId } = req.body;
