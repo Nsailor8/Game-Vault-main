@@ -1,0 +1,44 @@
+{
+  "settings": {
+    "title": "Configuración",
+    "appearance": "Apariencia",
+    "theme": "Tema",
+    "themeDescription": "Elige entre modo claro y oscuro",
+    "fontSize": "Tamaño de fuente",
+    "fontSizeDescription": "Ajusta el tamaño del texto para una mejor legibilidad",
+    "language": "Idioma",
+    "languageDescription": "Selecciona tu idioma preferido",
+    "dateFormat": "Formato de fecha",
+    "dateFormatDescription": "Elige cómo se muestran las fechas",
+    "notifications": "Notificaciones",
+    "emailNotifications": "Notificaciones por correo",
+    "emailNotificationsDescription": "Recibe actualizaciones por correo sobre tu cuenta",
+    "friendRequests": "Solicitudes de amistad",
+    "friendRequestsDescription": "Recibe notificaciones cuando alguien te envíe una solicitud de amistad",
+    "gameUpdates": "Actualizaciones de juegos",
+    "gameUpdatesDescription": "Notificaciones sobre juegos en tu lista de deseos",
+    "privacy": "Privacidad",
+    "profileVisibility": "Visibilidad del perfil",
+    "profileVisibilityDescription": "Controla quién puede ver tu perfil",
+    "showActivity": "Mostrar estado de actividad",
+    "showActivityDescription": "Permite que otros vean cuando estás en línea",
+    "saveSettings": "Guardar configuración",
+    "resetSettings": "Restablecer valores predeterminados",
+    "settingsSaved": "¡Configuración guardada exitosamente!",
+    "settingsReset": "Configuración restablecida a valores predeterminados",
+    "languageChangeNotice": "El cambio de idioma tendrá efecto después de recargar la página"
+  },
+  "common": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "close": "Cerrar",
+    "loading": "Cargando...",
+    "error": "Error",
+    "success": "Éxito",
+    "warning": "Advertencia",
+    "info": "Información"
+  }
+}
+

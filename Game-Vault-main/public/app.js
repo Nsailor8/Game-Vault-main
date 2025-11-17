@@ -7443,6 +7443,36 @@ async function refreshSessionOnLoad() {
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('DOM Content Loaded - Initializing GameVaultApp');
     
+    // Apply theme from localStorage before initializing app
+    const savedSettings = localStorage.getItem('gameVaultSettings');
+    if (savedSettings) {
+        try {
+            const settings = JSON.parse(savedSettings);
+            if (settings.theme) {
+                const root = document.documentElement;
+                const body = document.body;
+                
+                // Remove existing theme classes
+                body.classList.remove('theme-light', 'theme-dark');
+                
+                let theme = settings.theme;
+                
+                // Handle auto theme
+                if (theme === 'auto') {
+                    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    theme = prefersDark ? 'dark' : 'light';
+                }
+                
+                // Apply theme
+                body.classList.add(`theme-${theme}`);
+                root.setAttribute('data-theme', theme);
+                console.log('[Theme] Applied theme from localStorage:', theme);
+            }
+        } catch (e) {
+            console.error('Error loading theme from localStorage:', e);
+        }
+    }
+    
     app = new GameVaultApp();
     window.app = app;
     

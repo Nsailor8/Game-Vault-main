@@ -1,0 +1,44 @@
+{
+  "settings": {
+    "title": "Einstellungen",
+    "appearance": "Erscheinungsbild",
+    "theme": "Design",
+    "themeDescription": "Wählen Sie zwischen hellem und dunklem Modus",
+    "fontSize": "Schriftgröße",
+    "fontSizeDescription": "Passen Sie die Textgröße für bessere Lesbarkeit an",
+    "language": "Sprache",
+    "languageDescription": "Wählen Sie Ihre bevorzugte Sprache",
+    "dateFormat": "Datumsformat",
+    "dateFormatDescription": "Wählen Sie, wie Daten angezeigt werden",
+    "notifications": "Benachrichtigungen",
+    "emailNotifications": "E-Mail-Benachrichtigungen",
+    "emailNotificationsDescription": "Erhalten Sie E-Mail-Updates zu Ihrem Konto",
+    "friendRequests": "Freundschaftsanfragen",
+    "friendRequestsDescription": "Benachrichtigt werden, wenn jemand Ihnen eine Freundschaftsanfrage sendet",
+    "gameUpdates": "Spiel-Updates",
+    "gameUpdatesDescription": "Benachrichtigungen zu Spielen in Ihrer Wunschliste",
+    "privacy": "Datenschutz",
+    "profileVisibility": "Profil-Sichtbarkeit",
+    "profileVisibilityDescription": "Steuern Sie, wer Ihr Profil sehen kann",
+    "showActivity": "Aktivitätsstatus anzeigen",
+    "showActivityDescription": "Lassen Sie andere sehen, wann Sie online sind",
+    "saveSettings": "Einstellungen speichern",
+    "resetSettings": "Auf Standard zurücksetzen",
+    "settingsSaved": "Einstellungen erfolgreich gespeichert!",
+    "settingsReset": "Einstellungen auf Standard zurückgesetzt",
+    "languageChangeNotice": "Sprachänderung wird nach dem Neuladen der Seite wirksam"
+  },
+  "common": {
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "close": "Schließen",
+    "loading": "Laden...",
+    "error": "Fehler",
+    "success": "Erfolg",
+    "warning": "Warnung",
+    "info": "Information"
+  }
+}
+

@@ -1,0 +1,44 @@
+{
+  "settings": {
+    "title": "设置",
+    "appearance": "外观",
+    "theme": "主题",
+    "themeDescription": "选择浅色或深色模式",
+    "fontSize": "字体大小",
+    "fontSizeDescription": "调整文本大小以提高可读性",
+    "language": "语言",
+    "languageDescription": "选择您的首选语言",
+    "dateFormat": "日期格式",
+    "dateFormatDescription": "选择日期的显示方式",
+    "notifications": "通知",
+    "emailNotifications": "电子邮件通知",
+    "emailNotificationsDescription": "接收有关您帐户的电子邮件更新",
+    "friendRequests": "好友请求",
+    "friendRequestsDescription": "当有人向您发送好友请求时收到通知",
+    "gameUpdates": "游戏更新",
+    "gameUpdatesDescription": "关于您愿望清单中游戏的通知",
+    "privacy": "隐私",
+    "profileVisibility": "个人资料可见性",
+    "profileVisibilityDescription": "控制谁可以查看您的个人资料",
+    "showActivity": "显示活动状态",
+    "showActivityDescription": "让其他人看到您何时在线",
+    "saveSettings": "保存设置",
+    "resetSettings": "重置为默认值",
+    "settingsSaved": "设置已成功保存！",
+    "settingsReset": "设置已重置为默认值",
+    "languageChangeNotice": "语言更改将在页面重新加载后生效"
+  },
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "delete": "删除",
+    "edit": "编辑",
+    "close": "关闭",
+    "loading": "加载中...",
+    "error": "错误",
+    "success": "成功",
+    "warning": "警告",
+    "info": "信息"
+  }
+}
+

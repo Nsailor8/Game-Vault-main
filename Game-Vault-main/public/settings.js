@@ -91,11 +91,14 @@ class SettingsManager {
         const languageSelect = document.getElementById('languageSelect');
         if (languageSelect) {
             languageSelect.value = this.settings.language;
-            languageSelect.addEventListener('change', (e) => {
+            languageSelect.addEventListener('change', async (e) => {
                 this.settings.language = e.target.value;
                 this.saveSettings();
-                // Show notification that language change requires page reload
-                this.showNotification('Language change will take effect after page reload', 'info');
+                
+                // Apply language change immediately
+                if (window.translationManager) {
+                    await window.translationManager.setLanguage(this.settings.language);
+                }
             });
         }
 
@@ -137,16 +140,16 @@ class SettingsManager {
         if (saveBtn) {
             saveBtn.addEventListener('click', () => {
                 this.saveSettings();
-                this.showNotification('Settings saved successfully!', 'success');
+                this.showNotification('settings.settingsSaved', 'success');
             });
         }
 
         // Reset button
         const resetBtn = document.getElementById('resetSettingsBtn');
         if (resetBtn) {
-            resetBtn.addEventListener('click', () => {
+            resetBtn.addEventListener('click', async () => {
                 if (confirm('Are you sure you want to reset all settings to defaults?')) {
-                    this.resetSettings();
+                    await this.resetSettings();
                 }
             });
         }
@@ -207,7 +210,7 @@ class SettingsManager {
         }
     }
 
-    resetSettings() {
+    async resetSettings() {
         this.settings = {
             theme: 'light',
             fontSize: 'medium',
@@ -241,15 +244,31 @@ class SettingsManager {
         
         this.applySettings();
         this.saveSettings();
-        this.showNotification('Settings reset to defaults', 'success');
+        
+        // Reload translations after reset
+        if (window.translationManager) {
+            await window.translationManager.setLanguage(this.settings.language);
+        }
+        
+        this.showNotification('settings.settingsReset', 'success');
     }
 
     showNotification(message, type = 'info') {
+        // Translate the message if translation manager is available
+        let translatedMessage = message;
+        if (window.translationManager && typeof message === 'string' && message.includes('.')) {
+            // Try to translate if it looks like a translation key
+            const translated = window.translationManager.t(message);
+            if (translated !== message) {
+                translatedMessage = translated;
+            }
+        }
+        
         // Use existing alert system if available
         if (window.app && window.app.showAlert) {
-            window.app.showAlert(message, 'Settings', type);
+            window.app.showAlert(translatedMessage, window.translationManager ? window.translationManager.t('settings.title') : 'Settings', type);
         } else {
-            alert(message);
+            alert(translatedMessage);
         }
     }
 }

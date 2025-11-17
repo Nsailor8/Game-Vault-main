@@ -1,0 +1,44 @@
+{
+  "settings": {
+    "title": "Paramètres",
+    "appearance": "Apparence",
+    "theme": "Thème",
+    "themeDescription": "Choisissez entre le mode clair et sombre",
+    "fontSize": "Taille de police",
+    "fontSizeDescription": "Ajustez la taille du texte pour une meilleure lisibilité",
+    "language": "Langue",
+    "languageDescription": "Sélectionnez votre langue préférée",
+    "dateFormat": "Format de date",
+    "dateFormatDescription": "Choisissez comment les dates sont affichées",
+    "notifications": "Notifications",
+    "emailNotifications": "Notifications par e-mail",
+    "emailNotificationsDescription": "Recevez des mises à jour par e-mail concernant votre compte",
+    "friendRequests": "Demandes d'amis",
+    "friendRequestsDescription": "Soyez notifié lorsqu'une personne vous envoie une demande d'ami",
+    "gameUpdates": "Mises à jour de jeux",
+    "gameUpdatesDescription": "Notifications concernant les jeux dans votre liste de souhaits",
+    "privacy": "Confidentialité",
+    "profileVisibility": "Visibilité du profil",
+    "profileVisibilityDescription": "Contrôlez qui peut voir votre profil",
+    "showActivity": "Afficher le statut d'activité",
+    "showActivityDescription": "Permettez aux autres de voir quand vous êtes en ligne",
+    "saveSettings": "Enregistrer les paramètres",
+    "resetSettings": "Réinitialiser aux valeurs par défaut",
+    "settingsSaved": "Paramètres enregistrés avec succès !",
+    "settingsReset": "Paramètres réinitialisés aux valeurs par défaut",
+    "languageChangeNotice": "Le changement de langue prendra effet après le rechargement de la page"
+  },
+  "common": {
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "close": "Fermer",
+    "loading": "Chargement...",
+    "error": "Erreur",
+    "success": "Succès",
+    "warning": "Avertissement",
+    "info": "Information"
+  }
+}
+

@@ -1,0 +1,44 @@
+{
+  "settings": {
+    "title": "Settings",
+    "appearance": "Appearance",
+    "theme": "Theme",
+    "themeDescription": "Choose between light and dark mode",
+    "fontSize": "Font Size",
+    "fontSizeDescription": "Adjust the text size for better readability",
+    "language": "Language",
+    "languageDescription": "Select your preferred language",
+    "dateFormat": "Date Format",
+    "dateFormatDescription": "Choose how dates are displayed",
+    "notifications": "Notifications",
+    "emailNotifications": "Email Notifications",
+    "emailNotificationsDescription": "Receive email updates about your account",
+    "friendRequests": "Friend Requests",
+    "friendRequestsDescription": "Get notified when someone sends you a friend request",
+    "gameUpdates": "Game Updates",
+    "gameUpdatesDescription": "Notifications about games in your wishlist",
+    "privacy": "Privacy",
+    "profileVisibility": "Profile Visibility",
+    "profileVisibilityDescription": "Control who can view your profile",
+    "showActivity": "Show Activity Status",
+    "showActivityDescription": "Let others see when you're online",
+    "saveSettings": "Save Settings",
+    "resetSettings": "Reset to Defaults",
+    "settingsSaved": "Settings saved successfully!",
+    "settingsReset": "Settings reset to defaults",
+    "languageChangeNotice": "Language change will take effect after page reload"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning",
+    "info": "Info"
+  }
+}
+
